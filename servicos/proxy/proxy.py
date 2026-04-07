@@ -336,17 +336,56 @@ def nvidia_chat_payload(body, model_id, base_path):
     else:
         messages = ollama_to_nvidia_messages(body.get("messages") or [])
     max_tokens = body.get("max_tokens") or options.get("num_predict") or options.get("max_tokens") or 512
+    try:
+        max_tokens = int(max_tokens)
+    except Exception:
+        max_tokens = 512
+    if max_tokens <= 0:
+        max_tokens = 512
+    stream_value = body.get("stream", True)
+    if isinstance(stream_value, str):
+        stream_value = stream_value.strip().lower() not in ("0", "false", "no", "off")
     payload = {
         "model": model_id,
         "messages": messages,
         "temperature": body.get("temperature", options.get("temperature", 0.4)),
-        "max_tokens": int(max_tokens),
-        "stream": bool(body.get("stream", False)),
+        "max_tokens": max_tokens,
+        "stream": bool(stream_value),
     }
     top_p = body.get("top_p", options.get("top_p"))
     if top_p is not None:
         payload["top_p"] = top_p
     return payload
+
+
+def compact_chat_debug(body, payload, model_id, base_path):
+    raw_messages = body.get("messages") or []
+    last_content = ""
+    last_type = "none"
+    if raw_messages:
+        last_content = raw_messages[-1].get("content", "")
+        last_type = type(last_content).__name__
+    if isinstance(last_content, str):
+        last_len = len(last_content)
+    else:
+        try:
+            last_len = len(json.dumps(last_content, ensure_ascii=False))
+        except Exception:
+            last_len = 0
+    options = body.get("options") or {}
+    return {
+        "provider": "nvidia",
+        "model": model_id,
+        "endpoint": base_path,
+        "stream": bool(payload.get("stream")),
+        "message_count": len(raw_messages),
+        "last_content_type": last_type,
+        "last_content_len": last_len,
+        "max_tokens": payload.get("max_tokens"),
+        "temperature": payload.get("temperature"),
+        "format": body.get("format"),
+        "num_predict": options.get("num_predict"),
+    }
 
 
 def nvidia_headers(content_type="application/json"):
@@ -362,6 +401,7 @@ def nvidia_chat_request(model_id, body, base_path, source_ip):
         return jsonify({"error": "RED_PROXY_NVIDIA_API_KEY not configured"}), 503
 
     payload = nvidia_chat_payload(body, model_id, base_path)
+    log_message("INFO", "NVIDIA request " + json.dumps(compact_chat_debug(body, payload, model_id, base_path), ensure_ascii=False), "nvidia", source_ip, base_path, 0, 0)
     started = time.time()
     url = NVIDIA_CHAT_BASE + "/chat/completions"
 
@@ -374,6 +414,9 @@ def nvidia_chat_request(model_id, body, base_path, source_ip):
                 return Response(upstream.text, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
 
             def generate_chat_stream():
+                chunk_count = 0
+                content_len = 0
+                finish_reason = None
                 for line in upstream.iter_lines(decode_unicode=True):
                     if not line:
                         continue
@@ -383,17 +426,28 @@ def nvidia_chat_request(model_id, body, base_path, source_ip):
                         break
                     try:
                         item = json.loads(line)
-                        delta = item.get("choices", [{}])[0].get("delta", {})
+                        choice = item.get("choices", [{}])[0]
+                        finish_reason = choice.get("finish_reason") or finish_reason
+                        delta = choice.get("delta", {})
                         content = delta.get("content") or ""
                     except Exception:
                         content = ""
                     if not content:
                         continue
+                    chunk_count += 1
+                    content_len += len(content)
                     if base_path == "/api/generate":
                         chunk = {"model": nvidia_display_name(model_id), "created_at": utc_created_at(), "response": content, "done": False}
                     else:
                         chunk = {"model": nvidia_display_name(model_id), "created_at": utc_created_at(), "message": {"role": "assistant", "content": content}, "done": False}
                     yield json.dumps(chunk, ensure_ascii=False) + "\n"
+                stream_debug = {
+                    "model": model_id,
+                    "finish_reason": finish_reason,
+                    "chunks": chunk_count,
+                    "content_len": content_len,
+                }
+                log_message("INFO", "NVIDIA stream response " + json.dumps(stream_debug, ensure_ascii=False), "nvidia", source_ip, base_path, latency, upstream.status_code)
                 final = {"model": nvidia_display_name(model_id), "created_at": utc_created_at(), "done": True}
                 yield json.dumps(final, ensure_ascii=False) + "\n"
 
@@ -409,6 +463,13 @@ def nvidia_chat_request(model_id, body, base_path, source_ip):
         choice = (data.get("choices") or [{}])[0]
         message = choice.get("message") or {}
         content = message.get("content") or ""
+        response_debug = {
+            "model": model_id,
+            "finish_reason": choice.get("finish_reason"),
+            "message_keys": sorted(message.keys()),
+            "content_len": len(content),
+        }
+        log_message("INFO", "NVIDIA response " + json.dumps(response_debug, ensure_ascii=False), "nvidia", source_ip, base_path, latency, upstream.status_code)
         usage = data.get("usage") or {}
         total_duration = int(latency * 1_000_000_000)
         if base_path == "/api/generate":
