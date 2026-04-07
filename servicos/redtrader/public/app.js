@@ -6,8 +6,13 @@ const state = {
   socket: null,
 };
 
+const APP_BASE_PATH = location.pathname === "/trader" || location.pathname.startsWith("/trader/") ? "/trader" : "";
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+
+function appPath(path) {
+  return `${APP_BASE_PATH}${path}`;
+}
 
 function money(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
@@ -30,12 +35,12 @@ function toast(message) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
+  const response = await fetch(appPath(path), {
     ...options,
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
   });
   if (response.status === 401) {
-    location.href = "/login";
+    location.href = appPath("/login");
     return null;
   }
   const payload = await response.json();
@@ -391,7 +396,7 @@ function escapeAttr(value) {
 
 function connectSocket() {
   const protocol = location.protocol === "https:" ? "wss" : "ws";
-  const ws = new WebSocket(`${protocol}://${location.host}/ws`);
+  const ws = new WebSocket(`${protocol}://${location.host}${APP_BASE_PATH}/ws`);
   state.socket = ws;
   ws.onmessage = (event) => {
     const payload = JSON.parse(event.data);
@@ -464,7 +469,7 @@ function bindActions() {
 
   $("#logoutBtn").addEventListener("click", async () => {
     await api("/api/logout", { method: "POST", body: "{}" });
-    location.href = "/login";
+    location.href = appPath("/login");
   });
 }
 

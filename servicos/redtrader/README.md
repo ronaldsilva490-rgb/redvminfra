@@ -25,6 +25,12 @@ python -m redtrader.app
 
 Abra `http://localhost:3100` e use a senha definida em `REDTRADER_PASSWORD`.
 
+Na VM pública da RED, o Nginx também pode expor o painel por caminho amigável:
+
+```text
+http://redsystems.ddns.net/trader/
+```
+
 ## Variáveis
 
 Copie `.env.example` para `.env` se quiser customizar. Por padrão:

@@ -51,6 +51,11 @@ def has_session(request: Request) -> bool:
     return hmac.compare_digest(token, session_token())
 
 
+def public_path(request: Request, path: str) -> str:
+    prefix = str(request.headers.get("x-forwarded-prefix") or "").rstrip("/")
+    return f"{prefix}{path}" if prefix else path
+
+
 def websocket_has_session(websocket: WebSocket) -> bool:
     token = websocket.cookies.get("redtrader_session") or ""
     return hmac.compare_digest(token, session_token())
@@ -66,7 +71,7 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
     if path.startswith("/api/"):
         return JSONResponse({"error": "unauthorized"}, status_code=401)
-    return RedirectResponse("/login", status_code=303)
+    return RedirectResponse(public_path(request, "/login"), status_code=303)
 
 
 app.mount("/assets", StaticFiles(directory=PUBLIC_DIR / "assets"), name="assets")
@@ -85,7 +90,7 @@ async def favicon() -> FileResponse:
 @app.get("/login")
 async def login_page(request: Request) -> Response:
     if has_session(request):
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse(public_path(request, "/"), status_code=303)
     return FileResponse(PUBLIC_DIR / "login.html")
 
 
