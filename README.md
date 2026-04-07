@@ -5,7 +5,7 @@
 <h1 align="center">RED Systems Infra Lab</h1>
 
 <p align="center">
-  <strong>Proxy IA, dashboard de VM, WhatsApp AI, trading paper e automacao de deploy em um laboratorio RED.</strong>
+  <strong>Proxy IA, dashboard de VM, WhatsApp AI, trading paper e automação de deploy em um laboratório RED.</strong>
 </p>
 
 <p align="center">
@@ -16,69 +16,69 @@
 </p>
 
 <p align="center">
-  <em>Uma base para replicar a stack RED em qualquer VM: subir, testar, observar, quebrar com elegancia e corrigir rapido.</em>
+  <em>Uma base para replicar a stack RED em qualquer VM: subir, testar, observar, quebrar com elegância e corrigir rápido.</em>
 </p>
 
 ---
 
-## Mapa Do Repositorio
+## Mapa do Repositório
 
 ```text
 servicos/
   proxy/                 Proxy Ollama-compatible com roteamento NVIDIA
   dashboard/             Painel Red VM / Red Systems
-  redia/                 IA de WhatsApp com memoria, midia, TTS e STT
+  redia/                 IA de WhatsApp com memória, mídia, TTS e STT
   redtrader/             Trading paper/demo com dados reais e IA
   deploy-agent/          Webhook/deploy inteligente legado
 
 infraestrutura/
-  systemd/               Units de servicos
+  systemd/               Units de serviços
   nginx/                 Reverse proxy
   docker/                Compose auxiliares
-  scripts/               Espaco para automacao de infra
+  scripts/               Espaço para automação de infra
 
 ferramentas/
   vm/                    Helpers Paramiko/env
   implantacao/           Analisadores e ferramentas de deploy
-  diagnosticos/          Checks reutilizaveis
+  diagnosticos/          Checks reutilizáveis
   avaliacoes/            Benchmarks de modelos
-  nvidia/                Utilitarios NIM/NVCF
+  nvidia/                Utilitários NIM/NVCF
 
 referencias/
-  whatsappold/           Bot antigo para portar logicas uteis
+  whatsappold/           Bot antigo para portar lógicas úteis
 
 documentacao/
-  implantacao-servicos.md Manual de implantacao por servico
+  implantacao-servicos.md Manual de implantação por serviço
   manual-completo.md      Runbook geral da RED Systems
-  arquitetura.md          Visao tecnica
-  preparacao-vm.md        Preparacao de VM
+  arquitetura.md          Visão técnica
+  preparacao-vm.md        Preparação de VM
 
 identidade/
   logo/                  Logo e favicon RED
 
-artefatos/               Ignorado: imagens, audios e catalogos gerados
+artefatos/               Ignorado: imagens, áudios e catálogos gerados
 .privado/                Ignorado: senhas, snapshots e scripts antigos locais
 ```
 
-## Servicos
+## Serviços
 
-| Servico | Caminho | Funcao |
+| Serviço | Caminho | Função |
 |---|---|---|
-| Proxy IA | `servicos/proxy` | Expoe `/api/chat`, `/api/generate`, `/api/tags` e `/api/images/generate`; modelos com `(NVIDIA)` vao para NVIDIA NIM. |
-| Dashboard | `servicos/dashboard` | Painel operacional da VM, com chat do proxy, chaves, logs e teste de geracao de imagens. |
-| REDIA | `servicos/redia` | Runtime WhatsApp AI com memoria local, aprendizado, midia, Edge TTS e fila de imagem. |
-| RED Trader | `servicos/redtrader` | Painel de paper trading 24/7 com dados reais, saldo simulado e comite de IA. |
+| Proxy IA | `servicos/proxy` | Expõe `/api/chat`, `/api/generate`, `/api/tags` e `/api/images/generate`; modelos com `(NVIDIA)` vão para NVIDIA NIM. |
+| Dashboard | `servicos/dashboard` | Painel operacional da VM, com chat do proxy, chaves, logs e teste de geração de imagens. |
+| REDIA | `servicos/redia` | Runtime WhatsApp AI com memória local, aprendizado, mídia, Edge TTS e fila de imagem. |
+| RED Trader | `servicos/redtrader` | Painel de paper trading 24/7 com dados reais, saldo simulado e comitê de IA. |
 | Deploy Agent | `servicos/deploy-agent` | Webhook/deploy inteligente legado para projetos Docker/systemd. |
 
-## Comeco Rapido
+## Começo Rápido
 
 ```powershell
 git clone <repo-url>
-cd redsystems-infra
+cd redvminfra
 Copy-Item .env.example .env.local
 ```
 
-Edite `.env.local` com valores reais. Nunca commite esse arquivo.
+Edite `.env.local` com valores reais. Nunca faça commit desse arquivo.
 
 Para executar comando remoto via Paramiko:
 
@@ -92,12 +92,12 @@ python ferramentas/vm/paramiko_exec.py "systemctl status red-dashboard --no-page
 
 ## Manuais
 
-- [Implantacao de servicos](documentacao/implantacao-servicos.md)
+- [Implantação de serviços](documentacao/implantacao-servicos.md)
 - [Manual completo](documentacao/manual-completo.md)
 - [Arquitetura](documentacao/arquitetura.md)
-- [Preparacao de VM](documentacao/preparacao-vm.md)
+- [Preparação de VM](documentacao/preparacao-vm.md)
 
-## Regras De Seguranca
+## Regras de Segurança
 
 Segredos reais ficam fora do Git:
 
@@ -115,4 +115,4 @@ rg -n "(g[h]p_|n[v]api-|g[s]k_|api_key|password|senha|token|secret)" -S .
 git status --short --ignored
 ```
 
-O arquivo antigo com instrucoes sensiveis foi preservado em `.privado/AGENTS.original.md`. Scripts antigos com credenciais hardcoded foram movidos para `.privado/legacy-vm-scripts/`.
+O arquivo antigo com instruções sensíveis foi preservado em `.privado/AGENTS.original.md`. Scripts antigos com credenciais hardcoded foram movidos para `.privado/legacy-vm-scripts/`.
