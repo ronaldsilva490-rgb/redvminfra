@@ -58,6 +58,9 @@ const PROXY_CHAT_STORAGE_KEY = "redvm.proxyChat.v2";
 const VM_ASSISTANT_STORAGE_KEY = "redvm.vmAssistant.v1";
 const PROJECT_WIZARD_MODE_KEY = "redvm.projects.mode.v1";
 const WHATSAPP_TAB_STORAGE_KEY = "redvm.whatsapp.tab.v1";
+const APP_BASE_PATH = window.location.pathname === "/dashboard" || window.location.pathname.startsWith("/dashboard/")
+    ? "/dashboard"
+    : "";
 
 function qs(selector) {
     return document.querySelector(selector);
@@ -258,8 +261,12 @@ function renderWhatsAppConfigState() {
     });
 }
 
+function appPath(path) {
+    return `${APP_BASE_PATH}${path}`;
+}
+
 async function api(path, options = {}) {
-    const response = await fetch(path, {
+    const response = await fetch(appPath(path), {
         headers: { "Content-Type": "application/json", ...(options.headers || {}) },
         ...options,
     });
@@ -2732,7 +2739,7 @@ function updateSocketStatus(connected) {
 
 function createWsUrl() {
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    return `${protocol}://${window.location.host}/ws`;
+    return `${protocol}://${window.location.host}${APP_BASE_PATH}/ws`;
 }
 
 function connectSocket() {

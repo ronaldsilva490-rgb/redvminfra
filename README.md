@@ -25,6 +25,7 @@
 
 ```text
 servicos/
+  portal/                Página inicial RED com atalhos públicos
   proxy/                 Proxy Ollama-compatible com roteamento NVIDIA
   dashboard/             Painel Red VM / Red Systems
   redia/                 IA de WhatsApp com memória, mídia, TTS e STT
@@ -64,6 +65,7 @@ artefatos/               Ignorado: imagens, áudios e catálogos gerados
 
 | Serviço | Caminho | Função |
 |---|---|---|
+| Portal | `servicos/portal` | Página inicial futurista da RED em `/`, com atalhos para todos os serviços. |
 | Proxy IA | `servicos/proxy` | Expõe `/api/chat`, `/api/generate`, `/api/tags` e `/api/images/generate`; modelos com `(NVIDIA)` vão para NVIDIA NIM. |
 | Dashboard | `servicos/dashboard` | Painel operacional da VM, com chat do proxy, chaves, logs e teste de geração de imagens. |
 | REDIA | `servicos/redia` | Runtime WhatsApp AI com memória local, aprendizado, mídia, Edge TTS e fila de imagem. |

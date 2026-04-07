@@ -4830,6 +4830,11 @@ app.state.whatsapp_log_lines = deque(maxlen=400)
 app.state.loop = None
 
 
+def public_path(request: Request, path: str) -> str:
+    prefix = str(request.headers.get("x-forwarded-prefix") or "").rstrip("/")
+    return f"{prefix}{path}" if prefix else path
+
+
 async def emit_snapshot(include_heavy: bool = False) -> None:
     payload: dict[str, Any] = {
         "system": system_summary(),
@@ -4971,8 +4976,8 @@ async def login(request: Request) -> JSONResponse:
 
 
 @app.post("/logout")
-async def logout() -> RedirectResponse:
-    response = RedirectResponse("/", status_code=303)
+async def logout(request: Request) -> RedirectResponse:
+    response = RedirectResponse(public_path(request, "/"), status_code=303)
     response.delete_cookie(COOKIE_NAME)
     return response
 
