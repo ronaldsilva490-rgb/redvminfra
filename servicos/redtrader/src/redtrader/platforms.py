@@ -204,13 +204,16 @@ class PlatformRegistry:
 
     async def _tastytrade_authorization(self, use_oauth: bool) -> str:
         if use_oauth:
+            token_payload = {
+                "grant_type": "refresh_token",
+                "refresh_token": settings.tastytrade_refresh_token,
+                "client_secret": settings.tastytrade_client_secret,
+            }
+            if settings.tastytrade_client_id:
+                token_payload["client_id"] = settings.tastytrade_client_id
             response = await self.client.post(
                 f"{settings.tastytrade_base_url}/oauth/token",
-                data={
-                    "grant_type": "refresh_token",
-                    "refresh_token": settings.tastytrade_refresh_token,
-                    "client_secret": settings.tastytrade_client_secret,
-                },
+                data=token_payload,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
             response.raise_for_status()

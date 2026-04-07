@@ -196,7 +196,7 @@ function platformConfigHelp(platform) {
       title: "Configurar tastytrade Sandbox",
       description: "Use o OAuth personal grant do sandbox. O core continua em pesquisa e paper; este adapter valida a conexão oficial sem ordem real.",
       env: [
-        "TASTYTRADE_BASE_URL=https://api.cert.tastytrade.com",
+        "TASTYTRADE_BASE_URL=https://api.cert.tastyworks.com",
         "TASTYTRADE_CLIENT_ID=seu_client_id",
         "TASTYTRADE_CLIENT_SECRET=seu_client_secret",
         "TASTYTRADE_REFRESH_TOKEN=seu_refresh_token",
