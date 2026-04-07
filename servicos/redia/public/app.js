@@ -3,6 +3,7 @@ let statusPayload = null;
 let voicesPayload = { voices: [] };
 let activitySource = null;
 let activityRows = [];
+const APP_BASE_PATH = location.pathname === "/redia" || location.pathname.startsWith("/redia/") ? "/redia" : "";
 const uiState = {
   testModel: "",
   benchmarkModels: [],
@@ -13,10 +14,14 @@ const uiState = {
 const qs = (sel) => document.querySelector(sel);
 let adminToken = window.localStorage.getItem("redia_admin_token") || "";
 
+function appPath(path) {
+  return `${APP_BASE_PATH}${path}`;
+}
+
 async function api(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (adminToken) headers.Authorization = `Bearer ${adminToken}`;
-  const response = await fetch(path, {
+  const response = await fetch(appPath(path), {
     headers,
     ...options,
   });
@@ -195,7 +200,7 @@ function connectActivityStream() {
     return;
   }
   if (activitySource) activitySource.close();
-  const url = new URL("/api/events", window.location.origin);
+  const url = new URL(appPath("/api/events"), window.location.origin);
   if (adminToken) url.searchParams.set("token", adminToken);
   if (activityRows.length) url.searchParams.set("since", String(activityRows[activityRows.length - 1].id));
   setActivityStatus("Conectando", "warning");
