@@ -3,6 +3,7 @@ const state = {
   models: [],
   riskProfiles: {},
   selectedSymbol: "BTCUSDT",
+  selectedPlatformConfig: null,
   socket: null,
 };
 
@@ -72,6 +73,7 @@ function renderAll() {
   if (!data) return;
   renderStats(data);
   renderPlatforms(data);
+  renderPlatformConfigHelp(state.selectedPlatformConfig);
   renderTabs(data);
   renderMarketCards(data);
   renderChart(data);
@@ -106,7 +108,7 @@ function renderPlatforms(data) {
             <h3>${escapeHtml(item.label || item.id)}</h3>
             <small class="muted">${escapeHtml(item.kind || "-")} · ${escapeHtml(item.mode || "-")}</small>
           </div>
-          <span class="pill ${platformPillClass(item)}">${escapeHtml(platformStatusLabel(item.status))}</span>
+          ${platformStatusAction(item)}
         </header>
         <p>${escapeHtml(item.message || item.docs_note || "")}</p>
         <div class="platform-meta">
@@ -118,6 +120,16 @@ function renderPlatforms(data) {
       </article>
     `).join("")
     : `<p class="muted">Sincronizando conexões das plataformas...</p>`;
+}
+
+function platformStatusAction(item) {
+  const status = platformStatusLabel(item.status);
+  const className = platformPillClass(item);
+  if (["needs_config", "configured", "disabled", "error"].includes(item.status)) {
+    const label = item.status === "disabled" ? "detalhes" : status;
+    return `<button type="button" class="platform-action ${className}" data-platform-config="${escapeAttr(item.id)}">${escapeHtml(label)}</button>`;
+  }
+  return `<span class="pill ${className}">${escapeHtml(status)}</span>`;
 }
 
 function platformStatusLabel(status) {
@@ -135,6 +147,98 @@ function platformPillClass(item) {
   if (item.status === "needs_config" || item.status === "error") return "red";
   if (item.status === "configured") return "yellow";
   return "";
+}
+
+function renderPlatformConfigHelp(platformId) {
+  const panel = $("#platformConfigHelp");
+  if (!panel) return;
+  if (!platformId) {
+    panel.classList.add("hidden");
+    panel.innerHTML = "";
+    return;
+  }
+
+  const platform = (state.status?.platforms || []).find((item) => item.id === platformId);
+  if (!platform) {
+    state.selectedPlatformConfig = null;
+    panel.classList.add("hidden");
+    panel.innerHTML = "";
+    return;
+  }
+
+  const help = platformConfigHelp(platform);
+  panel.innerHTML = `
+    <header>
+      <div>
+        <p class="eyebrow">Configuração</p>
+        <h3>${escapeHtml(help.title)}</h3>
+      </div>
+      <button type="button" class="secondary compact" data-platform-config-close>Fechar</button>
+    </header>
+    <p>${escapeHtml(help.description)}</p>
+    <pre>${escapeHtml(help.env)}</pre>
+    <div class="platform-config-steps">
+      ${help.steps.map((step) => `<span>${escapeHtml(step)}</span>`).join("")}
+    </div>
+  `;
+  panel.classList.remove("hidden");
+}
+
+function platformConfigHelp(platform) {
+  const commonSteps = [
+    "1. Edite /etc/redtrader.env na VM do RED Trader.",
+    "2. Preencha as variáveis sem aspas e sem espaços extras.",
+    "3. Rode systemctl restart redtrader.",
+    "4. Volte aqui e clique em Atualizar conexões.",
+  ];
+  const helpers = {
+    tastytrade_sandbox: {
+      title: "Configurar tastytrade Sandbox",
+      description: "Use credenciais de sandbox/certificação. O core continua em pesquisa e paper; este adapter serve para validar conexão oficial sem ordem real.",
+      env: [
+        "TASTYTRADE_BASE_URL=https://api.cert.tastytrade.com",
+        "TASTYTRADE_USERNAME=seu_usuario_sandbox",
+        "TASTYTRADE_PASSWORD=sua_senha_sandbox",
+      ].join("\n"),
+      steps: commonSteps,
+    },
+    webull_paper: {
+      title: "Configurar Webull Paper",
+      description: "Use as credenciais da aplicação OpenAPI/Paper. Sem app key e secret, o painel mantém a plataforma como pendente.",
+      env: [
+        "WEBULL_BASE_URL=https://openapi.webull.com",
+        "WEBULL_APP_KEY=sua_app_key",
+        "WEBULL_APP_SECRET=seu_app_secret",
+      ].join("\n"),
+      steps: commonSteps,
+    },
+    iqoption_experimental: {
+      title: "Configurar IQ Option Experimental",
+      description: "Adapter isolado e desligado por padrão. Use apenas em demo/experimental, porque não é parte confiável do core acadêmico.",
+      env: [
+        "IQOPTION_ENABLED=true",
+        "IQOPTION_USERNAME=seu_usuario_demo",
+        "IQOPTION_PASSWORD=sua_senha_demo",
+      ].join("\n"),
+      steps: commonSteps,
+    },
+    binance_spot: {
+      title: "Binance Spot",
+      description: "Market data público já funciona sem credenciais. No MVP, a execução fica no paper ledger interno do RED Trader.",
+      env: "BINANCE_BASE_URL=https://api.binance.com",
+      steps: [
+        "Nenhuma credencial é necessária para market data público.",
+        "Se cair, clique em Atualizar conexões e confira os logs do redtrader.service.",
+      ],
+    },
+  };
+
+  return helpers[platform.id] || {
+    title: platform.label || platform.id,
+    description: platform.message || "Sem instruções específicas para este adapter.",
+    env: "# Nenhuma variável documentada para este adapter.",
+    steps: commonSteps,
+  };
 }
 
 function renderTabs(data) {
@@ -463,6 +567,21 @@ function connectSocket() {
 }
 
 function bindActions() {
+  document.addEventListener("click", (event) => {
+    const configButton = event.target.closest("[data-platform-config]");
+    if (configButton) {
+      state.selectedPlatformConfig = configButton.dataset.platformConfig;
+      renderPlatformConfigHelp(state.selectedPlatformConfig);
+      $("#platformConfigHelp")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      return;
+    }
+
+    if (event.target.closest("[data-platform-config-close]")) {
+      state.selectedPlatformConfig = null;
+      renderPlatformConfigHelp(null);
+    }
+  });
+
   $("#riskProfileSelect").addEventListener("change", (event) => {
     applyRiskProfilePreset(event.target.value);
   });
@@ -508,6 +627,7 @@ function bindActions() {
       const payload = await api("/api/platforms/refresh", { method: "POST", body: "{}" });
       if (state.status) state.status.platforms = payload.platforms || [];
       renderPlatforms(state.status || {});
+      renderPlatformConfigHelp(state.selectedPlatformConfig);
       renderStats(state.status || {});
       toast("Conexões de plataformas atualizadas");
     } catch (err) {
