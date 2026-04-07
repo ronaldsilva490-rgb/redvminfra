@@ -1,6 +1,7 @@
 const state = {
   status: null,
   models: [],
+  riskProfiles: {},
   selectedSymbol: "BTCUSDT",
   socket: null,
 };
@@ -47,6 +48,7 @@ async function refresh() {
   if (!payload) return;
   state.status = payload;
   if (!state.models.length && payload.models) state.models = payload.models;
+  if (payload.risk_profiles) state.riskProfiles = payload.risk_profiles;
   renderAll();
 }
 
@@ -259,23 +261,80 @@ let configRendered = false;
 function renderConfig(config) {
   if (!config || configRendered) return;
   const form = $("#configForm");
+  renderRiskProfileSelect(config);
   form.auto_enabled.value = String(Boolean(config.auto_enabled));
   for (const name of [
     "initial_balance_brl",
     "position_pct",
     "cooldown_minutes",
     "max_trades_per_day",
+    "max_open_positions",
     "daily_stop_loss_pct",
     "daily_target_pct",
     "min_technical_score",
     "min_ai_confidence",
+    "min_risk_reward",
+    "max_hold_minutes",
   ]) {
     form.elements[name].value = config[name] ?? "";
   }
+  renderRiskProfileInfo(config.risk_profile || "balanced");
   form.symbols.value = (config.symbols || []).join(",");
   form.tradable_symbols.value = (config.tradable_symbols || []).join(",");
   renderModelSelects(config);
   configRendered = true;
+}
+
+function renderRiskProfileSelect(config) {
+  const form = $("#configForm");
+  const select = form.risk_profile;
+  const profiles = state.riskProfiles || {};
+  const entries = Object.entries(profiles);
+  const current = config.risk_profile || "balanced";
+  if (entries.length) {
+    select.innerHTML = entries
+      .map(([key, profile]) => `<option value="${escapeAttr(key)}">${escapeHtml(profile.label || key)}</option>`)
+      .join("");
+  } else {
+    select.innerHTML = `
+      <option value="conservative">Conservador</option>
+      <option value="balanced">Balanceado</option>
+      <option value="aggressive">Agressivo</option>
+      <option value="full_aggressive">Full agressivo</option>
+    `;
+  }
+  select.value = [...select.options].some((option) => option.value === current) ? current : "balanced";
+}
+
+function renderRiskProfileInfo(profileKey) {
+  const profile = state.riskProfiles?.[profileKey];
+  const info = $("#riskProfileInfo");
+  if (!profile) {
+    info.innerHTML = `<strong>Perfil de risco</strong><small>Escolha um preset para recalibrar o paper trading.</small>`;
+    return;
+  }
+  const settings = profile.settings || {};
+  info.innerHTML = `
+    <strong>${escapeHtml(profile.label || profileKey)}</strong>
+    <span>${escapeHtml(profile.description || "")}</span>
+    <small>
+      posição ${settings.position_pct ?? "-"}% · cooldown ${settings.cooldown_minutes ?? "-"}min ·
+      score ${settings.min_technical_score ?? "-"} · confiança ${settings.min_ai_confidence ?? "-"} ·
+      RR ${settings.min_risk_reward ?? "-"}
+    </small>
+  `;
+}
+
+function applyRiskProfilePreset(profileKey) {
+  const profile = state.riskProfiles?.[profileKey];
+  renderRiskProfileInfo(profileKey);
+  if (!profile?.settings) return;
+  const form = $("#configForm");
+  for (const [name, value] of Object.entries(profile.settings)) {
+    if (form.elements[name]) form.elements[name].value = value;
+  }
+  $("#saveState").textContent = "perfil aplicado";
+  toast(`Perfil ${profile.label || profileKey} aplicado. Salve para ativar.`);
 }
 
 function renderModelSelects(config) {
@@ -291,14 +350,18 @@ function collectConfig() {
   const form = $("#configForm");
   return {
     auto_enabled: form.auto_enabled.value === "true",
+    risk_profile: form.risk_profile.value,
     initial_balance_brl: Number(form.initial_balance_brl.value),
     position_pct: Number(form.position_pct.value),
     cooldown_minutes: Number(form.cooldown_minutes.value),
     max_trades_per_day: Number(form.max_trades_per_day.value),
+    max_open_positions: Number(form.max_open_positions.value),
     daily_stop_loss_pct: Number(form.daily_stop_loss_pct.value),
     daily_target_pct: Number(form.daily_target_pct.value),
     min_technical_score: Number(form.min_technical_score.value),
     min_ai_confidence: Number(form.min_ai_confidence.value),
+    min_risk_reward: Number(form.min_risk_reward.value),
+    max_hold_minutes: Number(form.max_hold_minutes.value),
     symbols: splitSymbols(form.symbols.value),
     tradable_symbols: splitSymbols(form.tradable_symbols.value),
     models: {
@@ -335,6 +398,7 @@ function connectSocket() {
     if (payload.type === "status") {
       state.status = payload.data;
       if (payload.data.models) state.models = payload.data.models;
+      if (payload.data.risk_profiles) state.riskProfiles = payload.data.risk_profiles;
       renderAll();
     } else if (payload.type === "event") {
       if (!state.status) return;
@@ -349,6 +413,10 @@ function connectSocket() {
 }
 
 function bindActions() {
+  $("#riskProfileSelect").addEventListener("change", (event) => {
+    applyRiskProfilePreset(event.target.value);
+  });
+
   $("#configForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     $("#saveState").textContent = "salvando";

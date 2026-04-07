@@ -8,6 +8,8 @@ from .market import BinanceMarketClient
 from .news import NewsClient
 from .strategy import (
     DEFAULT_CONFIG,
+    RISK_PROFILES,
+    available_risk_profiles,
     build_candidates,
     build_critic_prompt,
     build_decision_prompt,
@@ -42,6 +44,8 @@ class TraderRuntime:
 
     def update_config(self, patch: dict[str, Any]) -> dict[str, Any]:
         merged = deep_merge(self.config(), patch)
+        if merged.get("risk_profile") not in RISK_PROFILES:
+            merged["risk_profile"] = DEFAULT_CONFIG["risk_profile"]
         merged["symbols"] = [str(item).upper() for item in merged.get("symbols", []) if str(item).strip()]
         merged["tradable_symbols"] = [str(item).upper() for item in merged.get("tradable_symbols", []) if str(item).strip()]
         self.db.set_kv("config", merged)
@@ -234,7 +238,7 @@ class TraderRuntime:
                 "fast": fast,
                 "confidence": confidence,
             }
-        critic_system, critic_prompt = build_critic_prompt(candidate, response, self.latest_news)
+        critic_system, critic_prompt = build_critic_prompt(candidate, response, self.latest_news, config)
         critic = await self.safe_ai_call("critic", critic_model, candidate["symbol"], critic_system, critic_prompt, timeout=70)
         critic_response = critic.get("response") or {}
         if critic.get("ok") and (critic_response.get("veto") is True or critic_response.get("risk_level") == "red"):
@@ -328,6 +332,7 @@ class TraderRuntime:
         return {
             "running": self.running,
             "config": self.config(),
+            "risk_profiles": available_risk_profiles(),
             "wallet": self.wallet_summary(),
             "models": self.models,
             "news": self.latest_news,

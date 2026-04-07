@@ -1,14 +1,15 @@
 # RED Trader Painel
 
-Painel 24/7 de paper trading com dados reais de mercado, saldo demo local e comite de IA via proxy RED Systems.
+Painel 24/7 de paper trading com dados reais de mercado, saldo demo local e comitê de IA via proxy RED Systems.
 
-O MVP comeca em modo simulado:
+O MVP começa em modo simulado:
 
 - Dados reais da Binance Spot.
 - Saldo paper local em SQLite.
 - Sem chaves de corretora e sem ordens reais.
-- IA so e chamada quando o motor tecnico encontra candidato.
+- IA só é chamada quando o motor técnico encontra candidato.
 - Dashboard protegido por senha.
+- Perfis de risco ajustáveis: conservador, balanceado, agressivo e full agressivo.
 
 ## Rodar local
 
@@ -24,9 +25,9 @@ python -m redtrader.app
 
 Abra `http://localhost:3100` e use a senha definida em `REDTRADER_PASSWORD`.
 
-## Variaveis
+## Variáveis
 
-Copie `.env.example` para `.env` se quiser customizar. Por padrao:
+Copie `.env.example` para `.env` se quiser customizar. Por padrão:
 
 - Porta: `3100`
 - Senha: `change-me` apenas para desenvolvimento local
@@ -39,12 +40,19 @@ Copie `.env.example` para `.env` se quiser customizar. Por padrao:
 market data -> strategy gates -> fast filter -> final decision -> critic veto -> paper trade
 ```
 
-Regras iniciais:
+Perfis de risco:
+
+- `Conservador`: menos entradas, posição menor, score/confiança mais altos.
+- `Balanceado`: padrão inicial do MVP.
+- `Agressivo`: mais oportunidades em paper, com limites maiores.
+- `Full agressivo`: experimental, aceita setups mais arriscados, mas ainda sem alavancagem e sem ordem real.
+
+Regras iniciais do modo balanceado:
 
 - Spot only, sem alavancagem.
-- Pares tradaveis: `BTCUSDT`, `ETHUSDT`.
-- `SOLUSDT` fica em observacao.
-- Cooldown padrao: 30 minutos.
-- Maximo: 3 trades por dia.
-- Stop diario: -5%.
-- Meta diaria: +3%.
+- Pares tradáveis: `BTCUSDT`, `ETHUSDT`.
+- `SOLUSDT` fica em observação.
+- Cooldown padrão: 30 minutos.
+- Máximo: 3 trades por dia.
+- Stop diário: -5%.
+- Meta diária: +3%.

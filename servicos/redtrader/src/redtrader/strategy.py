@@ -4,6 +4,7 @@ from typing import Any
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "auto_enabled": True,
+    "risk_profile": "balanced",
     "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
     "tradable_symbols": ["BTCUSDT", "ETHUSDT"],
     "market_poll_seconds": 20,
@@ -27,6 +28,122 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "report": "qwen3-coder-next",
     },
 }
+
+
+RISK_PROFILES: dict[str, dict[str, Any]] = {
+    "conservative": {
+        "label": "Conservador",
+        "description": "Menos entradas, mais filtros, foco em preservar o saldo paper.",
+        "prompt": (
+            "Seja seletivo. Prefira WAIT quando houver ambiguidade, noticia de risco, "
+            "RSI esticado ou confirmacao tecnica incompleta."
+        ),
+        "critic_prompt": "Vete entradas com qualquer fragilidade relevante.",
+        "settings": {
+            "position_pct": 10.0,
+            "cooldown_minutes": 45,
+            "max_trades_per_day": 3,
+            "max_open_positions": 1,
+            "daily_stop_loss_pct": 3.0,
+            "daily_target_pct": 2.0,
+            "min_technical_score": 82,
+            "min_ai_confidence": 82,
+            "min_risk_reward": 1.6,
+            "max_hold_minutes": 45,
+        },
+    },
+    "balanced": {
+        "label": "Balanceado",
+        "description": "Configuração padrão: seletiva, mas sem travar demais o paper trading.",
+        "prompt": (
+            "Aprove apenas setups com boa combinacao de tendencia, momentum, liquidez, "
+            "volatilidade controlada e risco/retorno aceitavel."
+        ),
+        "critic_prompt": "Vete se o risco principal estiver subestimado.",
+        "settings": {
+            "position_pct": 20.0,
+            "cooldown_minutes": 30,
+            "max_trades_per_day": 3,
+            "max_open_positions": 1,
+            "daily_stop_loss_pct": 5.0,
+            "daily_target_pct": 3.0,
+            "min_technical_score": 75,
+            "min_ai_confidence": 72,
+            "min_risk_reward": 1.3,
+            "max_hold_minutes": 60,
+        },
+    },
+    "aggressive": {
+        "label": "Agressivo",
+        "description": "Mais oportunidades e mais risco no paper, sem alavancagem e com auditoria.",
+        "prompt": (
+            "Pode aceitar setups de maior variancia se houver momentum, liquidez e plano de saida. "
+            "Nao invente dados; responda WAIT se o sinal for fraco."
+        ),
+        "critic_prompt": "Vete risco estrutural, noticia vermelha, liquidez ruim ou RR incoerente; aceite variancia esperada.",
+        "settings": {
+            "position_pct": 30.0,
+            "cooldown_minutes": 15,
+            "max_trades_per_day": 6,
+            "max_open_positions": 2,
+            "daily_stop_loss_pct": 8.0,
+            "daily_target_pct": 5.0,
+            "min_technical_score": 68,
+            "min_ai_confidence": 64,
+            "min_risk_reward": 1.15,
+            "max_hold_minutes": 45,
+        },
+    },
+    "full_aggressive": {
+        "label": "Full agressivo",
+        "description": "Experimental: busca mais entradas no paper e aceita setups mais arriscados.",
+        "prompt": (
+            "Perfil experimental. Procure oportunidades de curtissimo prazo com mais apetite a risco, "
+            "mas nunca aprove se os dados estiverem incoerentes, se houver noticia vermelha ou se a saida "
+            "nao estiver clara."
+        ),
+        "critic_prompt": (
+            "Vete apenas riscos graves: noticia vermelha, baixa liquidez, spread alto, dados incoerentes, "
+            "ausencia de stop ou risco/retorno absurdo."
+        ),
+        "settings": {
+            "position_pct": 40.0,
+            "cooldown_minutes": 5,
+            "max_trades_per_day": 12,
+            "max_open_positions": 3,
+            "daily_stop_loss_pct": 12.0,
+            "daily_target_pct": 8.0,
+            "min_technical_score": 55,
+            "min_ai_confidence": 55,
+            "min_risk_reward": 1.0,
+            "max_hold_minutes": 30,
+        },
+    },
+}
+
+
+def available_risk_profiles() -> dict[str, dict[str, Any]]:
+    return {
+        key: {
+            "label": value["label"],
+            "description": value["description"],
+            "settings": value["settings"],
+        }
+        for key, value in RISK_PROFILES.items()
+    }
+
+
+def risk_profile_context(config: dict[str, Any]) -> dict[str, Any]:
+    key = str(config.get("risk_profile") or "balanced")
+    profile = RISK_PROFILES.get(key) or RISK_PROFILES["balanced"]
+    return {
+        "key": key if key in RISK_PROFILES else "balanced",
+        "label": profile["label"],
+        "description": profile["description"],
+        "prompt": profile["prompt"],
+        "critic_prompt": profile["critic_prompt"],
+        "settings": profile["settings"],
+    }
 
 
 def deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
@@ -164,12 +281,20 @@ def score_snapshot(snapshot: dict[str, Any], config: dict[str, Any], news_risk: 
 
 
 def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None, config: dict[str, Any]) -> tuple[str, str]:
+    profile = risk_profile_context(config)
     system = (
         "Voce e um comite de risco para paper trading cripto spot, sem alavancagem. "
-        "Seu trabalho e proteger capital pequeno. Responda SOMENTE JSON valido, sem markdown."
+        f"Perfil operacional paper: {profile['label']}. {profile['prompt']} "
+        "Seu trabalho e decidir com base nos dados, sem prometer lucro e sem inventar informacao. "
+        "Responda SOMENTE JSON valido, sem markdown."
     )
     payload = {
         "mode": "paper_trading_only",
+        "risk_profile": {
+            "key": profile["key"],
+            "label": profile["label"],
+            "description": profile["description"],
+        },
         "balance_brl": config.get("initial_balance_brl", 50),
         "constraints": {
             "min_confidence": config.get("min_ai_confidence"),
@@ -183,9 +308,9 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
         "news": news or {},
     }
     user = (
-        "Analise o candidato abaixo. So aprove ENTER_LONG se TODOS os gates importantes passarem, "
-        "a noticia nao bloquear, o risco/retorno for aceitavel e a chance justificar exposicao com saldo pequeno. "
-        "Se estiver ambiguo, responda WAIT.\n\n"
+        "Analise o candidato abaixo respeitando o perfil operacional informado. "
+        "Mesmo no perfil agressivo, nunca aprove entrada sem stop, sem plano de saida, com noticia vermelha "
+        "ou com dados contraditorios. Se estiver ambiguo demais, responda WAIT.\n\n"
         "Retorne JSON exatamente neste formato:\n"
         "{"
         '"decision":"WAIT|AVOID|ENTER_LONG",'
@@ -206,12 +331,28 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
     return system, user
 
 
-def build_critic_prompt(candidate: dict[str, Any], decision: dict[str, Any], news: dict[str, Any] | None) -> tuple[str, str]:
+def build_critic_prompt(
+    candidate: dict[str, Any],
+    decision: dict[str, Any],
+    news: dict[str, Any] | None,
+    config: dict[str, Any],
+) -> tuple[str, str]:
+    profile = risk_profile_context(config)
     system = (
         "Voce e o critico de risco. Tente vetar entradas ruins em paper trading cripto spot. "
+        f"Perfil operacional paper: {profile['label']}. {profile['critic_prompt']} "
         "Responda SOMENTE JSON valido."
     )
-    payload = {"candidate": candidate, "decision": decision, "news": news or {}}
+    payload = {
+        "risk_profile": {
+            "key": profile["key"],
+            "label": profile["label"],
+            "description": profile["description"],
+        },
+        "candidate": candidate,
+        "decision": decision,
+        "news": news or {},
+    }
     user = (
         "Procure falhas, armadilhas, RSI esticado, volatilidade ruim, liquidez fraca, noticia de risco e RR falso. "
         "Se houver risco relevante, vete. Retorne JSON exatamente assim: "

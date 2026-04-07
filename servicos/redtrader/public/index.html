@@ -148,6 +148,11 @@
                 <option value="false">Desligado</option>
               </select>
             </label>
+            <label class="wide">
+              Perfil de risco
+              <select name="risk_profile" id="riskProfileSelect"></select>
+            </label>
+            <div id="riskProfileInfo" class="profile-card wide"></div>
             <label>
               Saldo inicial BRL
               <input name="initial_balance_brl" type="number" min="1" step="1" />
@@ -165,6 +170,10 @@
               <input name="max_trades_per_day" type="number" min="1" step="1" />
             </label>
             <label>
+              Máx. posições abertas
+              <input name="max_open_positions" type="number" min="1" step="1" />
+            </label>
+            <label>
               Stop diário %
               <input name="daily_stop_loss_pct" type="number" min="0.5" step="0.5" />
             </label>
@@ -179,6 +188,14 @@
             <label>
               Confiança IA mínima
               <input name="min_ai_confidence" type="number" min="0" max="100" step="1" />
+            </label>
+            <label>
+              Risco/retorno mínimo
+              <input name="min_risk_reward" type="number" min="0.5" max="5" step="0.05" />
+            </label>
+            <label>
+              Tempo máx. em trade min
+              <input name="max_hold_minutes" type="number" min="1" step="1" />
             </label>
             <label>
               Pares observados
