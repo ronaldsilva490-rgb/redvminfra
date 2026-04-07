@@ -278,62 +278,40 @@ class PlatformRegistry:
             return row
 
     def _iqoption_probe(self) -> dict[str, Any]:
-        from iqoptionapi.api import IQOptionAPI
+        from iqoptionapi.stable_api import IQ_Option
 
-        api = IQOptionAPI(settings.iqoption_host, settings.iqoption_username, settings.iqoption_password)
-        api.session.trust_env = False
-        login_response = api.login(settings.iqoption_username, settings.iqoption_password)
-        login_response.raise_for_status()
-        ssid = login_response.cookies.get("ssid")
-        if not ssid:
-            raise ValueError("missing_ssid")
+        api = IQ_Option(settings.iqoption_username, settings.iqoption_password, active_account_type="PRACTICE")
+        ok, reason = api.connect()
+        if not ok:
+            reason_text = str(reason or "connect_failed")
+            if "2FA" in reason_text.upper():
+                raise RuntimeError("2fa_required")
+            raise RuntimeError(reason_text[:160])
 
-        api.set_session_cookies()
-        profile_response = api.getprofile()
-        profile_response.raise_for_status()
-        profile = profile_response.json()
-        balances = self._iqoption_balances(profile)
-        practice = self._iqoption_practice_balance(balances)
-        selected_balance_id = practice.get("id") if practice else None
-        practice_selected = False
-        if selected_balance_id and settings.iqoption_force_practice:
-            try:
-                api.changebalance(selected_balance_id)
-                practice_selected = True
-            except Exception:
-                practice_selected = False
-
+        if settings.iqoption_force_practice:
+            api.change_balance("PRACTICE")
+        balances_raw = api.get_balances()
+        balances = balances_raw.get("msg") if isinstance(balances_raw, dict) else []
+        if not isinstance(balances, list):
+            balances = []
+        selected_balance_id = api.get_balance_id()
+        balance_mode = api.get_balance_mode()
+        if balance_mode != "PRACTICE":
+            raise RuntimeError(f"practice_not_selected:{balance_mode}")
+        balance_amount = api.get_balance()
+        try:
+            api.api.close()
+        except Exception:
+            pass
         return {
             "auth_mode": "unofficial_password_session",
             "paper_only": True,
             "demo_mode": True,
             "balances_count": len(balances),
             "practice_balance_id": selected_balance_id,
-            "practice_selected": practice_selected,
+            "practice_selected": balance_mode == "PRACTICE",
+            "practice_balance": balance_amount,
         }
-
-    @staticmethod
-    def _iqoption_balances(profile: dict[str, Any]) -> list[dict[str, Any]]:
-        candidates: list[Any] = []
-        if isinstance(profile, dict):
-            candidates.extend([
-                profile.get("balances"),
-                (profile.get("result") or {}).get("balances") if isinstance(profile.get("result"), dict) else None,
-                (profile.get("data") or {}).get("balances") if isinstance(profile.get("data"), dict) else None,
-            ])
-        for candidate in candidates:
-            if isinstance(candidate, list):
-                return [item for item in candidate if isinstance(item, dict)]
-        return []
-
-    @staticmethod
-    def _iqoption_practice_balance(balances: list[dict[str, Any]]) -> dict[str, Any] | None:
-        for balance in balances:
-            raw = " ".join(str(value).lower() for value in balance.values())
-            balance_type = str(balance.get("type") or balance.get("balance_type") or "").lower()
-            if balance_type in {"practice", "demo", "4"} or "practice" in raw or "demo" in raw:
-                return balance
-        return balances[0] if balances else None
 
     def _credential_status(
         self,
