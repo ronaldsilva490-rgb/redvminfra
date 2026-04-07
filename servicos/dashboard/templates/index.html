@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ app_title }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+    <link rel="icon" href="/static/favicon.ico" sizes="any">
+    <link rel="shortcut icon" href="/static/favicon.ico">
+    <link rel="stylesheet" href="/static/styles.css?v=20260407-images2">
+</head>
+<body>
+    <script>
+        window.REDVM_AUTHENTICATED = {{ "true" if authenticated else "false" }};
+    </script>
+
+    {% if not authenticated %}
+    <main class="login-shell">
+        <section class="login-panel">
+            <img class="login-logo" src="/static/logo.png" alt="Logo RED">
+            <div class="eyebrow">PAINEL RED VM</div>
+            <h1>Controle total da VM</h1>
+            <p class="login-copy">Painel em tempo real com terminal, logs, serviços, Docker, proxy Ollama, firewall, processos e arquivos.</p>
+            <form id="loginForm" class="login-form">
+                <label for="password">Senha do dashboard</label>
+                <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Digite a senha" />
+                <button type="submit">Entrar</button>
+            </form>
+            <div id="loginError" class="login-error"></div>
+        </section>
+    </main>
+    {% else %}
+    <div class="shell">
+        <aside class="sidebar">
+            <div class="brand">
+                <img class="brand-logo" src="/static/logo.png" alt="Logo RED">
+                <div>
+                    <div class="eyebrow">CENTRAL DE COMANDO</div>
+                    <strong>{{ app_title }}</strong>
+                </div>
+            </div>
+
+            <nav class="nav">
+                <button class="nav-item active" data-view="overview"><i data-lucide="layout-dashboard"></i><span>Visão geral</span></button>
+                <button class="nav-item" data-view="services"><i data-lucide="server-cog"></i><span>Serviços</span></button>
+                <button class="nav-item" data-view="docker"><i data-lucide="container"></i><span>Docker</span></button>
+                <button class="nav-item" data-view="proxy"><i data-lucide="bot"></i><span>Proxy IA</span></button>
+                <button class="nav-item" data-view="whatsapp"><i data-lucide="message-circle-more"></i><span>WhatsApp</span></button>
+                <button class="nav-item" data-view="projects"><i data-lucide="folders"></i><span>Projetos</span></button>
+                <button class="nav-item" data-view="logs"><i data-lucide="scroll-text"></i><span>Logs</span></button>
+                <button class="nav-item" data-view="terminal"><i data-lucide="terminal-square"></i><span>Terminal</span></button>
+                <button class="nav-item" data-view="files"><i data-lucide="folder-tree"></i><span>Arquivos</span></button>
+                <button class="nav-item" data-view="firewall"><i data-lucide="shield"></i><span>Firewall</span></button>
+                <button class="nav-item" data-view="processes"><i data-lucide="activity"></i><span>Processos</span></button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="status-pill" id="socketStatus">
+                    <span class="status-dot"></span>
+                    <span>Conectando</span>
+                </div>
+                <form action="/logout" method="post">
+                    <button class="ghost-button" type="submit">Sair</button>
+                </form>
+            </div>
+        </aside>
+
+        <main class="main">
+            <header class="topbar">
+                <div>
+                    <div class="eyebrow">CONTROLE AO VIVO</div>
+                    <h1 id="pageTitle">Visão geral</h1>
+                </div>
+                <div class="topbar-actions">
+                    <div class="clock" id="clockDisplay">--:--:--</div>
+                    <button class="ghost-button" id="refreshButton" type="button">Atualizar painel</button>
+                </div>
+            </header>
+
+            <section class="view active" id="view-overview">
+                <div class="hero-grid">
+                    <article class="metric-card">
+                        <div class="metric-label">CPU</div>
+                        <div class="metric-value" id="metricCpu">0%</div>
+                        <div class="meter"><span id="barCpu"></span></div>
+                        <div class="metric-meta" id="metaCpu">0 cores</div>
+                    </article>
+                    <article class="metric-card">
+                        <div class="metric-label">Memória</div>
+                        <div class="metric-value" id="metricMemory">0%</div>
+                        <div class="meter"><span id="barMemory"></span></div>
+                        <div class="metric-meta" id="metaMemory">0 livres</div>
+                    </article>
+                    <article class="metric-card">
+                        <div class="metric-label">Disco</div>
+                        <div class="metric-value" id="metricDisk">0%</div>
+                        <div class="meter"><span id="barDisk"></span></div>
+                        <div class="metric-meta" id="metaDisk">0 livres</div>
+                    </article>
+                    <article class="metric-card">
+                        <div class="metric-label">Rede</div>
+                        <div class="metric-value" id="metricNetwork">0 B</div>
+                        <div class="metric-meta" id="metaNetwork">envio 0 B / recebimento 0 B</div>
+                    </article>
+                </div>
+
+                <div class="panel-grid panel-grid-two">
+                    <section class="panel">
+                        <div class="panel-head">
+                            <h2>Sistema</h2>
+                        </div>
+                        <div class="kv-grid" id="systemSummary"></div>
+                    </section>
+
+                    <section class="panel">
+                        <div class="panel-head">
+                            <h2>Atalhos</h2>
+                        </div>
+                        <div class="quick-actions">
+                            <button class="action-tile" data-service-shortcut="nginx">Nginx</button>
+                            <button class="action-tile" data-service-shortcut="docker">Docker</button>
+                            <button class="action-tile" data-service-shortcut="red-ollama-proxy">Proxy IA</button>
+                            <button class="action-tile" data-terminal-command="docker ps -a\n">docker ps -a</button>
+                            <button class="action-tile" data-terminal-command="systemctl --failed\n">systemctl --failed</button>
+                            <button class="action-tile" data-terminal-command="journalctl -xe --no-pager | tail -50\n">logs recentes</button>
+                            <button class="action-tile" data-file-shortcut="/etc/nginx/sites-available/default">nginx default</button>
+                            <button class="action-tile" data-view-shortcut="proxy">abrir proxy IA</button>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="panel-grid panel-grid-two">
+                    <section class="panel">
+                        <div class="panel-head">
+                            <h2>Serviços principais</h2>
+                        </div>
+                        <div class="compact-list" id="servicesPreview"></div>
+                    </section>
+
+                    <section class="panel">
+                        <div class="panel-head">
+                            <h2>Docker</h2>
+                        </div>
+                        <div class="compact-list" id="dockerPreview"></div>
+                    </section>
+                </div>
+
+                <section class="panel overview-assistant-panel">
+                    <div class="panel-head">
+                        <div>
+                            <h2>Assistente da VM</h2>
+                            <div class="panel-subtitle">Copiloto operacional com contexto ao vivo da VM, serviços, Docker, firewall e proxy IA.</div>
+                        </div>
+                        <div class="inline-actions">
+                            <select id="overviewAssistantModelSelect" class="search overview-assistant-model">
+                                <option value="">Carregando modelos...</option>
+                            </select>
+                            <button class="ghost-button" id="overviewAssistantClearButton" type="button">Nova análise</button>
+                            <button class="ghost-button" id="overviewAssistantStopButton" type="button">Parar</button>
+                        </div>
+                    </div>
+                    <div class="overview-assistant-prompts">
+                        <button class="action-tile compact" data-overview-ai-prompt="Analise a saúde atual da VM e destaque o que merece atenção primeiro.">saúde atual</button>
+                        <button class="action-tile compact" data-overview-ai-prompt="Quais riscos operacionais ou de segurança você vê agora nesta VM?">riscos e segurança</button>
+                        <button class="action-tile compact" data-overview-ai-prompt="Se você fosse organizar esta VM agora, qual seria seu plano de ação em ordem?">plano de ação</button>
+                        <button class="action-tile compact" data-overview-ai-prompt="Me explique o estado atual do proxy IA e o que eu deveria observar nele.">analisar proxy IA</button>
+                    </div>
+                    <div class="chat-shell overview-assistant-shell" id="overviewAssistantMessages"></div>
+                    <div class="chat-composer">
+                        <div class="chat-toolbar">
+                            <div class="chat-hint" id="overviewAssistantHint">Use linguagem natural. O assistente recebe o estado atual da VM antes de responder.</div>
+                            <div class="chat-status-pill" id="overviewAssistantStatus">Pronto</div>
+                        </div>
+                        <textarea id="overviewAssistantInput" class="file-editor chat-input" spellcheck="true" placeholder="Ex.: o que na VM merece atenção agora?"></textarea>
+                        <div class="chat-actions">
+                            <div class="chat-hint">Peça diagnósticos, comparações, planos, comandos e orientação operacional.</div>
+                            <button class="primary-button" id="overviewAssistantSendButton" type="button">Perguntar</button>
+                        </div>
+                    </div>
+                </section>
+            </section>
+
+            <section class="view" id="view-services">
+                <section class="panel">
+                    <div class="panel-head">
+                        <h2>Serviços do systemd</h2>
+                        <input id="serviceSearch" class="search" type="search" placeholder="Filtrar serviço..." />
+                    </div>
+                    <div class="table-shell">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Serviço</th>
+                                    <th>Status</th>
+                                    <th>Arquivo da unit</th>
+                                    <th>Descrição</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="servicesTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </section>
+
+            <section class="view" id="view-docker">
+                <div class="panel-grid panel-grid-two">
+                    <section class="panel">
+                        <div class="panel-head">
+                            <h2>Containers</h2>
+                            <button class="ghost-button" id="dockerPruneButton" type="button">Limpar</button>
+                        </div>
+                        <div id="dockerContainers" class="stack-list"></div>
+                    </section>
+
+                    <section class="panel">
+                        <div class="panel-head">
+                            <h2>Imagens</h2>
+                        </div>
+                        <div id="dockerImages" class="stack-list"></div>
+                    </section>
+                </div>
+
+                <section class="panel">
+                    <div class="panel-head">
+                        <h2>Logs do container</h2>
+                    </div>
+                    <div class="terminal-stream" id="containerLogs">Selecione um container para ver os logs.</div>
+                </section>
+            </section>
+
+            <section class="view" id="view-proxy">
+                <section class="panel proxy-overview-panel">
+                    <div class="panel-head proxy-overview-head">
+                        <div>
+                            <div class="eyebrow">CONTROLE DO PROXY</div>
+                            <h2>Operação do proxy IA</h2>
+                        </div>
+                        <div class="inline-actions">
+                            <button class="ghost-button" id="proxyRefreshButton" type="button">Atualizar proxy</button>
+                            <button class="ghost-button" id="proxyRestartButton" type="button">Reiniciar serviço</button>
+                        </div>
+                    </div>
+
+                    <div class="proxy-kpis">
+                        <article class="proxy-kpi">
+                            <div class="metric-label">Serviço</div>
+                            <div class="metric-value" id="proxyMetricStatus">--</div>
+                            <div class="metric-meta" id="proxyMetricService">red-ollama-proxy.service</div>
+                        </article>
+                        <article class="proxy-kpi">
+                            <div class="metric-label">Keys</div>
+                            <div class="metric-value" id="proxyMetricKeys">0</div>
+                            <div class="metric-meta" id="proxyMetricKeysMeta">0 ativas</div>
+                        </article>
+                        <article class="proxy-kpi">
+                            <div class="metric-label">Requests</div>
+                            <div class="metric-value" id="proxyMetricRequests">0</div>
+                            <div class="metric-meta" id="proxyMetricRequestsMeta">0 sucessos / 0 falhas</div>
+                        </article>
+                        <article class="proxy-kpi">
+                            <div class="metric-label">Modelo atual</div>
+                            <div class="metric-value" id="proxyMetricModel">--</div>
+                            <div class="metric-meta" id="proxyMetricTags">sem modelos disponíveis</div>
+                        </article>
+                    </div>
+
+                </section>
+
+                <div class="proxy-subnav">
+                    <button class="proxy-tab-button active" data-proxy-tab="chat" type="button">Chat</button>
+                    <button class="proxy-tab-button" data-proxy-tab="images" type="button">Imagens</button>
+                    <button class="proxy-tab-button" data-proxy-tab="status" type="button">Status</button>
+                    <button class="proxy-tab-button" data-proxy-tab="keys" type="button">Chaves</button>
+                </div>
+
+                <section class="proxy-tab-panel active" id="proxy-tab-chat">
+                    <div class="proxy-chat-layout">
+                        <aside class="proxy-conversations-side">
+                            <section class="panel stretch-panel">
+                                <div class="panel-head">
+                                    <h2>Conversas</h2>
+                                    <button class="ghost-button" id="proxyNewConversationButton" type="button">Nova</button>
+                                </div>
+                                <div class="conversation-list" id="proxyConversationList"></div>
+                            </section>
+                        </aside>
+
+                        <section class="panel stretch-panel proxy-chat-panel">
+                            <div class="panel-head">
+                                <div>
+                                    <h2>Chat do proxy</h2>
+                                    <div class="panel-subtitle" id="proxyActiveConversationMeta">Conversa pronta para uso.</div>
+                                </div>
+                                <div class="inline-actions">
+                                    <button class="ghost-button" id="proxyRegenerateChatButton" type="button">Regenerar</button>
+                                    <button class="ghost-button" id="proxyStopChatButton" type="button">Parar</button>
+                                    <button class="ghost-button" id="proxyClearChatButton" type="button">Nova conversa</button>
+                                </div>
+                            </div>
+                            <div class="chat-shell" id="proxyChatMessages"></div>
+                            <div class="chat-composer">
+                                <div class="chat-toolbar">
+                                    <div class="chat-hint" id="proxyComposerHint">Enter envia. Shift+Enter quebra linha.</div>
+                                    <div class="chat-status-pill" id="proxyChatStatus">Pronto</div>
+                                </div>
+                                <div class="attachment-draft-list" id="proxyDraftAttachments"></div>
+                                <textarea id="proxyChatInput" class="file-editor chat-input" spellcheck="true" placeholder="Digite sua mensagem para o modelo selecionado..."></textarea>
+                                <div class="chat-actions">
+                                    <div class="chat-hint">Markdown completo, código, cópia de mensagens, edição e regeneração.</div>
+                                    <div class="inline-actions">
+                                        <label class="ghost-button attachment-picker" for="proxyAttachmentInput">Anexar</label>
+                                        <input id="proxyAttachmentInput" type="file" multiple accept="image/*,.txt,.md,.json,.js,.ts,.tsx,.jsx,.py,.html,.css,.csv,.log,.xml,.yml,.yaml,.sql" hidden />
+                                        <button class="primary-button" id="proxySendChatButton" type="button">Enviar</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <aside class="proxy-chat-side">
+                            <section class="panel stretch-panel">
+                                <div class="panel-head">
+                                    <h2>Configurações</h2>
+                                </div>
+                                <div class="form-stack">
+                                    <label class="field">
+                                        <span>Modelo disponível</span>
+                                        <select id="proxyModelSelect" class="search">
+                                            <option value="">Carregando modelos...</option>
+                                        </select>
+                                    </label>
+                                    <div class="proxy-note" id="proxyModelInfo">Cadastre uma key válida para carregar os modelos via api/tags.</div>
+                                    <div class="model-capability-list" id="proxyModelCapabilities"></div>
+                                    <div class="proxy-note" id="proxyAttachmentHint">Imagens serão liberadas automaticamente quando o modelo tiver suporte a visão.</div>
+                                    <label class="field">
+                                        <span>Prompt de sistema</span>
+                                        <textarea id="proxySystemPromptInput" class="file-editor proxy-settings-textarea" spellcheck="true" placeholder="Defina o comportamento do assistente para esta conversa."></textarea>
+                                    </label>
+                                    <div class="proxy-settings-grid">
+                                        <label class="field">
+                                            <span>Temperature</span>
+                                            <input id="proxyTemperatureInput" type="number" step="0.1" min="0" max="2" placeholder="Padrão" />
+                                        </label>
+                                        <label class="field">
+                                            <span>Top P</span>
+                                            <input id="proxyTopPInput" type="number" step="0.05" min="0" max="1" placeholder="Padrão" />
+                                        </label>
+                                    </div>
+                                    <label class="field">
+                                        <span>Limite de tokens</span>
+                                        <input id="proxyMaxTokensInput" type="number" min="1" step="1" placeholder="Padrão do modelo" />
+                                    </label>
+                                </div>
+                            </section>
+                        </aside>
+                    </div>
+                </section>
+
+                <section class="proxy-tab-panel" id="proxy-tab-images">
+                    <div class="proxy-image-layout">
+                        <section class="panel stretch-panel">
+                            <div class="panel-head">
+                                <div>
+                                    <h2>Geracao de imagens</h2>
+                                    <div class="panel-subtitle">Teste os modelos NVIDIA conectados ao proxy sem sair do dashboard.</div>
+                                </div>
+                            </div>
+                            <div class="form-stack">
+                                <label class="field">
+                                    <span>Modelo NVIDIA de imagem</span>
+                                    <select id="proxyImageModelSelect" class="search">
+                                        <option value="">Carregando modelos...</option>
+                                    </select>
+                                </label>
+                                <label class="field">
+                                    <span>Prompt</span>
+                                    <textarea id="proxyImagePromptInput" class="file-editor proxy-image-prompt" spellcheck="true" placeholder="Descreva a imagem que voce quer gerar..."></textarea>
+                                </label>
+                                <div class="proxy-settings-grid">
+                                    <label class="field">
+                                        <span>Largura</span>
+                                        <input id="proxyImageWidthInput" type="number" min="512" max="1536" step="64" value="1024" />
+                                    </label>
+                                    <label class="field">
+                                        <span>Altura</span>
+                                        <input id="proxyImageHeightInput" type="number" min="512" max="1536" step="64" value="1024" />
+                                    </label>
+                                    <label class="field">
+                                        <span>Steps</span>
+                                        <input id="proxyImageStepsInput" type="number" min="1" max="50" step="1" value="4" />
+                                    </label>
+                                    <label class="field">
+                                        <span>Seed opcional</span>
+                                        <input id="proxyImageSeedInput" type="number" step="1" placeholder="Aleatoria" />
+                                    </label>
+                                </div>
+                                <div class="inline-actions">
+                                    <button class="primary-button" id="proxyImageGenerateButton" type="button">Gerar imagem</button>
+                                    <button class="ghost-button" id="proxyImageResetButton" type="button">Limpar</button>
+                                </div>
+                                <div class="proxy-note" id="proxyImageStatus">Escolha um modelo e gere uma imagem de teste.</div>
+                            </div>
+                        </section>
+
+                        <section class="panel stretch-panel proxy-image-result-panel">
+                            <div class="panel-head">
+                                <div>
+                                    <h2>Resultado</h2>
+                                    <div class="panel-subtitle" id="proxyImageResultMeta">Sem imagem gerada ainda.</div>
+                                </div>
+                            </div>
+                            <div class="proxy-image-preview" id="proxyImagePreview">
+                                <div class="empty">A imagem gerada vai aparecer aqui.</div>
+                            </div>
+                        </section>
+                    </div>
+                </section>
+
+                <section class="proxy-tab-panel" id="proxy-tab-status">
+                    <div class="proxy-status-layout">
+                        <section class="panel stretch-panel">
+                            <div class="panel-head">
+                                <h2>Status técnico</h2>
+                            </div>
+                            <div class="kv-grid" id="proxySummary"></div>
+                        </section>
+
+                        <section class="panel stretch-panel">
+                            <div class="panel-head">
+                                <h2>Logs do proxy</h2>
+                                <button class="ghost-button" id="clearProxyLogButton" type="button">Limpar tela</button>
+                            </div>
+                            <div class="terminal-stream proxy-log-stream" id="proxyLogStream"></div>
+                        </section>
+                    </div>
+                </section>
+
+                <section class="proxy-tab-panel" id="proxy-tab-keys">
+                    <div class="proxy-keys-layout">
+                        <section class="panel stretch-panel">
+                            <div class="panel-head">
+                                <h2>Nova chave</h2>
+                                <div class="inline-actions">
+                                    <button class="ghost-button" id="proxyResetKeyFormButton" type="button">Limpar formulário</button>
+                                </div>
+                            </div>
+                            <div class="form-stack">
+                                <input id="proxyKeyId" type="hidden" />
+                                <label class="field">
+                                    <span>Rótulo</span>
+                                    <input id="proxyKeyLabelInput" type="text" placeholder="Ex.: chave principal" />
+                                </label>
+                                <label class="field">
+                                    <span>API key</span>
+                                    <input id="proxyKeyValueInput" type="password" placeholder="Cole a chave aqui" />
+                                </label>
+                                <label class="checkbox-line">
+                                    <input id="proxyKeyActiveInput" type="checkbox" checked />
+                                    <span>Chave ativa</span>
+                                </label>
+                                <div class="inline-actions">
+                                    <button class="primary-button" id="proxySaveKeyButton" type="button">Salvar chave</button>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="panel stretch-panel">
+                            <div class="panel-head">
+                                <h2>Chaves cadastradas</h2>
+                            </div>
+                            <div class="stack-list proxy-keys-list" id="proxyKeysList"></div>
+                        </section>
+                    </div>
+                </section>
+            </section>
+
+            <section class="view" id="view-projects">
+                <div class="panel-grid panel-grid-two">
+                    <section class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <div class="eyebrow">CATALOGO</div>
+                                <h2>Projetos cadastrados</h2>
+                                <div class="panel-subtitle">Registro central, analise deterministica, webhook individual e base de deploy por repositorio.</div>
+                            </div>
+                            <div class="inline-actions">
+                                <button class="ghost-button" id="projectsRefreshButton" type="button">Atualizar projetos</button>
+                                <button class="ghost-button" id="projectsNewButton" type="button">Novo cadastro</button>
+                            </div>
+                        </div>
+                        <div class="project-kpis" id="projectsKpis"></div>
+                        <div class="project-list" id="projectsList"></div>
+                    </section>
+
+                    <section class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <div class="eyebrow">WIZARD</div>
+                                <h2>Conectar e implantar</h2>
+                                <div class="panel-subtitle">No modo simples, basta colar o repositorio. A VM baixa o codigo, analisa, gera as configs, sobe os containers e publica o projeto.</div>
+                            </div>
+                            <div class="inline-actions">
+                                <button class="ghost-button" id="projectRotateSecretButton" type="button">Girar secret</button>
+                                <button class="ghost-button" id="projectDeleteButton" type="button">Excluir</button>
+                            </div>
+                        </div>
+                        <input id="projectIdInput" type="hidden" />
+                        <div class="segmented-control project-mode-toggle">
+                            <button class="segmented-button active" id="projectModeSimpleButton" type="button" data-project-mode="simple">Modo simples</button>
+                            <button class="segmented-button" id="projectModeAdvancedButton" type="button" data-project-mode="advanced">Modo avancado</button>
+                        </div>
+                        <div class="form-grid project-form-grid simple">
+                            <label class="wide">
+                                <span>Endereco do repositorio</span>
+                                <input id="projectRepoUrlInput" type="text" placeholder="https://github.com/org/projeto.git" />
+                            </label>
+                            <label>
+                                <span>Branch</span>
+                                <input id="projectBranchInput" type="text" placeholder="main" />
+                            </label>
+                            <label>
+                                <span>Dominio publico</span>
+                                <input id="projectDomainInput" type="text" placeholder="app.exemplo.com" />
+                            </label>
+                            <label class="checkbox-field wide">
+                                <input id="projectAutoDeployInput" type="checkbox" checked />
+                                <span>Fazer deploy automatico quando chegar push valido</span>
+                            </label>
+                        </div>
+                        <div class="project-advanced-shell" id="projectAdvancedShell">
+                            <div class="chat-hint">O modo avancado so aparece quando voce quiser controlar nome, origem do codigo, base path e flags mais tecnicas.</div>
+                            <div class="form-grid project-form-grid advanced">
+                                <label>
+                                    <span>Nome</span>
+                                    <input id="projectNameInput" type="text" placeholder="Ex.: portal-cliente" />
+                                </label>
+                                <label>
+                                    <span>Base path</span>
+                                    <input id="projectBasePathInput" type="text" placeholder="/" />
+                                </label>
+                                <label class="checkbox-field wide">
+                                    <input id="projectManagedCheckoutInput" type="checkbox" checked />
+                                    <span>Deixar a VM baixar e sincronizar este repositorio automaticamente</span>
+                                </label>
+                                <label class="wide" id="projectRepoPathField">
+                                    <span>Caminho manual do repo na VM</span>
+                                    <input id="projectRepoPathInput" type="text" placeholder="/srv/repos/portal-cliente" />
+                                </label>
+                                <label class="checkbox-field wide">
+                                    <input id="projectEnabledInput" type="checkbox" checked />
+                                    <span>Webhook ativo para este projeto</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="chat-hint" id="projectWizardHint">Cole o repositorio e clique em conectar. O restante aparece como progresso ao vivo, com sugestoes de correcao se algo falhar.</div>
+                        <div class="inline-actions project-form-actions">
+                            <button class="primary-button" id="projectQuickDeployButton" type="button">Conectar e implantar</button>
+                            <button class="ghost-button" id="projectResetFormButton" type="button">Limpar formulario</button>
+                            <button class="ghost-button" id="projectAnalyzeButton" type="button">Analisar projeto</button>
+                            <button class="ghost-button" id="projectAnalyzeAiButton" type="button">Gerar leitura IA</button>
+                            <button class="ghost-button" id="projectDeployButton" type="button">Deploy agora</button>
+                            <button class="primary-button" id="projectSaveButton" type="button">Salvar projeto</button>
+                        </div>
+                    </section>
+                </div>
+
+                <div class="panel-grid panel-grid-two">
+                    <section class="panel stretch-panel">
+                        <div class="panel-head">
+                            <div>
+                                <div class="eyebrow">ANDAMENTO</div>
+                                <h2>Job atual e atividade</h2>
+                            </div>
+                        </div>
+                        <div class="project-job-card" id="projectCurrentJob"></div>
+                        <div class="project-activity-stream" id="projectActivityStream"></div>
+                    </section>
+
+                    <section class="panel stretch-panel">
+                        <div class="panel-head">
+                            <div>
+                                <div class="eyebrow">CORRECAO ASSISTIDA</div>
+                                <h2>Sugestoes da IA</h2>
+                            </div>
+                        </div>
+                        <div class="project-fix-box" id="projectFixBox"></div>
+                    </section>
+                </div>
+
+                <div class="panel-grid panel-grid-two">
+                    <section class="panel stretch-panel">
+                        <div class="panel-head">
+                            <div>
+                                <div class="eyebrow">LEITURA TECNICA</div>
+                                <h2>Resumo e diagnostico</h2>
+                            </div>
+                        </div>
+                        <div class="project-summary-cards" id="projectSummaryCards"></div>
+                        <div class="project-diagnostics" id="projectDiagnostics"></div>
+                        <div class="project-components-grid" id="projectComponents"></div>
+                    </section>
+
+                    <section class="panel stretch-panel">
+                        <div class="panel-head">
+                            <div>
+                                <div class="eyebrow">PLANO</div>
+                                <h2>Deploy, portas e webhook</h2>
+                            </div>
+                        </div>
+                        <div class="kv-grid" id="projectPlanSummary"></div>
+                        <div class="project-routes" id="projectRoutes"></div>
+                        <div class="project-webhook-box" id="projectWebhookBox"></div>
+                        <div class="project-bundle-list" id="projectBundleList"></div>
+                        <div class="project-install-steps" id="projectInstallSteps"></div>
+                    </section>
+                </div>
+
+                <div class="panel-grid panel-grid-two">
+                    <section class="panel stretch-panel">
+                        <div class="panel-head">
+                            <div>
+                                <div class="eyebrow">IA</div>
+                                <h2>Relatorio assistido</h2>
+                            </div>
+                        </div>
+                        <div class="chat-shell project-ai-report" id="projectAiReport"></div>
+                    </section>
+
+                    <section class="panel stretch-panel">
+                        <div class="panel-head">
+                            <div>
+                                <div class="eyebrow">ENTREGAS</div>
+                                <h2>Webhook e historico</h2>
+                            </div>
+                        </div>
+                        <div class="stack-list" id="projectDeliveries"></div>
+                        <div class="stack-list" id="projectDeployments"></div>
+                    </section>
+                </div>
+            </section>
+
+            <section class="view" id="view-whatsapp">
+                <section class="panel stretch-panel">
+                    <div class="panel-head">
+                        <div>
+                            <div class="eyebrow">RED WHATSAPP A.I</div>
+                            <h2>Central de operacao</h2>
+                            <div class="panel-subtitle">Conexao, destinos, memoria e operacao do WhatsApp organizados em um fluxo mais claro.</div>
+                        </div>
+                        <div class="inline-actions">
+                            <button class="primary-button" id="whatsappSaveButton" type="button">Salvar configuracao</button>
+                            <button class="ghost-button" id="whatsappConnectInstanceButton" type="button">Conectar / QR</button>
+                            <button class="ghost-button" id="whatsappSyncTargetsButton" type="button">Sincronizar chats</button>
+                            <button class="ghost-button" id="whatsappRefreshButton" type="button">Atualizar</button>
+                        </div>
+                    </div>
+                    <div class="project-kpis" id="whatsappKpis"></div>
+                    <div class="whatsapp-hero-layout">
+                        <div class="whatsapp-hero-meta">
+                            <div class="kv-grid" id="whatsappSummary"></div>
+                            <div class="chat-hint" id="whatsappWebhookHint">Webhook da Evolution sera apontado para esta VM automaticamente quando voce sincronizar a configuracao.</div>
+                        </div>
+                        <div class="whatsapp-runtime-box" id="whatsappRuntimeBox"></div>
+                    </div>
+                </section>
+
+                <section class="panel stretch-panel">
+                    <div class="panel-head slim">
+                        <div>
+                            <div class="eyebrow">ORGANIZACAO</div>
+                            <h2>Painel do WhatsApp</h2>
+                        </div>
+                        <div class="segmented-control whatsapp-tab-toggle">
+                            <button class="segmented-button active" data-whatsapp-tab="connection" type="button">Conexao</button>
+                            <button class="segmented-button" data-whatsapp-tab="assistant" type="button">Assistente</button>
+                            <button class="segmented-button" data-whatsapp-tab="targets" type="button">Destinos</button>
+                            <button class="segmented-button" data-whatsapp-tab="conversations" type="button">Conversas</button>
+                            <button class="segmented-button" data-whatsapp-tab="logs" type="button">Logs e testes</button>
+                        </div>
+                    </div>
+                    <div class="whatsapp-config-bar">
+                        <div class="chat-hint" id="whatsappConfigState">Configuração salva. Você pode ajustar os campos abaixo quando quiser.</div>
+                        <div class="inline-actions">
+                            <button class="primary-button" id="whatsappInlineSaveButton" data-whatsapp-save type="button">Salvar alterações</button>
+                            <button class="ghost-button" id="whatsappDiscardButton" data-whatsapp-discard type="button">Descartar</button>
+                        </div>
+                    </div>
+
+                    <div class="whatsapp-tab-shell active" id="whatsappTabConnection">
+                        <div class="panel-grid panel-grid-two">
+                            <section class="panel whatsapp-inner-panel">
+                                <div class="panel-head slim">
+                                    <div>
+                                        <div class="eyebrow">CONEXAO</div>
+                                        <h3>Evolution e instancia</h3>
+                                    </div>
+                                </div>
+                                <div class="form-grid whatsapp-form-grid">
+                                    <label class="wide">
+                                        <span>URL da Evolution API</span>
+                                        <input id="whatsappBaseUrlInput" type="text" placeholder="http://127.0.0.1:8088" />
+                                    </label>
+                                    <label>
+                                        <span>API key</span>
+                                        <input id="whatsappApiKeyInput" type="password" placeholder="Cole a API key" />
+                                    </label>
+                                    <label>
+                                        <span>Nome da instancia</span>
+                                        <input id="whatsappInstanceNameInput" type="text" placeholder="red-whatsapp-ai" />
+                                    </label>
+                                    <label>
+                                        <span>Token da instancia</span>
+                                        <input id="whatsappInstanceTokenInput" type="text" placeholder="Opcional" />
+                                    </label>
+                                    <label>
+                                        <span>Numero do bot</span>
+                                        <input id="whatsappBotNumberInput" type="text" placeholder="5581999999999" />
+                                    </label>
+                                    <label>
+                                        <span>Webhook secret</span>
+                                        <input id="whatsappWebhookSecretInput" type="text" placeholder="Gerado automaticamente" />
+                                    </label>
+                                </div>
+                                <div class="inline-actions">
+                                    <button class="primary-button" id="whatsappSaveConnectionButton" data-whatsapp-save type="button">Salvar configurações</button>
+                                    <button class="ghost-button" id="whatsappTestButton" type="button">Testar conexao</button>
+                                    <button class="ghost-button" id="whatsappCreateInstanceButton" type="button">Criar instancia</button>
+                                    <button class="ghost-button" id="whatsappSyncWebhookButton" type="button">Sincronizar webhook</button>
+                                </div>
+                            </section>
+
+                            <section class="panel whatsapp-inner-panel">
+                                <div class="panel-head slim">
+                                    <div>
+                                        <div class="eyebrow">COMPORTAMENTO</div>
+                                        <h3>Opcoes basicas</h3>
+                                    </div>
+                                </div>
+                                <div class="form-grid whatsapp-form-grid">
+                                    <label class="checkbox-field">
+                                        <input id="whatsappEnabledInput" type="checkbox" />
+                                        <span>Habilitar integracao WhatsApp</span>
+                                    </label>
+                                    <label class="checkbox-field">
+                                        <input id="whatsappTypingPresenceInput" type="checkbox" checked />
+                                        <span>Enviar digitando durante a resposta</span>
+                                    </label>
+                                    <label class="checkbox-field">
+                                        <input id="whatsappMarkAsReadInput" type="checkbox" checked />
+                                        <span>Marcar mensagens como lidas</span>
+                                    </label>
+                                    <label class="checkbox-field">
+                                        <input id="whatsappAutoSyncTargetsInput" type="checkbox" checked />
+                                        <span>Sincronizar chats e grupos automaticamente</span>
+                                    </label>
+                                </div>
+                                <div class="whatsapp-side-note">
+                                    <strong>Fluxo recomendado</strong>
+                                    <span>Salvar configuracao, conectar o QR, sincronizar chats e depois ajustar os destinos que podem receber alertas ou falar com a IA.</span>
+                                </div>
+                                <div class="whatsapp-side-note">
+                                    <strong>Identidade conectada</strong>
+                                    <div class="kv-grid" id="whatsappInstanceIdentity"></div>
+                                </div>
+                                <div class="whatsapp-side-note">
+                                    <strong>Checklist</strong>
+                                    <div class="stack-list" id="whatsappChecklist"></div>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="whatsapp-tab-shell" id="whatsappTabAssistant">
+                        <div class="panel-grid panel-grid-two">
+                            <section class="panel whatsapp-inner-panel">
+                                <div class="panel-head slim">
+                                    <div>
+                                        <div class="eyebrow">ASSISTENTE</div>
+                                        <h3>Modelo e regras de resposta</h3>
+                                    </div>
+                                </div>
+                                <div class="form-grid whatsapp-form-grid">
+                                    <label>
+                                        <span>Modelo padrao</span>
+                                        <select id="whatsappDefaultModelSelect" class="search">
+                                            <option value="">Carregando modelos...</option>
+                                        </select>
+                                    </label>
+                                    <label>
+                                        <span>Prefixo nos grupos</span>
+                                        <input id="whatsappGroupPrefixInput" type="text" placeholder="red," />
+                                    </label>
+                                    <label>
+                                        <span>Historico maximo</span>
+                                        <input id="whatsappContextMaxMessagesInput" type="number" min="8" step="1" />
+                                    </label>
+                                    <label>
+                                        <span>Contexto em caracteres</span>
+                                        <input id="whatsappContextMaxCharsInput" type="number" min="3000" step="500" />
+                                    </label>
+                                    <label>
+                                        <span>Resumir a partir de</span>
+                                        <input id="whatsappSummaryTriggerInput" type="number" min="6" step="1" />
+                                    </label>
+                                    <label>
+                                        <span>Manter mensagens recentes</span>
+                                        <input id="whatsappSummaryKeepRecentInput" type="number" min="4" step="1" />
+                                    </label>
+                                    <label class="wide">
+                                        <span>System prompt do WhatsApp</span>
+                                        <textarea id="whatsappSystemPromptInput" class="file-editor" spellcheck="true" placeholder="Defina aqui o prompt-base do RED Whatsapp A.I"></textarea>
+                                    </label>
+                                </div>
+                                <div class="inline-actions">
+                                    <button class="primary-button" id="whatsappSaveAssistantButton" data-whatsapp-save type="button">Salvar regras do assistente</button>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="whatsapp-tab-shell" id="whatsappTabTargets">
+                        <div class="panel-head slim">
+                            <div>
+                                <div class="eyebrow">DESTINOS</div>
+                                <h3>Contatos e grupos</h3>
+                            </div>
+                        </div>
+                        <div class="whatsapp-search-row">
+                            <input id="whatsappTargetsSearchInput" type="text" placeholder="Filtrar por nome, numero ou jid" />
+                            <div class="chat-hint" id="whatsappTargetsHint">Defina quem recebe alertas, quem pode conversar com a IA e quais chats podem executar comandos shell.</div>
+                        </div>
+                        <div class="project-kpis whatsapp-inline-kpis" id="whatsappTargetsStats"></div>
+                        <div class="stack-list" id="whatsappTargetsList"></div>
+                    </div>
+
+                    <div class="whatsapp-tab-shell" id="whatsappTabConversations">
+                        <div class="panel-head slim">
+                            <div>
+                                <div class="eyebrow">MEMORIA</div>
+                                <h3>Conversas salvas</h3>
+                            </div>
+                        </div>
+                        <div class="whatsapp-search-row">
+                            <input id="whatsappConversationsSearchInput" type="text" placeholder="Filtrar conversa por nome ou jid" />
+                            <div class="chat-hint" id="whatsappConversationsHint">Cada contato ou grupo tem memoria propria, com resumo automatico e modelo separado.</div>
+                        </div>
+                        <div class="project-kpis whatsapp-inline-kpis" id="whatsappConversationsStats"></div>
+                        <div class="whatsapp-conversations-layout">
+                            <div class="stack-list whatsapp-conversations-list" id="whatsappConversationsList"></div>
+                            <div class="whatsapp-conversation-detail">
+                                <div class="kv-grid" id="whatsappConversationMeta"></div>
+                                <div class="inline-actions">
+                                    <button class="ghost-button" id="whatsappConversationUseTestButton" type="button">Usar no teste</button>
+                                    <button class="danger-button" id="whatsappConversationClearButton" type="button">Limpar memoria</button>
+                                </div>
+                                <div class="terminal-stream whatsapp-conversation-messages" id="whatsappConversationMessages">Selecione uma conversa para ver o contexto salvo.</div>
+                                <label>
+                                    <span>Mensagem manual para esta conversa</span>
+                                    <textarea id="whatsappConversationComposeInput" class="file-editor" spellcheck="true" placeholder="Envie uma mensagem manual para o chat selecionado"></textarea>
+                                </label>
+                                <div class="inline-actions">
+                                    <button class="primary-button" id="whatsappConversationSendButton" type="button">Enviar para a conversa</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="whatsapp-tab-shell" id="whatsappTabLogs">
+                        <div class="panel-grid panel-grid-two">
+                            <section class="panel whatsapp-inner-panel">
+                                <div class="panel-head slim">
+                                    <div>
+                                        <div class="eyebrow">TESTE RAPIDO</div>
+                                        <h3>Envio manual</h3>
+                                    </div>
+                                </div>
+                                <label>
+                                    <span>Destino para teste</span>
+                                    <input id="whatsappTestChatInput" type="text" placeholder="5511999999999@s.whatsapp.net ou 5511999999999" />
+                                </label>
+                                <label>
+                                    <span>Mensagem de teste</span>
+                                    <textarea id="whatsappTestMessageInput" class="file-editor" spellcheck="true" placeholder="Teste do RED Whatsapp A.I"></textarea>
+                                </label>
+                                <div class="inline-actions">
+                                    <button class="primary-button" id="whatsappSendTestButton" type="button">Enviar teste</button>
+                                </div>
+                            </section>
+
+                            <section class="panel whatsapp-inner-panel">
+                                <div class="panel-head slim">
+                                    <div>
+                                        <div class="eyebrow">LOGS</div>
+                                        <h3>Fluxo recente</h3>
+                                    </div>
+                                </div>
+                                <div class="terminal-stream" id="whatsappLogStream"></div>
+                            </section>
+                        </div>
+                    </div>
+                </section>
+            </section>
+
+            <section class="view" id="view-logs">
+                <section class="panel stretch-panel">
+                    <div class="panel-head">
+                        <h2>Journal ao vivo</h2>
+                        <button class="ghost-button" id="clearJournalButton" type="button">Limpar tela</button>
+                    </div>
+                    <div class="terminal-stream" id="journalStream"></div>
+                </section>
+            </section>
+
+            <section class="view" id="view-terminal">
+                <section class="panel stretch-panel">
+                    <div class="panel-head">
+                        <h2>Terminal interativo</h2>
+                        <div class="inline-actions">
+                            <button class="ghost-button" id="openTerminalButton" type="button">Abrir sessão</button>
+                            <button class="ghost-button" id="clearTerminalButton" type="button">Limpar</button>
+                        </div>
+                    </div>
+                    <div class="terminal-stream" id="terminalOutput"></div>
+                    <div class="terminal-input-row">
+                        <span class="prompt">root@vm</span>
+                        <input id="terminalInput" class="terminal-input" type="text" autocomplete="off" placeholder="Digite um comando e pressione Enter" />
+                    </div>
+                </section>
+            </section>
+
+            <section class="view" id="view-files">
+                <div class="panel-grid panel-grid-two uneven">
+                    <section class="panel stretch-panel">
+                        <div class="panel-head">
+                            <h2>Navegador de arquivos</h2>
+                            <div class="inline-actions">
+                                <button class="ghost-button" data-file-shortcut="/">/</button>
+                                <button class="ghost-button" data-file-shortcut="/root">/root</button>
+                                <button class="ghost-button" data-file-shortcut="/etc">/etc</button>
+                                <button class="ghost-button" data-file-shortcut="/var/log">/var/log</button>
+                            </div>
+                        </div>
+                        <div class="path-row">
+                            <input id="filePathInput" class="path-input" type="text" value="/" />
+                            <button class="ghost-button" id="openPathButton" type="button">Abrir</button>
+                        </div>
+                        <div id="fileBrowser" class="file-browser"></div>
+                    </section>
+
+                    <section class="panel stretch-panel">
+                        <div class="panel-head">
+                            <h2>Editor</h2>
+                            <button class="ghost-button" id="saveFileButton" type="button">Salvar</button>
+                        </div>
+                        <div class="path-row">
+                            <input id="editorPath" class="path-input" type="text" placeholder="/caminho/do/arquivo" />
+                        </div>
+                        <textarea id="fileEditor" class="file-editor" spellcheck="false" placeholder="Selecione um arquivo de texto para editar."></textarea>
+                    </section>
+                </div>
+            </section>
+
+            <section class="view" id="view-firewall">
+                <div class="panel-grid panel-grid-two">
+                    <section class="panel">
+                        <div class="panel-head">
+                            <h2>Regras atuais</h2>
+                        </div>
+                        <div id="firewallRules" class="stack-list"></div>
+                    </section>
+                    <section class="panel">
+                        <div class="panel-head">
+                            <h2>Gerenciar</h2>
+                        </div>
+                        <div class="form-stack">
+                            <label class="field">
+                                <span>Nova regra</span>
+                                <input id="firewallAllowInput" type="text" placeholder="8080/tcp" />
+                            </label>
+                            <button class="primary-button" id="firewallAllowButton" type="button">Permitir</button>
+                            <label class="field">
+                                <span>Excluir regra por número</span>
+                                <input id="firewallDeleteInput" type="text" placeholder="4" />
+                            </label>
+                            <button class="danger-button" id="firewallDeleteButton" type="button">Excluir</button>
+                        </div>
+                    </section>
+                </div>
+            </section>
+
+            <section class="view" id="view-processes">
+                <section class="panel">
+                    <div class="panel-head">
+                        <h2>Top processos</h2>
+                    </div>
+                    <div class="table-shell">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>PID</th>
+                                    <th>Nome</th>
+                                    <th>CPU</th>
+                                    <th>Mem</th>
+                                    <th>Usuário</th>
+                                    <th>Comando</th>
+                                    <th>Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="processesTable"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </section>
+        </main>
+    </div>
+
+    <div id="toastStack" class="toast-stack"></div>
+    {% endif %}
+
+    <script src="/static/app.js?v=20260407-images2"></script>
+</body>
+</html>

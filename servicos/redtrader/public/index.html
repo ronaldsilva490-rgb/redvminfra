@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RED Trader Painel</title>
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="#top" aria-label="RED Trader">
+          <img src="/assets/logo.png" alt="RED" />
+          <span>Trader</span>
+        </a>
+        <nav class="nav">
+          <a href="#top">Visão</a>
+          <a href="#chart">Gráfico</a>
+          <a href="#committee">Comitê</a>
+          <a href="#trades">Operações</a>
+          <a href="#settings">Config</a>
+          <a href="#logs">Logs</a>
+        </nav>
+        <section class="side-card">
+          <span>Modo</span>
+          <strong>Paper trading</strong>
+          <small>Sem ordem real, sem chave de corretora.</small>
+        </section>
+        <button id="logoutBtn" class="ghost full" type="button">Sair</button>
+      </aside>
+
+      <section class="content">
+        <header id="top" class="hero">
+          <div>
+            <p class="eyebrow">RED Systems</p>
+            <h1>RED Trader Painel</h1>
+            <p class="hero-copy">Saldo demo, dados reais e IA decidindo apenas depois dos gates de risco.</p>
+          </div>
+          <div class="hero-actions">
+            <button id="runOnceBtn" type="button">Rodar análise agora</button>
+            <button id="resetBtn" class="secondary" type="button">Resetar paper</button>
+          </div>
+        </header>
+
+        <section class="stats">
+          <article>
+            <span>Saldo paper</span>
+            <strong id="equity">R$ 0,00</strong>
+          </article>
+          <article>
+            <span>PnL realizado</span>
+            <strong id="realized">R$ 0,00</strong>
+          </article>
+          <article>
+            <span>Operações 100%</span>
+            <strong id="wins">0</strong>
+          </article>
+          <article>
+            <span>Falhas</span>
+            <strong id="losses">0</strong>
+          </article>
+          <article>
+            <span>Win rate</span>
+            <strong id="winRate">0%</strong>
+          </article>
+          <article>
+            <span>Status</span>
+            <strong id="runtime">sincronizando</strong>
+          </article>
+        </section>
+
+        <section id="chart" class="panel chart-panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Mercado ao vivo</p>
+              <h2>Gráfico e leitura técnica</h2>
+            </div>
+            <div id="symbolTabs" class="tabs"></div>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="priceChart" width="1200" height="460"></canvas>
+          </div>
+          <div id="marketCards" class="market-grid"></div>
+        </section>
+
+        <section id="committee" class="grid-2">
+          <article class="panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Comitê de IA</p>
+                <h2>Últimas análises</h2>
+              </div>
+            </div>
+            <div id="analyses" class="analysis-list"></div>
+          </article>
+          <article class="panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Notícias</p>
+                <h2>Risco de mercado</h2>
+              </div>
+              <span id="newsRisk" class="pill">sincronizando</span>
+            </div>
+            <div id="newsList" class="news-list"></div>
+          </article>
+        </section>
+
+        <section id="trades" class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Auditoria</p>
+              <h2>Operações paper</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Par</th>
+                  <th>Status</th>
+                  <th>Entrada</th>
+                  <th>Saída</th>
+                  <th>Posição</th>
+                  <th>PnL</th>
+                  <th>Motivo</th>
+                </tr>
+              </thead>
+              <tbody id="tradesBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="settings" class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Controle</p>
+              <h2>Configuração</h2>
+            </div>
+            <span id="saveState" class="pill">sincronizado</span>
+          </div>
+          <form id="configForm" class="settings-grid">
+            <label>
+              Auto paper
+              <select name="auto_enabled">
+                <option value="true">Ligado</option>
+                <option value="false">Desligado</option>
+              </select>
+            </label>
+            <label>
+              Saldo inicial BRL
+              <input name="initial_balance_brl" type="number" min="1" step="1" />
+            </label>
+            <label>
+              Posição por trade %
+              <input name="position_pct" type="number" min="1" max="100" step="1" />
+            </label>
+            <label>
+              Cooldown min
+              <input name="cooldown_minutes" type="number" min="1" step="1" />
+            </label>
+            <label>
+              Max trades/dia
+              <input name="max_trades_per_day" type="number" min="1" step="1" />
+            </label>
+            <label>
+              Stop diário %
+              <input name="daily_stop_loss_pct" type="number" min="0.5" step="0.5" />
+            </label>
+            <label>
+              Meta diária %
+              <input name="daily_target_pct" type="number" min="0.5" step="0.5" />
+            </label>
+            <label>
+              Score técnico mínimo
+              <input name="min_technical_score" type="number" min="0" max="100" step="1" />
+            </label>
+            <label>
+              Confiança IA mínima
+              <input name="min_ai_confidence" type="number" min="0" max="100" step="1" />
+            </label>
+            <label>
+              Pares observados
+              <input name="symbols" type="text" placeholder="BTCUSDT,ETHUSDT,SOLUSDT" />
+            </label>
+            <label>
+              Pares operáveis
+              <input name="tradable_symbols" type="text" placeholder="BTCUSDT,ETHUSDT" />
+            </label>
+            <label>
+              Filtro rápido
+              <select name="models.fast_filter" data-model-select></select>
+            </label>
+            <label>
+              Decisor
+              <select name="models.decision" data-model-select></select>
+            </label>
+            <label>
+              Crítico
+              <select name="models.critic" data-model-select></select>
+            </label>
+            <label>
+              Relatório
+              <select name="models.report" data-model-select></select>
+            </label>
+            <div class="form-actions">
+              <button type="submit">Salvar</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="logs" class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Tempo real</p>
+              <h2>Logs do robô</h2>
+            </div>
+          </div>
+          <div id="events" class="events"></div>
+        </section>
+      </section>
+    </main>
+    <div id="toast" class="toast hidden"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,20 @@
+[Unit]
+Description=Red Deploy Webhook Listener
+After=network.target docker.service postgresql.service
+Requires=docker.service postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/Tapp
+ExecStart=/usr/bin/python3 /root/red-deploy/webhook-listener/webhook_server_smart.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/red-deploy/webhook-service.log
+StandardError=append:/var/log/red-deploy/webhook-service.log
+
+# Variáveis de ambiente
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target

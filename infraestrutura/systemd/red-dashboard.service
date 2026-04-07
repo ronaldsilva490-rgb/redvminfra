@@ -1,0 +1,19 @@
+[Unit]
+Description=Red VM Control Dashboard
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/redvm-dashboard
+EnvironmentFile=-/etc/redvm-dashboard.env
+ExecStart=/opt/redvm-dashboard/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 9001
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/redvm-dashboard.log
+StandardError=append:/var/log/redvm-dashboard.log
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target

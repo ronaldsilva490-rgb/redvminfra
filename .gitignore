@@ -1,0 +1,47 @@
+# Local secrets and machine-specific notes
+.privado/
+.env
+.env.*
+!.env.example
+AGENTS.local.md
+*.local.*
+
+# Runtime state
+**/data/
+**/auth/
+**/tmp/
+**/*.sqlite
+**/*.sqlite-*
+**/*.db
+**/*.log
+**/*.pid
+
+# Dependencies and build caches
+**/node_modules/
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/dist/
+**/build/
+**/.turbo/
+
+# Generated/test artifacts
+artefatos/**
+!artefatos/.gitkeep
+!artefatos/**/
+!artefatos/**/.gitkeep
+
+# External clones should be installed as needed, not vendored by default
+referencias/nvidia-riva-python-clients/
+
+# Legacy local configs with real provider keys
+referencias/whatsappold/ai_config.json
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

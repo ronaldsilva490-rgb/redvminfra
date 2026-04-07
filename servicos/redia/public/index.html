@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>REDIA Control</title>
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#overview" aria-label="REDIA">
+          <img src="/assets/logo.png" alt="RED" />
+          <span>REDIA</span>
+        </a>
+
+        <nav class="nav-card" aria-label="Seções">
+          <a href="#overview">Visão geral</a>
+          <a href="#activity">Atividade</a>
+          <a href="#models">Modelos</a>
+          <a href="#voice">Voz</a>
+          <a href="#behavior">Comportamento</a>
+          <a href="#media">Mídia</a>
+          <a href="#persona">Persona</a>
+          <a href="#tests">Testes</a>
+          <a href="#memory">Memória</a>
+        </nav>
+
+        <section class="connection-card">
+          <p class="label">WhatsApp</p>
+          <strong id="waStatus">carregando</strong>
+          <div class="button-row">
+            <button id="startBtn" type="button">Conectar</button>
+            <button id="stopBtn" class="secondary" type="button">Parar</button>
+          </div>
+        </section>
+      </aside>
+
+      <section class="content">
+        <header id="overview" class="hero-card">
+          <div>
+            <p class="eyebrow">RED Systems</p>
+            <h1>WhatsApp AI Runtime</h1>
+            <p>Memória local, voz Edge TTS, visão, STT, streaming e proxy RED Systems em um painel único.</p>
+            <div class="feedback-row" aria-live="polite">
+              <span id="syncState" class="state-pill">Sincronizando</span>
+              <span id="dirtyIndicator" class="state-pill warning hidden">Alterações não salvas</span>
+            </div>
+          </div>
+          <div class="status-grid">
+            <article>
+              <span>Proxy</span>
+              <strong id="proxyStatus">sincronizando</strong>
+            </article>
+            <article>
+              <span>Modelos</span>
+              <strong id="modelCount">0</strong>
+            </article>
+            <article>
+              <span>Vozes</span>
+              <strong id="voiceCount">0</strong>
+            </article>
+          </div>
+        </header>
+
+        <section id="qrPanel" class="panel qr-panel hidden">
+          <div>
+            <p class="eyebrow">Pareamento</p>
+            <h2>Escaneie o QR Code</h2>
+            <p>Abra o WhatsApp no celular e conecte a sessão da REDIA.</p>
+          </div>
+          <img id="qrImage" alt="QR Code do WhatsApp" />
+        </section>
+
+        <section id="activity" class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Tempo real</p>
+              <h2>Atividade dos modelos</h2>
+            </div>
+            <div class="button-row tight">
+              <span id="activityStatus" class="state-pill warning">Conectando</span>
+              <button id="clearActivityBtn" class="secondary" type="button">Limpar tela</button>
+            </div>
+          </div>
+          <div id="activityLog" class="activity-log empty-list"></div>
+        </section>
+
+        <section id="models" class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Cérebro</p>
+              <h2>Modelos por função</h2>
+            </div>
+            <button id="saveModelsBtn" type="button">Salvar modelos</button>
+          </div>
+          <div class="form-grid">
+            <label>Chat principal <select id="defaultModel"></select></label>
+            <label>Imagem e visão <select id="visionModel"></select></label>
+            <label>Aprendizado <select id="learningModel"></select></label>
+            <label>Proativo <select id="proactiveModel"></select></label>
+          </div>
+          <label>Fallbacks em ordem de tentativa <select id="fallbackModels" multiple></select></label>
+        </section>
+
+        <section class="split-grid">
+          <article id="voice" class="panel">
+            <div class="section-head compact">
+              <div>
+                <p class="eyebrow">Presença</p>
+                <h2>Voz</h2>
+              </div>
+              <button id="saveTtsBtn" type="button">Salvar voz</button>
+            </div>
+            <label class="toggle"><input id="ttsEnabled" type="checkbox" /> Edge TTS ativo</label>
+            <div class="form-grid two">
+              <label>% em áudio <input id="ttsProbability" type="number" min="0" max="100" step="1" /></label>
+              <label>Voz <select id="ttsVoice"></select></label>
+              <label>Rate <select id="ttsRate"></select></label>
+              <label>Pitch <select id="ttsPitch"></select></label>
+            </div>
+          </article>
+
+          <article id="behavior" class="panel">
+            <div class="section-head compact">
+              <div>
+                <p class="eyebrow">Fluxo</p>
+                <h2>Comportamento</h2>
+              </div>
+              <button id="saveBehaviorBtn" type="button">Salvar</button>
+            </div>
+            <div class="toggle-stack">
+              <label class="toggle"><input id="streamingEnabled" type="checkbox" /> Streaming com edição da primeira mensagem</label>
+              <label class="toggle"><input id="learningEnabled" type="checkbox" /> Aprendizado ativo</label>
+              <label class="toggle"><input id="proactiveEnabled" type="checkbox" /> Proativo ativo</label>
+            </div>
+            <div class="form-grid two">
+              <label>Prefixo em grupos <input id="groupPrefix" /></label>
+              <label>Temperatura <input id="temperature" type="number" min="0" max="2" step="0.01" /></label>
+              <label>Modo em privado <select id="privateMode"></select></label>
+              <label>Modo em grupos <select id="groupMode"></select></label>
+            </div>
+          </article>
+        </section>
+
+        <section id="media" class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Entrada</p>
+              <h2>Áudio e imagem</h2>
+            </div>
+            <button id="saveMediaBtn" type="button">Salvar mídia</button>
+          </div>
+          <div class="toggle-stack inline">
+            <label class="toggle"><input id="sttEnabled" type="checkbox" /> Áudio/STT imprescindível</label>
+            <label class="toggle"><input id="imageRequired" type="checkbox" /> Análise de imagem imprescindível</label>
+          </div>
+          <div class="form-grid">
+            <label>Nova API key STT <input id="sttApiKey" type="password" placeholder="deixe vazio para manter" /></label>
+            <label>Provider STT <select id="sttProvider"></select></label>
+            <label>Modelo STT <select id="sttModel"></select></label>
+          </div>
+        </section>
+
+        <section id="persona" class="panel">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Personalidade</p>
+              <h2>Persona</h2>
+            </div>
+            <button id="savePromptBtn" type="button">Salvar persona</button>
+          </div>
+          <textarea id="systemPrompt" rows="8"></textarea>
+        </section>
+
+        <section id="tests" class="split-grid">
+          <article class="panel">
+            <div class="section-head compact">
+              <div>
+                <p class="eyebrow">Resposta</p>
+                <h2>Teste IA</h2>
+              </div>
+              <button id="testBtn" type="button">Testar</button>
+            </div>
+            <label>Modelo <select id="modelSelect"></select></label>
+            <textarea id="testPrompt" rows="5">Responda como se estivesse no WhatsApp: alguém pergunta se você lembra do que combinaram ontem.</textarea>
+            <pre id="testOutput"></pre>
+          </article>
+
+          <article class="panel">
+            <div class="section-head compact">
+              <div>
+                <p class="eyebrow">Comparativo</p>
+                <h2>Benchmark</h2>
+              </div>
+              <button id="benchmarkBtn" type="button">Rodar</button>
+            </div>
+            <label>Modelos para comparar <select id="benchmarkModels" multiple></select></label>
+            <pre id="benchmarkOutput"></pre>
+          </article>
+        </section>
+
+        <section id="memory" class="split-grid">
+          <article class="panel">
+            <div class="section-head compact">
+              <div>
+                <p class="eyebrow">Histórico</p>
+                <h2>Conversas</h2>
+              </div>
+            </div>
+            <div id="conversationList" class="list empty-list"></div>
+          </article>
+          <article class="panel">
+            <div class="section-head compact">
+              <div>
+                <p class="eyebrow">Telemetria</p>
+                <h2>Últimas execuções</h2>
+              </div>
+            </div>
+            <div id="runsList" class="list empty-list"></div>
+          </article>
+        </section>
+      </section>
+    </main>
+    <div id="toastHost" class="toast-host" aria-live="polite"></div>
+    <script src="/app.js?v=20260407-0231"></script>
+  </body>
+</html>

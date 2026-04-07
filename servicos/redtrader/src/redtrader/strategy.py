@@ -1,0 +1,228 @@
+import json
+from typing import Any
+
+
+DEFAULT_CONFIG: dict[str, Any] = {
+    "auto_enabled": True,
+    "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+    "tradable_symbols": ["BTCUSDT", "ETHUSDT"],
+    "market_poll_seconds": 20,
+    "news_poll_seconds": 300,
+    "cooldown_minutes": 30,
+    "max_trades_per_day": 3,
+    "max_open_positions": 1,
+    "initial_balance_brl": 50.0,
+    "position_pct": 20.0,
+    "daily_stop_loss_pct": 5.0,
+    "daily_target_pct": 3.0,
+    "min_technical_score": 75,
+    "min_ai_confidence": 72,
+    "min_risk_reward": 1.3,
+    "max_hold_minutes": 60,
+    "paper_fee_pct_per_side": 0.1,
+    "models": {
+        "fast_filter": "devstral-small-2:24b",
+        "decision": "gpt-oss:20b",
+        "critic": "qwen3-coder-next",
+        "report": "qwen3-coder-next",
+    },
+}
+
+
+def deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    out = dict(base)
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = deep_merge(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
+def normalize_confidence(value: Any) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if 0 < number <= 1:
+        return number * 100
+    return max(0.0, min(100.0, number))
+
+
+def compact_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "symbol": snapshot.get("symbol"),
+        "ts": snapshot.get("ts"),
+        "ticker": snapshot.get("ticker", {}),
+        "orderbook": snapshot.get("orderbook", {}),
+        "features": snapshot.get("features", {}),
+        "frames": snapshot.get("frames", {}),
+    }
+
+
+def build_candidates(
+    snapshots: dict[str, dict[str, Any]],
+    config: dict[str, Any],
+    news: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    candidates = []
+    tradable = set(config.get("tradable_symbols") or [])
+    news_risk = ((news or {}).get("risk_hint") or {}).get("level", "neutral")
+    for symbol, snapshot in snapshots.items():
+        if snapshot.get("error") or symbol not in tradable:
+            continue
+        candidate = score_snapshot(snapshot, config, news_risk)
+        if candidate:
+            candidates.append(candidate)
+    return sorted(candidates, key=lambda item: item["technical_score"], reverse=True)
+
+
+def score_snapshot(snapshot: dict[str, Any], config: dict[str, Any], news_risk: str) -> dict[str, Any] | None:
+    features = snapshot.get("features") or {}
+    symbol = snapshot.get("symbol")
+    price = _num(features.get("last_price"))
+    if not price:
+        return None
+
+    checks: dict[str, str] = {}
+    score = 0
+
+    trend_count = sum(1 for key in ["trend_1m", "trend_5m", "trend_15m"] if features.get(key) == "up")
+    if trend_count >= 2:
+        checks["trend"] = "pass"
+        score += 22
+    elif trend_count == 1:
+        checks["trend"] = "neutral"
+        score += 8
+    else:
+        checks["trend"] = "fail"
+
+    change_1m_15 = _num(features.get("change_1m_15"))
+    change_5m_15 = _num(features.get("change_5m_15"))
+    rsi_1m = _num(features.get("rsi_1m"))
+    rsi_5m = _num(features.get("rsi_5m"))
+    if change_1m_15 > 0.04 and change_5m_15 > -0.05 and 45 <= rsi_1m <= 72 and 42 <= rsi_5m <= 74:
+        checks["momentum"] = "pass"
+        score += 22
+    elif change_1m_15 > 0 and rsi_1m < 78:
+        checks["momentum"] = "neutral"
+        score += 10
+    else:
+        checks["momentum"] = "fail"
+
+    vol_1m = _num(features.get("ret_std_1m_30"))
+    if 0.025 <= vol_1m <= 0.25:
+        checks["volatility"] = "pass"
+        score += 15
+    elif 0 < vol_1m <= 0.35:
+        checks["volatility"] = "neutral"
+        score += 7
+    else:
+        checks["volatility"] = "fail"
+
+    spread = _num(features.get("spread_pct"))
+    volume_ratio = _num(features.get("volume_1m_vs_avg30"))
+    if spread <= 0.03 and volume_ratio >= 0.6:
+        checks["liquidity"] = "pass"
+        score += 16
+    elif spread <= 0.06:
+        checks["liquidity"] = "neutral"
+        score += 6
+    else:
+        checks["liquidity"] = "fail"
+
+    if news_risk == "red":
+        checks["news_risk"] = "fail"
+    elif news_risk == "yellow":
+        checks["news_risk"] = "neutral"
+        score += 5
+    else:
+        checks["news_risk"] = "pass"
+        score += 10
+
+    stop_loss_pct = round(max(0.25, min(0.9, vol_1m * 3.2)), 3)
+    take_profit_pct = round(stop_loss_pct * 1.55, 3)
+    risk_reward = round(take_profit_pct / stop_loss_pct, 2) if stop_loss_pct else 0
+    if risk_reward >= float(config.get("min_risk_reward", 1.3)):
+        checks["risk_reward"] = "pass"
+        score += 15
+    else:
+        checks["risk_reward"] = "fail"
+
+    return {
+        "symbol": symbol,
+        "price": price,
+        "technical_score": score,
+        "checks": checks,
+        "stop_loss_pct": stop_loss_pct,
+        "take_profit_pct": take_profit_pct,
+        "risk_reward": risk_reward,
+        "position_pct": float(config.get("position_pct", 20)),
+        "features": features,
+        "snapshot": compact_snapshot(snapshot),
+    }
+
+
+def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None, config: dict[str, Any]) -> tuple[str, str]:
+    system = (
+        "Voce e um comite de risco para paper trading cripto spot, sem alavancagem. "
+        "Seu trabalho e proteger capital pequeno. Responda SOMENTE JSON valido, sem markdown."
+    )
+    payload = {
+        "mode": "paper_trading_only",
+        "balance_brl": config.get("initial_balance_brl", 50),
+        "constraints": {
+            "min_confidence": config.get("min_ai_confidence"),
+            "min_risk_reward": config.get("min_risk_reward"),
+            "max_position_pct": config.get("position_pct"),
+            "daily_stop_loss_pct": config.get("daily_stop_loss_pct"),
+            "cooldown_minutes": config.get("cooldown_minutes"),
+            "allowed_decisions": ["WAIT", "AVOID", "ENTER_LONG"],
+        },
+        "candidate": candidate,
+        "news": news or {},
+    }
+    user = (
+        "Analise o candidato abaixo. So aprove ENTER_LONG se TODOS os gates importantes passarem, "
+        "a noticia nao bloquear, o risco/retorno for aceitavel e a chance justificar exposicao com saldo pequeno. "
+        "Se estiver ambiguo, responda WAIT.\n\n"
+        "Retorne JSON exatamente neste formato:\n"
+        "{"
+        '"decision":"WAIT|AVOID|ENTER_LONG",'
+        '"symbol":"BTCUSDT|ETHUSDT|SOLUSDT|NONE",'
+        '"confidence":0,'
+        '"position_pct":0,'
+        '"time_horizon_min":0,'
+        '"stop_loss_pct":0,'
+        '"take_profit_pct":0,'
+        '"risk_reward":0,'
+        '"checks":{"trend":"pass|fail|neutral","momentum":"pass|fail|neutral","volatility":"pass|fail|neutral","liquidity":"pass|fail|neutral","news_risk":"pass|fail|neutral","risk_reward":"pass|fail|neutral"},'
+        '"invalidation":"frase curta",'
+        '"reasoning_summary":"ate 700 caracteres",'
+        '"next_review_minutes":0'
+        "}\n\n"
+        f"DADOS:\n{json.dumps(payload, ensure_ascii=False)}"
+    )
+    return system, user
+
+
+def build_critic_prompt(candidate: dict[str, Any], decision: dict[str, Any], news: dict[str, Any] | None) -> tuple[str, str]:
+    system = (
+        "Voce e o critico de risco. Tente vetar entradas ruins em paper trading cripto spot. "
+        "Responda SOMENTE JSON valido."
+    )
+    payload = {"candidate": candidate, "decision": decision, "news": news or {}}
+    user = (
+        "Procure falhas, armadilhas, RSI esticado, volatilidade ruim, liquidez fraca, noticia de risco e RR falso. "
+        "Se houver risco relevante, vete. Retorne JSON exatamente assim: "
+        '{"veto":false,"risk_level":"green|yellow|red","reason":"curto","must_wait_minutes":0}'
+        f"\n\nDADOS:\n{json.dumps(payload, ensure_ascii=False)}"
+    )
+    return system, user
+
+
+def _num(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0

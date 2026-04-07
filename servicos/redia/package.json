@@ -1,0 +1,22 @@
+{
+  "name": "redia",
+  "version": "0.1.0",
+  "description": "REDIA: WhatsApp AI with local memory, media understanding, TTS and RED Systems proxy integration.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "check": "node --check src/index.js && node --check src/dashboard.js && node --check src/whatsapp.js && node --check src/messageHandler.js && node --check src/redsystemsClient.js && node --check src/store.js && node --check src/tts.js && node --check src/media.js && node --check src/learning.js && node --check src/proactive.js && node --check src/sender.js && node --check public/app.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "better-sqlite3": "^11.10.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "pino": "^9.6.0",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.33.5"
+  }
+}

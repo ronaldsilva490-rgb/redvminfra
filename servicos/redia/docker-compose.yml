@@ -1,0 +1,11 @@
+services:
+  redia:
+    build: .
+    container_name: redia
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    ports:
+      - "${REDIA_PORT:-3099}:3099"
+    volumes:
+      - ./data:/app/data

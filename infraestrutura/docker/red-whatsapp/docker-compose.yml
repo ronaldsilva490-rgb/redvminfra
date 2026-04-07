@@ -1,0 +1,61 @@
+services:
+  evolution-postgres:
+    image: postgres:16-alpine
+    container_name: red-evolution-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    networks:
+      - red-whatsapp
+
+  evolution-redis:
+    image: redis:7-alpine
+    container_name: red-evolution-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    networks:
+      - red-whatsapp
+
+  evolution-api:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: red-evolution-api
+    restart: unless-stopped
+    depends_on:
+      evolution-postgres:
+        condition: service_healthy
+      evolution-redis:
+        condition: service_healthy
+    env_file:
+      - ./.env
+    ports:
+      - "127.0.0.1:${EVOLUTION_HOST_PORT}:8080"
+    volumes:
+      - ./data/evolution/instances:/evolution/instances
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080 >/dev/null 2>&1 || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - red-whatsapp
+
+networks:
+  red-whatsapp:
+    name: red-whatsapp

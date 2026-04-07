@@ -1,0 +1,16 @@
+[Unit]
+Description=RED Ollama Cloud Proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/redvm-proxy
+EnvironmentFile=/etc/red-ollama-proxy.env
+ExecStart=/opt/redvm-proxy/.venv/bin/python /opt/redvm-proxy/proxy.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
