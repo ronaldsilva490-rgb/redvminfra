@@ -74,14 +74,7 @@ class PlatformRegistry:
             if platform_id == "binance_spot":
                 rows.append(await self._binance_status(definition, platform_config, enabled))
             elif platform_id == "tastytrade_sandbox":
-                rows.append(self._credential_status(
-                    definition,
-                    platform_config,
-                    enabled,
-                    configured=bool(settings.tastytrade_username and settings.tastytrade_password),
-                    base_url=settings.tastytrade_base_url,
-                    missing="Configure TASTYTRADE_USERNAME e TASTYTRADE_PASSWORD no ambiente.",
-                ))
+                rows.append(await self._tastytrade_status(definition, platform_config, enabled))
             elif platform_id == "webull_paper":
                 rows.append(self._credential_status(
                     definition,
@@ -130,6 +123,115 @@ class PlatformRegistry:
             row = self._base_row(definition, platform_config, enabled, "error", False, "Falha ao consultar Binance Spot.")
             row.update({"base_url": settings.binance_base_url, "error": repr(exc)})
             return row
+
+    async def _tastytrade_status(self, definition: PlatformDefinition, platform_config: dict[str, Any], enabled: bool) -> dict[str, Any]:
+        started = time.perf_counter()
+        if not enabled:
+            return self._base_row(definition, platform_config, enabled, "disabled", False, "Desativado na configuraÃ§Ã£o.")
+
+        has_oauth = bool(settings.tastytrade_client_secret and settings.tastytrade_refresh_token)
+        has_legacy_session = bool(settings.tastytrade_username and settings.tastytrade_password)
+        if not has_oauth and not has_legacy_session:
+            row = self._base_row(
+                definition,
+                platform_config,
+                enabled,
+                "needs_config",
+                False,
+                "Configure OAuth: TASTYTRADE_CLIENT_SECRET e TASTYTRADE_REFRESH_TOKEN no ambiente.",
+            )
+            row["base_url"] = settings.tastytrade_base_url
+            return row
+
+        try:
+            authorization = await self._tastytrade_authorization(has_oauth)
+            accounts_response = await self.client.get(
+                f"{settings.tastytrade_base_url}/customers/me/accounts",
+                headers={"Authorization": authorization},
+            )
+            accounts_response.raise_for_status()
+            accounts = (accounts_response.json().get("data") or {}).get("items") or []
+            account_numbers = [
+                (item.get("account") or {}).get("account-number")
+                for item in accounts
+                if (item.get("account") or {}).get("account-number")
+            ]
+            configured_account = settings.tastytrade_account_number
+            if configured_account and configured_account not in account_numbers:
+                row = self._base_row(
+                    definition,
+                    platform_config,
+                    enabled,
+                    "error",
+                    False,
+                    "OAuth validou, mas a conta configurada nÃ£o apareceu na lista do sandbox.",
+                )
+                row.update({
+                    "base_url": settings.tastytrade_base_url,
+                    "accounts_count": len(account_numbers),
+                    "account_number": configured_account,
+                })
+                return row
+
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            row = self._base_row(
+                definition,
+                platform_config,
+                enabled,
+                "connected",
+                True,
+                "OAuth sandbox conectado; contas sandbox visÃ­veis. ExecuÃ§Ã£o segue em modo demo/paper.",
+            )
+            row.update({
+                "latency_ms": latency_ms,
+                "base_url": settings.tastytrade_base_url,
+                "accounts_count": len(account_numbers),
+                "account_number": configured_account or (account_numbers[0] if account_numbers else ""),
+                "auth_mode": "oauth_refresh_token" if has_oauth else "legacy_session",
+            })
+            return row
+        except httpx.HTTPStatusError as exc:
+            row = self._base_row(definition, platform_config, enabled, "error", False, "Falha no handshake da tastytrade Sandbox.")
+            row.update({
+                "base_url": settings.tastytrade_base_url,
+                "error": f"HTTP {exc.response.status_code}",
+            })
+            return row
+        except Exception as exc:
+            row = self._base_row(definition, platform_config, enabled, "error", False, "Falha no handshake da tastytrade Sandbox.")
+            row.update({"base_url": settings.tastytrade_base_url, "error": type(exc).__name__})
+            return row
+
+    async def _tastytrade_authorization(self, use_oauth: bool) -> str:
+        if use_oauth:
+            response = await self.client.post(
+                f"{settings.tastytrade_base_url}/oauth/token",
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": settings.tastytrade_refresh_token,
+                    "client_secret": settings.tastytrade_client_secret,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            response.raise_for_status()
+            token = response.json().get("access_token")
+            if not token:
+                raise ValueError("missing_access_token")
+            return f"Bearer {token}"
+
+        response = await self.client.post(
+            f"{settings.tastytrade_base_url}/sessions",
+            json={
+                "login": settings.tastytrade_username,
+                "password": settings.tastytrade_password,
+                "remember-me": False,
+            },
+        )
+        response.raise_for_status()
+        token = (response.json().get("data") or {}).get("session-token")
+        if not token:
+            raise ValueError("missing_session_token")
+        return str(token)
 
     def _credential_status(
         self,

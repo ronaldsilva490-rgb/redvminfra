@@ -194,11 +194,13 @@ function platformConfigHelp(platform) {
   const helpers = {
     tastytrade_sandbox: {
       title: "Configurar tastytrade Sandbox",
-      description: "Use credenciais de sandbox/certificação. O core continua em pesquisa e paper; este adapter serve para validar conexão oficial sem ordem real.",
+      description: "Use o OAuth personal grant do sandbox. O core continua em pesquisa e paper; este adapter valida a conexão oficial sem ordem real.",
       env: [
         "TASTYTRADE_BASE_URL=https://api.cert.tastytrade.com",
-        "TASTYTRADE_USERNAME=seu_usuario_sandbox",
-        "TASTYTRADE_PASSWORD=sua_senha_sandbox",
+        "TASTYTRADE_CLIENT_ID=seu_client_id",
+        "TASTYTRADE_CLIENT_SECRET=seu_client_secret",
+        "TASTYTRADE_REFRESH_TOKEN=seu_refresh_token",
+        "TASTYTRADE_ACCOUNT_NUMBER=sua_conta_sandbox",
       ].join("\n"),
       steps: commonSteps,
     },
