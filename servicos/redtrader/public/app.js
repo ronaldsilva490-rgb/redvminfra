@@ -71,6 +71,7 @@ function renderAll() {
   const data = state.status;
   if (!data) return;
   renderStats(data);
+  renderPlatforms(data);
   renderTabs(data);
   renderMarketCards(data);
   renderChart(data);
@@ -90,6 +91,50 @@ function renderStats(data) {
   $("#losses").textContent = wallet.losses || 0;
   $("#winRate").textContent = pct(wallet.win_rate_pct);
   $("#runtime").textContent = data.running ? "rodando" : "parado";
+  const platforms = data.platforms || [];
+  const online = platforms.filter((item) => item.connected).length;
+  $("#platformsOnline").textContent = `${online}/${platforms.length}`;
+}
+
+function renderPlatforms(data) {
+  const platforms = data.platforms || [];
+  $("#platformGrid").innerHTML = platforms.length
+    ? platforms.map((item) => `
+      <article class="platform-card ${escapeAttr(item.status || "")}">
+        <header>
+          <div>
+            <h3>${escapeHtml(item.label || item.id)}</h3>
+            <small class="muted">${escapeHtml(item.kind || "-")} · ${escapeHtml(item.mode || "-")}</small>
+          </div>
+          <span class="pill ${platformPillClass(item)}">${escapeHtml(platformStatusLabel(item.status))}</span>
+        </header>
+        <p>${escapeHtml(item.message || item.docs_note || "")}</p>
+        <div class="platform-meta">
+          <span>Dados: ${escapeHtml(item.data_scope || "-")}</span>
+          <span>Execução: ${escapeHtml(item.execution_scope || "-")}</span>
+          <span>Base: ${escapeHtml(item.base_url || "interno")}</span>
+          <span>Latência: ${item.latency_ms ? `${item.latency_ms}ms` : "-"}</span>
+        </div>
+      </article>
+    `).join("")
+    : `<p class="muted">Sincronizando conexões das plataformas...</p>`;
+}
+
+function platformStatusLabel(status) {
+  return {
+    connected: "conectada",
+    configured: "configurada",
+    needs_config: "configurar",
+    disabled: "desligada",
+    error: "erro",
+  }[status] || status || "desconhecida";
+}
+
+function platformPillClass(item) {
+  if (item.connected) return "green";
+  if (item.status === "needs_config" || item.status === "error") return "red";
+  if (item.status === "configured") return "yellow";
+  return "";
 }
 
 function renderTabs(data) {
@@ -452,6 +497,24 @@ function bindActions() {
     } finally {
       button.disabled = false;
       button.textContent = "Rodar análise agora";
+    }
+  });
+
+  $("#refreshPlatformsBtn").addEventListener("click", async () => {
+    const button = $("#refreshPlatformsBtn");
+    button.disabled = true;
+    button.textContent = "Atualizando...";
+    try {
+      const payload = await api("/api/platforms/refresh", { method: "POST", body: "{}" });
+      if (state.status) state.status.platforms = payload.platforms || [];
+      renderPlatforms(state.status || {});
+      renderStats(state.status || {});
+      toast("Conexões de plataformas atualizadas");
+    } catch (err) {
+      toast(err.message || "Falha ao atualizar plataformas");
+    } finally {
+      button.disabled = false;
+      button.textContent = "Atualizar conexões";
     }
   });
 

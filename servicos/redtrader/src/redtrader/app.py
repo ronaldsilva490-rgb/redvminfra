@@ -34,6 +34,7 @@ async def lifespan(_app: FastAPI):
         yield
     finally:
         await runtime.stop()
+        await runtime.platforms.close()
         await runtime.market.close()
         await runtime.news_client.close()
         await runtime.ai.close()
@@ -164,6 +165,11 @@ async def run_once() -> dict[str, Any]:
 async def models() -> dict[str, Any]:
     runtime.models = await runtime.ai.list_models()
     return {"models": runtime.models}
+
+
+@app.post("/api/platforms/refresh")
+async def refresh_platforms() -> dict[str, Any]:
+    return {"ok": True, "platforms": await runtime.refresh_platforms()}
 
 
 @app.websocket("/ws")

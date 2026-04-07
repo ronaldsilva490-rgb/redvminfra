@@ -10,6 +10,7 @@ O MVP começa em modo simulado:
 - IA só é chamada quando o motor técnico encontra candidato.
 - Dashboard protegido por senha.
 - Perfis de risco ajustáveis: conservador, balanceado, agressivo e full agressivo.
+- Painel de plataformas: Binance Spot ativa para market data/paper interno, tastytrade Sandbox, Webull Paper e IQ Option Experimental como adapters configuráveis.
 
 ## Rodar local
 
@@ -39,6 +40,13 @@ Copie `.env.example` para `.env` se quiser customizar. Por padrão:
 - Senha: `change-me` apenas para desenvolvimento local
 - Proxy IA: `http://redsystems.ddns.net:8080`
 - Banco: `./data/redtrader.sqlite`
+
+Adapters de plataforma:
+
+- `BINANCE_BASE_URL`: market data Spot em tempo real.
+- `TASTYTRADE_USERNAME` / `TASTYTRADE_PASSWORD`: habilitam a próxima etapa do adapter Sandbox.
+- `WEBULL_APP_KEY` / `WEBULL_APP_SECRET`: habilitam a próxima etapa do adapter Paper/OpenAPI.
+- `IQOPTION_ENABLED=true` + credenciais: deixa visível o modo experimental demo isolado do core.
 
 ## Fluxo
 

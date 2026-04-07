@@ -19,6 +19,15 @@ class Settings:
     db_path = Path(_env("REDTRADER_DB_PATH", str(DATA_DIR / "redtrader.sqlite")))
     proxy_url = _env("REDSYSTEMS_PROXY_URL", "http://redsystems.ddns.net:8080").rstrip("/")
     binance_base_url = _env("BINANCE_BASE_URL", "https://api.binance.com").rstrip("/")
+    tastytrade_base_url = _env("TASTYTRADE_BASE_URL", "https://api.cert.tastytrade.com").rstrip("/")
+    tastytrade_username = _env("TASTYTRADE_USERNAME", "")
+    tastytrade_password = _env("TASTYTRADE_PASSWORD", "")
+    webull_base_url = _env("WEBULL_BASE_URL", "https://openapi.webull.com").rstrip("/")
+    webull_app_key = _env("WEBULL_APP_KEY", "")
+    webull_app_secret = _env("WEBULL_APP_SECRET", "")
+    iqoption_enabled = _env("IQOPTION_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+    iqoption_username = _env("IQOPTION_USERNAME", "")
+    iqoption_password = _env("IQOPTION_PASSWORD", "")
 
 
 settings = Settings()

@@ -27,6 +27,28 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "critic": "qwen3-coder-next",
         "report": "qwen3-coder-next",
     },
+    "platforms": {
+        "binance_spot": {
+            "enabled": True,
+            "mode": "market_data_paper",
+            "label": "Binance Spot",
+        },
+        "tastytrade_sandbox": {
+            "enabled": True,
+            "mode": "sandbox",
+            "label": "tastytrade Sandbox",
+        },
+        "webull_paper": {
+            "enabled": True,
+            "mode": "paper",
+            "label": "Webull Paper",
+        },
+        "iqoption_experimental": {
+            "enabled": False,
+            "mode": "experimental_demo",
+            "label": "IQ Option Experimental",
+        },
+    },
 }
 
 

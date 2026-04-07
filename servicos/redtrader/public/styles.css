@@ -198,7 +198,7 @@ h2 {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -284,6 +284,60 @@ h2 {
 
 .metric-card strong {
   font-size: 18px;
+}
+
+.platform-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.platform-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: #081019;
+  min-height: 210px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.platform-card.connected {
+  border-color: rgba(52, 210, 125, 0.48);
+}
+
+.platform-card.error, .platform-card.needs_config {
+  border-color: rgba(255, 105, 114, 0.48);
+}
+
+.platform-card.disabled {
+  opacity: 0.66;
+}
+
+.platform-card header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.platform-card h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.platform-card p {
+  color: #c6d2df;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.platform-meta {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .grid-2 {
@@ -464,6 +518,7 @@ input:focus, select:focus {
   }
   .side-card { margin-top: 0; }
   .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .platform-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid-2 { grid-template-columns: 1fr; }
   .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -477,7 +532,7 @@ input:focus, select:focus {
     flex-direction: column;
   }
   h1 { font-size: 34px; }
-  .stats, .market-grid, .settings-grid { grid-template-columns: 1fr; }
+  .stats, .market-grid, .settings-grid, .platform-grid { grid-template-columns: 1fr; }
   .sidebar { padding: 16px; }
   .nav { width: 100%; }
 }

@@ -6,6 +6,7 @@ from .ai import RedSystemsAI
 from .db import Database
 from .market import BinanceMarketClient
 from .news import NewsClient
+from .platforms import PlatformRegistry
 from .strategy import (
     DEFAULT_CONFIG,
     RISK_PROFILES,
@@ -28,6 +29,9 @@ class TraderRuntime:
         self.running = False
         self.latest_snapshots: dict[str, dict[str, Any]] = {}
         self.latest_news: dict[str, Any] = {}
+        self.platforms = PlatformRegistry()
+        self.platform_statuses: list[dict[str, Any]] = []
+        self.last_platforms_at = 0.0
         self.models: list[str] = []
         self.last_news_at = 0.0
         self.last_trade_at = float(self.db.get_kv("last_trade_at", 0) or 0)
@@ -91,6 +95,8 @@ class TraderRuntime:
             now = time.time()
             if now - self.last_news_at > float(config.get("news_poll_seconds", 300)):
                 await self.refresh_news()
+            if now - self.last_platforms_at > 60:
+                await self.refresh_platforms(config)
 
             symbols = config.get("symbols") or DEFAULT_CONFIG["symbols"]
             snapshots = await self.market.fetch_symbols(symbols)
@@ -108,6 +114,21 @@ class TraderRuntime:
             self.publish("news", "Noticias e sentimento atualizados", self.latest_news)
         except Exception as exc:
             self.publish("news:error", "Falha ao buscar noticias", {"error": repr(exc)})
+
+    async def refresh_platforms(self, config: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        try:
+            config = config or self.config()
+            self.platform_statuses = await self.platforms.status(config)
+            self.last_platforms_at = time.time()
+            connected = [row["id"] for row in self.platform_statuses if row.get("connected")]
+            self.publish(
+                "platforms",
+                "Plataformas sincronizadas",
+                {"connected": connected, "total": len(self.platform_statuses)},
+            )
+        except Exception as exc:
+            self.publish("platforms:error", "Falha ao sincronizar plataformas", {"error": repr(exc)})
+        return self.platform_statuses
 
     async def handle_exits(self, config: dict[str, Any]) -> None:
         open_trades = self.db.open_trades()
@@ -334,6 +355,7 @@ class TraderRuntime:
             "config": self.config(),
             "risk_profiles": available_risk_profiles(),
             "wallet": self.wallet_summary(),
+            "platforms": self.platform_statuses,
             "models": self.models,
             "news": self.latest_news,
             "snapshots": self.latest_snapshots or self.db.list_snapshots(),
