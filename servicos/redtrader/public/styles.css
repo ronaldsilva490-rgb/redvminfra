@@ -286,6 +286,71 @@ h2 {
   font-size: 18px;
 }
 
+.audit-panel {
+  border-color: rgba(227, 27, 35, 0.44);
+}
+
+.audit-status {
+  padding: 9px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: #0f1b27;
+  color: #ff6878;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.audit-status.good {
+  color: #35ff93;
+  border-color: rgba(52, 210, 125, 0.48);
+}
+
+.audit-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.audit-grid article {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #081019;
+}
+
+.audit-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 7px;
+}
+
+.audit-grid strong {
+  font-size: 22px;
+}
+
+.audit-checks {
+  display: grid;
+  grid-template-columns: auto minmax(160px, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(5, 8, 12, 0.7);
+}
+
+.audit-checks span {
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.audit-checks small {
+  color: var(--muted);
+  text-align: right;
+}
+
 .platform-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -593,7 +658,7 @@ input:focus, select:focus {
   }
   .side-card { margin-top: 0; }
   .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .platform-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .platform-grid, .audit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid-2 { grid-template-columns: 1fr; }
   .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -607,7 +672,9 @@ input:focus, select:focus {
     flex-direction: column;
   }
   h1 { font-size: 34px; }
-  .stats, .market-grid, .settings-grid, .platform-grid { grid-template-columns: 1fr; }
+  .stats, .market-grid, .settings-grid, .platform-grid, .audit-grid { grid-template-columns: 1fr; }
+  .audit-checks { grid-template-columns: 1fr; }
+  .audit-checks small { text-align: left; }
   .sidebar { padding: 16px; }
   .nav { width: 100%; }
 }

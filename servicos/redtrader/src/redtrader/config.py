@@ -30,8 +30,11 @@ class Settings:
     webull_app_key = _env("WEBULL_APP_KEY", "")
     webull_app_secret = _env("WEBULL_APP_SECRET", "")
     iqoption_enabled = _env("IQOPTION_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+    iqoption_host = _env("IQOPTION_HOST", "iqoption.com")
     iqoption_username = _env("IQOPTION_USERNAME", "")
     iqoption_password = _env("IQOPTION_PASSWORD", "")
+    iqoption_force_practice = _env("IQOPTION_FORCE_PRACTICE", "true").lower() in {"1", "true", "yes", "on"}
+    iqoption_timeout_seconds = int(_env("IQOPTION_TIMEOUT_SECONDS", "25"))
 
 
 settings = Settings()

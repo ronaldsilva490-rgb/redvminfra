@@ -1,3 +1,4 @@
+import asyncio
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -48,12 +49,12 @@ PLATFORM_DEFINITIONS: dict[str, PlatformDefinition] = {
     ),
     "iqoption_experimental": PlatformDefinition(
         id="iqoption_experimental",
-        label="IQ Option Experimental",
-        kind="unofficial_experimental",
-        mode="experimental_demo",
-        data_scope="unofficial_adapter",
-        execution_scope="demo_only_when_enabled",
-        docs_note="Isolado do core; usar apenas em demo e com adapter separado.",
+        label="IQ Option Demo",
+        kind="binary_options_demo",
+        mode="demo",
+        data_scope="market_data_and_demo_account",
+        execution_scope="demo_adapter_only",
+        docs_note="Conta demo via API comunitaria; o RED Trader bloqueia uso em conta real.",
     ),
 }
 
@@ -85,14 +86,7 @@ class PlatformRegistry:
                     missing="Configure WEBULL_APP_KEY e WEBULL_APP_SECRET no ambiente.",
                 ))
             elif platform_id == "iqoption_experimental":
-                rows.append(self._credential_status(
-                    definition,
-                    platform_config,
-                    enabled and settings.iqoption_enabled,
-                    configured=bool(settings.iqoption_username and settings.iqoption_password and settings.iqoption_enabled),
-                    base_url="unofficial/local-adapter",
-                    missing="Defina IQOPTION_ENABLED=true e credenciais somente se aceitar o modo experimental demo.",
-                ))
+                rows.append(await self._iqoption_status(definition, platform_config, enabled))
         return rows
 
     async def _binance_status(self, definition: PlatformDefinition, platform_config: dict[str, Any], enabled: bool) -> dict[str, Any]:
@@ -235,6 +229,111 @@ class PlatformRegistry:
         if not token:
             raise ValueError("missing_session_token")
         return str(token)
+
+    async def _iqoption_status(self, definition: PlatformDefinition, platform_config: dict[str, Any], enabled: bool) -> dict[str, Any]:
+        started = time.perf_counter()
+        effective_enabled = bool(enabled and settings.iqoption_enabled)
+        if not effective_enabled:
+            return self._base_row(definition, platform_config, effective_enabled, "disabled", False, "Desativado na configuracao.")
+        if not settings.iqoption_username or not settings.iqoption_password:
+            row = self._base_row(
+                definition,
+                platform_config,
+                effective_enabled,
+                "needs_config",
+                False,
+                "Defina IQOPTION_ENABLED=true, IQOPTION_USERNAME e IQOPTION_PASSWORD para conectar a conta demo.",
+            )
+            row["base_url"] = settings.iqoption_host
+            return row
+
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(self._iqoption_probe),
+                timeout=settings.iqoption_timeout_seconds + 5,
+            )
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            row = self._base_row(
+                definition,
+                platform_config,
+                effective_enabled,
+                "connected",
+                True,
+                "IQ Option Demo conectada; o RED Trader usara apenas saldo PRACTICE/demo.",
+            )
+            row.update(result)
+            row.update({"latency_ms": latency_ms, "base_url": settings.iqoption_host})
+            return row
+        except ImportError:
+            row = self._base_row(definition, platform_config, effective_enabled, "error", False, "Dependencia iqoptionapi nao instalada no ambiente.")
+            row.update({"base_url": settings.iqoption_host, "error": "missing_iqoptionapi"})
+            return row
+        except TimeoutError:
+            row = self._base_row(definition, platform_config, effective_enabled, "error", False, "Timeout ao conectar na IQ Option Demo.")
+            row.update({"base_url": settings.iqoption_host, "error": "timeout"})
+            return row
+        except Exception as exc:
+            row = self._base_row(definition, platform_config, effective_enabled, "error", False, "Falha ao conectar na IQ Option Demo.")
+            row.update({"base_url": settings.iqoption_host, "error": type(exc).__name__})
+            return row
+
+    def _iqoption_probe(self) -> dict[str, Any]:
+        from iqoptionapi.api import IQOptionAPI
+
+        api = IQOptionAPI(settings.iqoption_host, settings.iqoption_username, settings.iqoption_password)
+        api.session.trust_env = False
+        login_response = api.login(settings.iqoption_username, settings.iqoption_password)
+        login_response.raise_for_status()
+        ssid = login_response.cookies.get("ssid")
+        if not ssid:
+            raise ValueError("missing_ssid")
+
+        api.set_session_cookies()
+        profile_response = api.getprofile()
+        profile_response.raise_for_status()
+        profile = profile_response.json()
+        balances = self._iqoption_balances(profile)
+        practice = self._iqoption_practice_balance(balances)
+        selected_balance_id = practice.get("id") if practice else None
+        practice_selected = False
+        if selected_balance_id and settings.iqoption_force_practice:
+            try:
+                api.changebalance(selected_balance_id)
+                practice_selected = True
+            except Exception:
+                practice_selected = False
+
+        return {
+            "auth_mode": "unofficial_password_session",
+            "paper_only": True,
+            "demo_mode": True,
+            "balances_count": len(balances),
+            "practice_balance_id": selected_balance_id,
+            "practice_selected": practice_selected,
+        }
+
+    @staticmethod
+    def _iqoption_balances(profile: dict[str, Any]) -> list[dict[str, Any]]:
+        candidates: list[Any] = []
+        if isinstance(profile, dict):
+            candidates.extend([
+                profile.get("balances"),
+                (profile.get("result") or {}).get("balances") if isinstance(profile.get("result"), dict) else None,
+                (profile.get("data") or {}).get("balances") if isinstance(profile.get("data"), dict) else None,
+            ])
+        for candidate in candidates:
+            if isinstance(candidate, list):
+                return [item for item in candidate if isinstance(item, dict)]
+        return []
+
+    @staticmethod
+    def _iqoption_practice_balance(balances: list[dict[str, Any]]) -> dict[str, Any] | None:
+        for balance in balances:
+            raw = " ".join(str(value).lower() for value in balance.values())
+            balance_type = str(balance.get("type") or balance.get("balance_type") or "").lower()
+            if balance_type in {"practice", "demo", "4"} or "practice" in raw or "demo" in raw:
+                return balance
+        return balances[0] if balances else None
 
     def _credential_status(
         self,

@@ -72,6 +72,7 @@ function renderAll() {
   const data = state.status;
   if (!data) return;
   renderStats(data);
+  renderAudit(data.demo_audit || {});
   renderPlatforms(data);
   renderPlatformConfigHelp(state.selectedPlatformConfig);
   renderTabs(data);
@@ -96,6 +97,31 @@ function renderStats(data) {
   const platforms = data.platforms || [];
   const online = platforms.filter((item) => item.connected).length;
   $("#platformsOnline").textContent = `${online}/${platforms.length}`;
+}
+
+function renderAudit(audit) {
+  $("#auditStatus").textContent = audit.eligible_for_real_review ? "elegível para revisão" : "bloqueada";
+  $("#auditStatus").className = `audit-status ${audit.eligible_for_real_review ? "good" : "bad"}`;
+  $("#auditLevel").textContent = audit.level || 0;
+  $("#auditXp").textContent = audit.xp || 0;
+  $("#auditStreak").textContent = audit.consecutive_wins || 0;
+  $("#auditProfitFactor").textContent = Number(audit.profit_factor || 0).toFixed(2);
+  $("#auditDrawdown").textContent = pct(audit.max_drawdown_pct);
+  $("#auditNote").textContent = audit.note || "Ainda em auditoria demo.";
+  const req = audit.requirements || {};
+  const checks = audit.checks || {};
+  const rows = [
+    ["Operações fechadas", audit.closed_trades || 0, req.min_closed_trades || 0, checks.closed_trades],
+    ["Sequência 100%", audit.consecutive_wins || 0, req.min_consecutive_wins || 0, checks.consecutive_wins],
+    ["Win rate", pct(audit.win_rate_pct), pct(req.min_win_rate_pct), checks.win_rate],
+    ["Profit factor", Number(audit.profit_factor || 0).toFixed(2), Number(req.min_profit_factor || 0).toFixed(2), checks.profit_factor],
+    ["Max drawdown", pct(audit.max_drawdown_pct), `<= ${pct(req.max_drawdown_pct)}`, checks.drawdown],
+  ];
+  $("#auditChecks").innerHTML = rows.map(([label, value, target, ok]) => `
+    <span class="${ok ? "good" : "bad"}">${ok ? "OK" : "LOCK"}</span>
+    <strong>${escapeHtml(label)}</strong>
+    <small>${escapeHtml(value)} / ${escapeHtml(target)}</small>
+  `).join("");
 }
 
 function renderPlatforms(data) {
@@ -215,12 +241,14 @@ function platformConfigHelp(platform) {
       steps: commonSteps,
     },
     iqoption_experimental: {
-      title: "Configurar IQ Option Experimental",
-      description: "Adapter isolado e desligado por padrão. Use apenas em demo/experimental, porque não é parte confiável do core acadêmico.",
+      title: "Configurar IQ Option Demo",
+      description: "Conecta a conta demo/PRACTICE via adapter comunitário. O RED Trader não libera conta real neste fluxo.",
       env: [
         "IQOPTION_ENABLED=true",
-        "IQOPTION_USERNAME=seu_usuario_demo",
-        "IQOPTION_PASSWORD=sua_senha_demo",
+        "IQOPTION_HOST=iqoption.com",
+        "IQOPTION_USERNAME=seu_email",
+        "IQOPTION_PASSWORD=sua_senha",
+        "IQOPTION_FORCE_PRACTICE=true",
       ].join("\n"),
       steps: commonSteps,
     },

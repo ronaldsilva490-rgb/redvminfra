@@ -21,6 +21,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "min_risk_reward": 1.3,
     "max_hold_minutes": 60,
     "paper_fee_pct_per_side": 0.1,
+    "real_unlock_policy": {
+        "enabled": True,
+        "min_closed_trades": 30,
+        "min_consecutive_wins": 8,
+        "min_win_rate_pct": 70,
+        "min_profit_factor": 1.5,
+        "max_drawdown_pct": 8,
+    },
     "models": {
         "fast_filter": "devstral-small-2:24b",
         "decision": "gpt-oss:20b",
@@ -44,9 +52,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "label": "Webull Paper",
         },
         "iqoption_experimental": {
-            "enabled": False,
-            "mode": "experimental_demo",
-            "label": "IQ Option Experimental",
+            "enabled": True,
+            "mode": "demo",
+            "label": "IQ Option Demo",
         },
     },
 }

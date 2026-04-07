@@ -349,12 +349,80 @@ class TraderRuntime:
             "last_trade_at": self.last_trade_at,
         }
 
+    def demo_audit_summary(self) -> dict[str, Any]:
+        config = self.config()
+        policy = config.get("real_unlock_policy") or {}
+        wallet = self.wallet_summary()
+        initial = float(wallet.get("initial_balance_brl") or 1)
+        closed = [
+            item for item in self.db.list_trades(limit=2000)
+            if item.get("status") == "CLOSED"
+        ]
+        closed.sort(key=lambda item: float(item.get("closed_at") or item.get("opened_at") or 0))
+        wins = [item for item in closed if float(item.get("pnl_brl") or 0) > 0]
+        losses = [item for item in closed if float(item.get("pnl_brl") or 0) <= 0]
+        gross_profit = sum(float(item.get("pnl_brl") or 0) for item in wins)
+        gross_loss = abs(sum(float(item.get("pnl_brl") or 0) for item in losses))
+        profit_factor = gross_profit / gross_loss if gross_loss else (gross_profit if gross_profit > 0 else 0)
+        streak = 0
+        for item in reversed(closed):
+            if float(item.get("pnl_brl") or 0) > 0:
+                streak += 1
+            else:
+                break
+
+        equity = initial
+        peak = initial
+        max_drawdown_pct = 0.0
+        for item in closed:
+            equity += float(item.get("pnl_brl") or 0)
+            peak = max(peak, equity)
+            if peak > 0:
+                max_drawdown_pct = max(max_drawdown_pct, (peak - equity) / peak * 100)
+
+        closed_count = len(closed)
+        win_rate_pct = (len(wins) / closed_count * 100) if closed_count else 0.0
+        xp = max(0, int(len(wins) * 120 + streak * 80 + max(wallet.get("realized_pnl_brl") or 0, 0) * 4 - len(losses) * 90 - max_drawdown_pct * 15))
+        level = min(20, xp // 500)
+        requirements = {
+            "min_closed_trades": int(policy.get("min_closed_trades", 30)),
+            "min_consecutive_wins": int(policy.get("min_consecutive_wins", 8)),
+            "min_win_rate_pct": float(policy.get("min_win_rate_pct", 70)),
+            "min_profit_factor": float(policy.get("min_profit_factor", 1.5)),
+            "max_drawdown_pct": float(policy.get("max_drawdown_pct", 8)),
+        }
+        checks = {
+            "closed_trades": closed_count >= requirements["min_closed_trades"],
+            "consecutive_wins": streak >= requirements["min_consecutive_wins"],
+            "win_rate": win_rate_pct >= requirements["min_win_rate_pct"],
+            "profit_factor": profit_factor >= requirements["min_profit_factor"],
+            "drawdown": max_drawdown_pct <= requirements["max_drawdown_pct"] if closed_count else False,
+        }
+        eligible = bool(policy.get("enabled", True)) and all(checks.values())
+        return {
+            "xp": xp,
+            "level": level,
+            "status": "eligible" if eligible else "locked",
+            "eligible_for_real_review": eligible,
+            "closed_trades": closed_count,
+            "wins": len(wins),
+            "losses": len(losses),
+            "consecutive_wins": streak,
+            "win_rate_pct": win_rate_pct,
+            "profit_factor": profit_factor,
+            "max_drawdown_pct": max_drawdown_pct,
+            "requirements": requirements,
+            "checks": checks,
+            "note": "Conta real so libera depois de revisao manual e limites separados." if eligible else "Ainda em auditoria demo.",
+        }
+
     def status(self) -> dict[str, Any]:
         return {
             "running": self.running,
             "config": self.config(),
             "risk_profiles": available_risk_profiles(),
             "wallet": self.wallet_summary(),
+            "demo_audit": self.demo_audit_summary(),
             "platforms": self.platform_statuses,
             "models": self.models,
             "news": self.latest_news,
