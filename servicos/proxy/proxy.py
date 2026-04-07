@@ -207,6 +207,12 @@ def nvidia_display_name(model_id):
     return model_id + NVIDIA_SUFFIX
 
 
+def extract_model_name(body):
+    if not isinstance(body, dict):
+        return None
+    return body.get("model") or body.get("name")
+
+
 def normalize_nvidia_model(model_name):
     if not isinstance(model_name, str):
         return None, None
@@ -215,6 +221,9 @@ def normalize_nvidia_model(model_name):
     if raw.lower().endswith(suffix):
         model_id = raw[: -len(NVIDIA_SUFFIX)].strip()
         return model_id, NVIDIA_MODEL_MAP.get(model_id.lower())
+    model_info = NVIDIA_MODEL_MAP.get(raw.lower())
+    if model_info:
+        return model_info["id"], model_info
     return None, None
 
 
@@ -223,7 +232,7 @@ def is_nvidia_request_body(raw_body):
         body = json.loads(raw_body.decode("utf-8") if isinstance(raw_body, (bytes, bytearray)) else raw_body)
     except Exception:
         return False, None, None
-    model_id, model_info = normalize_nvidia_model(body.get("model"))
+    model_id, model_info = normalize_nvidia_model(extract_model_name(body))
     return model_info is not None, body, model_id
 
 
@@ -260,6 +269,44 @@ def augment_tags_body(raw_body):
     except Exception as e:
         log_message("WARN", "Falha ao anexar modelos NVIDIA: " + str(e)[:120])
         return raw_body
+
+
+def nvidia_model_details(model_id, model_info):
+    family = model_info["family"]
+    kind = model_info["kind"]
+    capabilities = ["completion"]
+    if kind == "vision":
+        capabilities.append("vision")
+    if kind == "image":
+        capabilities = ["image"]
+    return {
+        "license": "NVIDIA NIM routed by RED Systems proxy.",
+        "modelfile": "FROM " + model_id + "\nPARAMETER provider nvidia\n",
+        "parameters": "",
+        "template": "{{ .Prompt }}",
+        "details": {
+            "parent_model": "",
+            "format": "nvidia",
+            "family": family,
+            "families": ["nvidia", kind],
+            "parameter_size": "",
+            "quantization_level": "",
+        },
+        "model_info": {
+            "red.provider": "nvidia",
+            "red.model": model_id,
+            "red.kind": kind,
+            "red.family": family,
+            "red.note": model_info.get("note", ""),
+        },
+        "capabilities": capabilities,
+        "modified_at": "2026-04-07T00:00:00Z",
+    }
+
+
+def nvidia_show_request(model_id, model_info, source_ip):
+    log_message("INFO", "NVIDIA show " + model_id, "nvidia", source_ip, "/api/show", 0, 200)
+    return jsonify(nvidia_model_details(model_id, model_info))
 
 
 def ollama_to_nvidia_messages(messages):
@@ -720,7 +767,7 @@ def nvidia_models():
 @app.post("/api/images/generate")
 def nvidia_images_generate():
     body = request.get_json(silent=True) or {}
-    model_id, model_info = normalize_nvidia_model(body.get("model"))
+    model_id, model_info = normalize_nvidia_model(extract_model_name(body))
     if not model_info:
         return jsonify({"error": "modelo NVIDIA invalido; use um nome com sufixo " + NVIDIA_SUFFIX}), 400
     if model_info.get("kind") != "image":
@@ -753,10 +800,12 @@ def catch_all(path):
     base_path = full_path.split("?")[0]
     ttl = CACHEABLE_GETS.get(base_path) if request.method == "GET" else None
 
-    if request.method == "POST" and base_path in ("/api/chat", "/api/generate") and req_data:
+    if request.method == "POST" and base_path in ("/api/show", "/api/chat", "/api/generate") and req_data:
         is_nvidia, nvidia_body, model_id = is_nvidia_request_body(req_data)
         if is_nvidia:
             model_info = NVIDIA_MODEL_MAP.get(model_id.lower())
+            if base_path == "/api/show":
+                return nvidia_show_request(model_id, model_info, source_ip)
             if model_info and model_info.get("kind") == "image":
                 if base_path == "/api/generate":
                     return nvidia_image_request(model_id, model_info, nvidia_body, source_ip, as_ollama_generate=True)
