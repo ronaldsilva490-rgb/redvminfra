@@ -396,6 +396,314 @@ def nvidia_headers(content_type="application/json"):
     }
 
 
+def nvidia_openai_chat_request(model_id, model_info, body, source_ip):
+    if not NVIDIA_API_KEY:
+        return jsonify({"error": "RED_PROXY_NVIDIA_API_KEY not configured"}), 503
+    if model_info.get("kind") == "image":
+        return jsonify({"error": "modelo NVIDIA de imagem nao suporta /v1/chat/completions"}), 400
+
+    payload = deepcopy(body)
+    payload["model"] = model_id
+    started = time.time()
+    url = NVIDIA_CHAT_BASE + "/chat/completions"
+    debug = {
+        "provider": "nvidia",
+        "model": model_id,
+        "endpoint": "/v1/chat/completions",
+        "stream": bool(payload.get("stream", False)),
+        "message_count": len(payload.get("messages") or []),
+        "tools": bool(payload.get("tools")),
+        "tool_choice": payload.get("tool_choice"),
+        "max_tokens": payload.get("max_tokens"),
+        "temperature": payload.get("temperature"),
+    }
+    log_message("INFO", "NVIDIA openai request " + json.dumps(debug, ensure_ascii=False), "nvidia", source_ip, "/v1/chat/completions", 0, 0)
+
+    try:
+        upstream = http_session.post(
+            url,
+            headers=nvidia_headers(),
+            json=payload,
+            stream=bool(payload.get("stream", False)),
+            timeout=180,
+        )
+        latency = time.time() - started
+        log_message("INFO", "NVIDIA openai " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, "/v1/chat/completions", latency, upstream.status_code)
+        if upstream.status_code >= 400:
+            return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+
+        if payload.get("stream"):
+            def generate_openai_stream():
+                for chunk in upstream.iter_content(chunk_size=8192):
+                    if chunk:
+                        yield chunk
+
+            response_headers = {}
+            content_type = upstream.headers.get("Content-Type", "text/event-stream")
+            for h in ("Cache-Control", "X-Request-Id"):
+                if h in upstream.headers:
+                    response_headers[h] = upstream.headers[h]
+            return Response(generate_openai_stream(), status=200, headers=response_headers, content_type=content_type)
+
+        return Response(upstream.content, status=200, content_type=upstream.headers.get("Content-Type", "application/json"))
+    except Exception as e:
+        latency = time.time() - started
+        log_message("ERROR", "NVIDIA openai " + model_id + " -> " + str(e)[:100], "nvidia", source_ip, "/v1/chat/completions", latency, 500)
+        return jsonify({"error": {"message": str(e), "type": "red_proxy_error"}}), 500
+
+
+def anthropic_text_from_content(content):
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return "" if content is None else str(content)
+    parts = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "text":
+            parts.append(str(block.get("text") or ""))
+    return "\n".join(part for part in parts if part)
+
+
+def anthropic_system_messages(system):
+    text = anthropic_text_from_content(system)
+    return [{"role": "system", "content": text}] if text else []
+
+
+def anthropic_message_to_openai(message):
+    role = message.get("role", "user")
+    content = message.get("content", "")
+    if isinstance(content, str):
+        return [{"role": role, "content": content}]
+    if not isinstance(content, list):
+        return [{"role": role, "content": "" if content is None else str(content)}]
+
+    out = []
+    text_parts = []
+    openai_parts = []
+    assistant_tool_calls = []
+
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        block_type = block.get("type")
+        if block_type == "text":
+            text = str(block.get("text") or "")
+            text_parts.append(text)
+            openai_parts.append({"type": "text", "text": text})
+        elif block_type == "image":
+            source = block.get("source") or {}
+            if source.get("type") == "base64" and source.get("data"):
+                media_type = source.get("media_type") or "image/jpeg"
+                openai_parts.append({"type": "image_url", "image_url": {"url": "data:" + media_type + ";base64," + source["data"]}})
+            elif source.get("type") == "url" and source.get("url"):
+                openai_parts.append({"type": "image_url", "image_url": {"url": source["url"]}})
+        elif block_type == "tool_use":
+            assistant_tool_calls.append(
+                {
+                    "id": block.get("id") or ("toolu_" + uuid.uuid4().hex),
+                    "type": "function",
+                    "function": {
+                        "name": block.get("name") or "tool",
+                        "arguments": json.dumps(block.get("input") or {}, ensure_ascii=False),
+                    },
+                }
+            )
+        elif block_type == "tool_result":
+            if text_parts:
+                out.append({"role": "user", "content": "\n".join(text_parts)})
+                text_parts = []
+            tool_content = block.get("content", "")
+            if not isinstance(tool_content, str):
+                tool_content = json.dumps(tool_content, ensure_ascii=False)
+            out.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": block.get("tool_use_id") or ("toolu_" + uuid.uuid4().hex),
+                    "content": tool_content,
+                }
+            )
+
+    if assistant_tool_calls:
+        out.append({"role": "assistant", "content": "\n".join(text_parts), "tool_calls": assistant_tool_calls})
+    elif openai_parts and any(part.get("type") == "image_url" for part in openai_parts):
+        out.append({"role": role, "content": openai_parts})
+    elif text_parts:
+        out.append({"role": role, "content": "\n".join(text_parts)})
+    elif not out:
+        out.append({"role": role, "content": ""})
+    return out
+
+
+def anthropic_tools_to_openai(tools):
+    converted = []
+    for tool in tools or []:
+        if not isinstance(tool, dict):
+            continue
+        converted.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.get("name") or "tool",
+                    "description": tool.get("description") or "",
+                    "parameters": tool.get("input_schema") or {"type": "object", "properties": {}},
+                },
+            }
+        )
+    return converted
+
+
+def anthropic_tool_choice_to_openai(tool_choice):
+    if not isinstance(tool_choice, dict):
+        return None
+    choice_type = tool_choice.get("type")
+    if choice_type == "auto":
+        return "auto"
+    if choice_type == "any":
+        return "required"
+    if choice_type == "tool" and tool_choice.get("name"):
+        return {"type": "function", "function": {"name": tool_choice["name"]}}
+    return None
+
+
+def anthropic_to_openai_payload(body, model_id):
+    messages = []
+    messages.extend(anthropic_system_messages(body.get("system")))
+    for message in body.get("messages") or []:
+        messages.extend(anthropic_message_to_openai(message))
+
+    payload = {
+        "model": model_id,
+        "messages": messages,
+        "stream": False,
+        "max_tokens": int(body.get("max_tokens") or 1024),
+    }
+    if body.get("temperature") is not None:
+        payload["temperature"] = body.get("temperature")
+    if body.get("top_p") is not None:
+        payload["top_p"] = body.get("top_p")
+    if body.get("stop_sequences"):
+        payload["stop"] = body.get("stop_sequences")
+    tools = anthropic_tools_to_openai(body.get("tools"))
+    if tools:
+        payload["tools"] = tools
+        tool_choice = anthropic_tool_choice_to_openai(body.get("tool_choice"))
+        if tool_choice is not None:
+            payload["tool_choice"] = tool_choice
+    return payload
+
+
+def anthropic_response_from_openai(data, model_name):
+    choice = (data.get("choices") or [{}])[0]
+    message = choice.get("message") or {}
+    content_blocks = []
+    if message.get("content"):
+        content_blocks.append({"type": "text", "text": message.get("content")})
+    for tool_call in message.get("tool_calls") or []:
+        fn = tool_call.get("function") or {}
+        args = fn.get("arguments") or "{}"
+        try:
+            parsed_args = json.loads(args)
+        except Exception:
+            parsed_args = {"_raw": args}
+        content_blocks.append(
+            {
+                "type": "tool_use",
+                "id": tool_call.get("id") or ("toolu_" + uuid.uuid4().hex),
+                "name": fn.get("name") or "tool",
+                "input": parsed_args,
+            }
+        )
+    finish_reason = choice.get("finish_reason")
+    usage = data.get("usage") or {}
+    return {
+        "id": data.get("id") or ("msg_" + uuid.uuid4().hex),
+        "type": "message",
+        "role": "assistant",
+        "model": model_name,
+        "content": content_blocks,
+        "stop_reason": "tool_use" if finish_reason == "tool_calls" else "end_turn",
+        "stop_sequence": None,
+        "usage": {
+            "input_tokens": usage.get("prompt_tokens") or 0,
+            "output_tokens": usage.get("completion_tokens") or 0,
+        },
+    }
+
+
+def anthropic_sse_from_message(message):
+    yield "event: message_start\n"
+    start_message = dict(message)
+    start_message["content"] = []
+    yield "data: " + json.dumps({"type": "message_start", "message": start_message}, ensure_ascii=False) + "\n\n"
+
+    for index, block in enumerate(message.get("content") or []):
+        yield "event: content_block_start\n"
+        empty_block = dict(block)
+        if empty_block.get("type") == "text":
+            text = empty_block.pop("text", "")
+        elif empty_block.get("type") == "tool_use":
+            tool_input = empty_block.pop("input", {})
+        else:
+            text = ""
+            tool_input = {}
+        yield "data: " + json.dumps({"type": "content_block_start", "index": index, "content_block": empty_block}, ensure_ascii=False) + "\n\n"
+
+        if block.get("type") == "text":
+            yield "event: content_block_delta\n"
+            yield "data: " + json.dumps({"type": "content_block_delta", "index": index, "delta": {"type": "text_delta", "text": text}}, ensure_ascii=False) + "\n\n"
+        elif block.get("type") == "tool_use":
+            yield "event: content_block_delta\n"
+            yield "data: " + json.dumps({"type": "content_block_delta", "index": index, "delta": {"type": "input_json_delta", "partial_json": json.dumps(tool_input, ensure_ascii=False)}}, ensure_ascii=False) + "\n\n"
+
+        yield "event: content_block_stop\n"
+        yield "data: " + json.dumps({"type": "content_block_stop", "index": index}, ensure_ascii=False) + "\n\n"
+
+    yield "event: message_delta\n"
+    yield "data: " + json.dumps({"type": "message_delta", "delta": {"stop_reason": message.get("stop_reason"), "stop_sequence": None}, "usage": message.get("usage") or {}}, ensure_ascii=False) + "\n\n"
+    yield "event: message_stop\n"
+    yield "data: " + json.dumps({"type": "message_stop"}, ensure_ascii=False) + "\n\n"
+
+
+def nvidia_anthropic_messages_request(model_id, model_info, body, source_ip):
+    if not NVIDIA_API_KEY:
+        return jsonify({"error": {"message": "RED_PROXY_NVIDIA_API_KEY not configured", "type": "red_proxy_error"}}), 503
+    if model_info.get("kind") == "image":
+        return jsonify({"error": {"message": "modelo NVIDIA de imagem nao suporta /v1/messages", "type": "invalid_request_error"}}), 400
+
+    payload = anthropic_to_openai_payload(body, model_id)
+    started = time.time()
+    url = NVIDIA_CHAT_BASE + "/chat/completions"
+    debug = {
+        "provider": "nvidia",
+        "model": model_id,
+        "endpoint": "/v1/messages",
+        "stream": bool(body.get("stream", False)),
+        "message_count": len(body.get("messages") or []),
+        "openai_message_count": len(payload.get("messages") or []),
+        "tools": bool(payload.get("tools")),
+        "max_tokens": payload.get("max_tokens"),
+    }
+    log_message("INFO", "NVIDIA anthropic request " + json.dumps(debug, ensure_ascii=False), "nvidia", source_ip, "/v1/messages", 0, 0)
+
+    try:
+        upstream = http_session.post(url, headers=nvidia_headers(), json=payload, timeout=180)
+        latency = time.time() - started
+        log_message("INFO", "NVIDIA anthropic " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, "/v1/messages", latency, upstream.status_code)
+        if upstream.status_code >= 400:
+            return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+
+        message = anthropic_response_from_openai(upstream.json(), nvidia_display_name(model_id))
+        if body.get("stream"):
+            return Response(anthropic_sse_from_message(message), status=200, content_type="text/event-stream")
+        return jsonify(message)
+    except Exception as e:
+        latency = time.time() - started
+        log_message("ERROR", "NVIDIA anthropic " + model_id + " -> " + str(e)[:100], "nvidia", source_ip, "/v1/messages", latency, 500)
+        return jsonify({"error": {"message": str(e), "type": "red_proxy_error"}}), 500
+
+
 def nvidia_chat_request(model_id, body, base_path, source_ip):
     if not NVIDIA_API_KEY:
         return jsonify({"error": "RED_PROXY_NVIDIA_API_KEY not configured"}), 503
@@ -604,6 +912,100 @@ def nvidia_image_request(model_id, model_info, body, source_ip, as_ollama_genera
         latency = time.time() - started
         log_message("ERROR", "NVIDIA image " + model_id + " -> " + str(e)[:100], "nvidia", source_ip, "/api/images/generate", latency, 500)
         return jsonify({"error": str(e)}), 500
+
+
+def forward_to_upstream(full_path=None):
+    full_path = full_path or request.path or "/"
+    source_ip = request.remote_addr
+    req_path = full_path
+    if request.query_string:
+        req_path += "?" + request.query_string.decode("utf-8")
+
+    req_data = None
+    if request.method in ("POST", "PUT", "PATCH"):
+        req_data = request.get_data()
+
+    base_path = full_path.split("?")[0]
+    ttl = CACHEABLE_GETS.get(base_path) if request.method == "GET" else None
+    last_error = None
+
+    for attempt in range(MAX_RETRIES + 1):
+        key_id, api_key = key_pool.get_key()
+        if not api_key:
+            return '{"error": "No keys available"}', 503
+
+        start = time.time()
+        try:
+            headers = {"Authorization": "Bearer " + api_key}
+            for h in ("Content-Type", "Accept", "Accept-Encoding"):
+                if h in request.headers:
+                    headers[h] = request.headers[h]
+
+            if attempt == 0:
+                log_message("INFO", request.method + " " + req_path, key_id, source_ip, req_path, 0, 0)
+
+            resp = http_session.request(
+                method=request.method,
+                url=OLLAMA_BASE + req_path,
+                headers=headers,
+                data=req_data,
+                stream=(ttl is None),
+                timeout=120,
+                allow_redirects=False,
+            )
+            latency = time.time() - start
+
+            if resp.status_code == 429 and attempt < MAX_RETRIES:
+                key_pool.report_failure(key_id, is_rate_limit=True)
+                log_message("WARN", "429 key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 429)
+                continue
+            if resp.status_code == 404 and attempt < MAX_RETRIES:
+                key_pool.report_failure(key_id, is_rate_limit=False)
+                log_message("WARN", "404 key " + str(key_id) + " (sem acesso?) -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 404)
+                continue
+            if resp.status_code >= 500 and attempt < MAX_RETRIES:
+                key_pool.report_failure(key_id, is_rate_limit=False)
+                log_message("WARN", str(resp.status_code) + " key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, resp.status_code)
+                continue
+
+            if resp.status_code < 400:
+                key_pool.report_success(key_id)
+            else:
+                key_pool.report_failure(key_id, resp.status_code == 429)
+
+            log_message("INFO", request.method + " " + req_path + " -> HTTP " + str(resp.status_code), key_id, source_ip, req_path, latency, resp.status_code)
+
+            if ttl and resp.status_code == 200:
+                body = resp.content
+                ct = resp.headers.get("Content-Type", "application/json")
+                if base_path == "/api/tags":
+                    body = augment_tags_body(body)
+                    ct = "application/json"
+                cache_set(base_path, body, ct, 200, ttl)
+                return Response(body, status=200, content_type=ct)
+
+            def generate():
+                for chunk in resp.iter_content(chunk_size=8192):
+                    if chunk:
+                        yield chunk
+
+            response_headers = {}
+            for h in ("Content-Type", "Content-Length", "Transfer-Encoding", "X-Request-Id"):
+                if h in resp.headers:
+                    response_headers[h] = resp.headers[h]
+
+            return Response(generate(), status=resp.status_code, headers=response_headers)
+        except Exception as e:
+            latency = time.time() - start
+            last_error = str(e)
+            key_pool.report_failure(key_id, is_rate_limit=False)
+            if attempt < MAX_RETRIES:
+                log_message("WARN", "Exception key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 0)
+                continue
+            log_message("ERROR", request.method + " " + req_path + " -> " + last_error[:80], key_id, source_ip, req_path, latency, 500)
+            return json.dumps({"error": last_error}), 500
+
+    return json.dumps({"error": last_error or "Max retries exceeded"}), 502
 
 
 # ============ LOGGING COM ROTACAO ============
@@ -823,6 +1225,42 @@ def nvidia_models():
             ],
         }
     )
+
+
+@app.get("/v1/models")
+def openai_models():
+    return jsonify(
+        {
+            "object": "list",
+            "data": [
+                {
+                    "id": nvidia_display_name(model["id"]),
+                    "object": "model",
+                    "created": 1775520000,
+                    "owned_by": "nvidia",
+                }
+                for model in NVIDIA_MODELS
+            ],
+        }
+    )
+
+
+@app.post("/v1/chat/completions")
+def openai_chat_completions():
+    body = request.get_json(silent=True) or {}
+    model_id, model_info = normalize_nvidia_model(extract_model_name(body))
+    if model_info:
+        return nvidia_openai_chat_request(model_id, model_info, body, request.remote_addr)
+    return forward_to_upstream()
+
+
+@app.post("/v1/messages")
+def anthropic_messages():
+    body = request.get_json(silent=True) or {}
+    model_id, model_info = normalize_nvidia_model(extract_model_name(body))
+    if model_info:
+        return nvidia_anthropic_messages_request(model_id, model_info, body, request.remote_addr)
+    return forward_to_upstream()
 
 
 @app.post("/api/images/generate")
