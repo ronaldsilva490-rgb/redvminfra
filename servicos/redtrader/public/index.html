@@ -16,6 +16,7 @@
         </a>
         <nav class="nav">
           <a href="#top">Visão</a>
+          <a href="#terminal">Terminal</a>
           <a href="#platforms">Plataformas</a>
           <a href="#chart">Gráfico</a>
           <a href="#committee">Comitê</a>
@@ -43,6 +44,77 @@
             <button id="resetBtn" class="secondary" type="button">Resetar paper</button>
           </div>
         </header>
+
+        <section id="terminal" class="terminal-shell" aria-label="Terminal demo de operação">
+          <header class="terminal-topbar">
+            <div class="terminal-brand">
+              <span class="terminal-mark">RED</span>
+              <strong>IQ Demo Terminal</strong>
+            </div>
+            <div class="terminal-tabs">
+              <span id="terminalAssetTab" class="terminal-tab active">sincronizando</span>
+              <span class="terminal-tab">IA audit</span>
+              <span class="terminal-tab">PRACTICE</span>
+            </div>
+            <div class="terminal-account">
+              <span id="terminalMode">demo</span>
+              <strong id="terminalBalance">R$ 0,00</strong>
+            </div>
+          </header>
+
+          <div class="terminal-body">
+            <aside class="terminal-leftbar">
+              <span>Portfólio</span>
+              <span>Histórico</span>
+              <span>Modelos</span>
+              <span>Auditoria</span>
+              <span>Logs</span>
+            </aside>
+
+            <section class="terminal-stage">
+              <div class="terminal-asset-head">
+                <div>
+                  <strong id="terminalAsset">BTCUSDT</strong>
+                  <small id="terminalSub">Blitz demo · IA auditada</small>
+                </div>
+                <div class="terminal-sentiment">
+                  <span>ACIMA <strong id="terminalAbove">50%</strong></span>
+                  <span>ABAIXO <strong id="terminalBelow">50%</strong></span>
+                </div>
+              </div>
+              <canvas id="terminalChart" width="1400" height="620"></canvas>
+              <div id="terminalPriceTag" class="terminal-price-tag">0.00</div>
+              <div id="terminalAiBadge" class="terminal-ai-badge">IA aguardando setup</div>
+            </section>
+
+            <aside class="terminal-tradebar">
+              <label>
+                Invest
+                <input id="terminalStake" type="number" min="1" step="1" value="1" />
+              </label>
+              <label>
+                Expiração
+                <select id="terminalExpiry">
+                  <option value="30">30 seg</option>
+                  <option value="60">1 min</option>
+                  <option value="120">2 min</option>
+                </select>
+              </label>
+              <div class="terminal-profit">
+                <span>Lucro estimado</span>
+                <strong id="terminalProfit">+0%</strong>
+                <small id="terminalProfitValue">+R$ 0,00</small>
+              </div>
+              <button id="terminalUpBtn" class="terminal-order up" type="button">ACIMA</button>
+              <button id="terminalDownBtn" class="terminal-order down" type="button">ABAIXO</button>
+              <div class="terminal-decision">
+                <span>Leitura da IA</span>
+                <strong id="terminalDecision">NO_TRADE</strong>
+                <small id="terminalDecisionReason">Aguardando análise.</small>
+              </div>
+            </aside>
+          </div>
+        </section>
 
         <section class="stats">
           <article>

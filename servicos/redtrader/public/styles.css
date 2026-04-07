@@ -196,6 +196,256 @@ h2 {
   justify-content: flex-end;
 }
 
+.terminal-shell {
+  border: 1px solid #151b22;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #020304;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(227, 27, 35, 0.12);
+}
+
+.terminal-topbar {
+  min-height: 64px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #050608;
+  border-bottom: 1px solid #171d24;
+}
+
+.terminal-brand, .terminal-tabs, .terminal-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.terminal-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: #ff4a1b;
+  color: #170300;
+  font-weight: 1000;
+  letter-spacing: 0.03em;
+}
+
+.terminal-brand strong {
+  font-size: 18px;
+  letter-spacing: 0.02em;
+}
+
+.terminal-tab {
+  min-width: 112px;
+  padding: 10px 12px;
+  border: 1px solid #2a313b;
+  border-radius: 8px;
+  background: #07090c;
+  color: #b9c2cd;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.terminal-tab.active {
+  color: white;
+  border-color: #f27a1a;
+  box-shadow: inset 0 -2px 0 #f27a1a;
+}
+
+.terminal-account {
+  justify-content: flex-end;
+  color: #f27a1a;
+}
+
+.terminal-account span {
+  color: #98a2ad;
+  font-size: 12px;
+  text-transform: uppercase;
+  font-weight: 900;
+}
+
+.terminal-account strong {
+  font-size: 22px;
+}
+
+.terminal-body {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) 220px;
+  min-height: 620px;
+}
+
+.terminal-leftbar {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: 18px 8px;
+  background: #07090c;
+  border-right: 1px solid #171d24;
+}
+
+.terminal-leftbar span {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  justify-self: center;
+  color: #757e8a;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.terminal-stage {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 60% 50%, rgba(23, 133, 73, 0.12), transparent 18rem),
+    #020304;
+}
+
+.terminal-asset-head {
+  position: absolute;
+  z-index: 3;
+  top: 18px;
+  left: 22px;
+  right: 22px;
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  pointer-events: none;
+}
+
+.terminal-asset-head strong {
+  display: block;
+  font-size: 17px;
+}
+
+.terminal-asset-head small, .terminal-sentiment span {
+  color: #a4adb8;
+  font-size: 12px;
+}
+
+.terminal-sentiment {
+  display: grid;
+  gap: 6px;
+  min-width: 116px;
+  text-align: right;
+}
+
+.terminal-sentiment strong {
+  color: white;
+  display: inline;
+}
+
+#terminalChart {
+  display: block;
+  width: 100%;
+  min-height: 560px;
+}
+
+.terminal-price-tag {
+  position: absolute;
+  z-index: 4;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: #e5701d;
+  color: #160602;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 0 20px rgba(229, 112, 29, 0.35);
+}
+
+.terminal-ai-badge {
+  position: absolute;
+  z-index: 4;
+  left: 22px;
+  bottom: 22px;
+  max-width: min(560px, calc(100% - 44px));
+  padding: 10px 12px;
+  border: 1px solid rgba(242, 122, 26, 0.42);
+  border-radius: 8px;
+  background: rgba(5, 7, 10, 0.84);
+  color: #ffd8bd;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.terminal-tradebar {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  padding: 16px;
+  background: #07090c;
+  border-left: 1px solid #171d24;
+}
+
+.terminal-tradebar label {
+  color: #8f98a5;
+}
+
+.terminal-tradebar input,
+.terminal-tradebar select {
+  background: #101318;
+  border-color: #252c35;
+}
+
+.terminal-profit {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid rgba(52, 210, 125, 0.22);
+  border-radius: 8px;
+  background: rgba(52, 210, 125, 0.06);
+}
+
+.terminal-profit span,
+.terminal-profit small,
+.terminal-decision span,
+.terminal-decision small {
+  color: #9aa4af;
+}
+
+.terminal-profit strong {
+  color: #53e786;
+  font-size: 36px;
+  line-height: 1;
+}
+
+.terminal-order {
+  min-height: 108px;
+  font-size: 17px;
+  letter-spacing: 0.04em;
+}
+
+.terminal-order.up {
+  background: #4daa61;
+}
+
+.terminal-order.down {
+  background: #ef5b49;
+}
+
+.terminal-decision {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid #242c36;
+  border-radius: 8px;
+  background: #0d1117;
+}
+
+.terminal-decision strong {
+  color: #ffbe78;
+  font-size: 18px;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -658,6 +908,26 @@ input:focus, select:focus {
   }
   .side-card { margin-top: 0; }
   .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .terminal-topbar { flex-wrap: wrap; }
+  .terminal-body { grid-template-columns: 1fr; }
+  .terminal-leftbar {
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(100px, 1fr);
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid #171d24;
+  }
+  .terminal-leftbar span {
+    writing-mode: horizontal-tb;
+    transform: none;
+  }
+  .terminal-tradebar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-left: 0;
+    border-top: 1px solid #171d24;
+  }
+  .terminal-decision,
+  .terminal-profit { grid-column: span 2; }
   .platform-grid, .audit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid-2 { grid-template-columns: 1fr; }
   .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -673,6 +943,15 @@ input:focus, select:focus {
   }
   h1 { font-size: 34px; }
   .stats, .market-grid, .settings-grid, .platform-grid, .audit-grid { grid-template-columns: 1fr; }
+  .terminal-topbar,
+  .terminal-tabs,
+  .terminal-account { align-items: stretch; flex-direction: column; width: 100%; }
+  .terminal-tab { min-width: 0; width: 100%; }
+  .terminal-asset-head { position: static; padding: 14px; }
+  #terminalChart { min-height: 420px; }
+  .terminal-tradebar { grid-template-columns: 1fr; }
+  .terminal-decision,
+  .terminal-profit { grid-column: auto; }
   .audit-checks { grid-template-columns: 1fr; }
   .audit-checks small { text-align: left; }
   .sidebar { padding: 16px; }

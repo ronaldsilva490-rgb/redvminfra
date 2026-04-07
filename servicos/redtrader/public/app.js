@@ -19,6 +19,10 @@ function money(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
 }
 
+function usd(value) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0));
+}
+
 function pct(value) {
   return `${Number(value || 0).toFixed(2)}%`;
 }
@@ -72,6 +76,7 @@ function renderAll() {
   const data = state.status;
   if (!data) return;
   renderStats(data);
+  renderTerminal(data);
   renderAudit(data.demo_audit || {});
   renderPlatforms(data);
   renderPlatformConfigHelp(state.selectedPlatformConfig);
@@ -374,6 +379,183 @@ function renderChart(data) {
   ctx.fillText(`${state.selectedSymbol} · 1m`, pad.l, 18);
 }
 
+function renderTerminal(data) {
+  const canvas = $("#terminalChart");
+  if (!canvas) return;
+
+  const snapshot = data.snapshots?.[state.selectedSymbol] || {};
+  const candles = snapshot.candles?.["1m"] || [];
+  const features = snapshot.features || {};
+  const wallet = data.wallet || {};
+  const iq = (data.platforms || []).find((item) => item.id === "iqoption_experimental");
+  const practiceBalance = Number(iq?.practice_balance || 0);
+  const latestAnalysis = (data.analyses || []).find((item) => item.symbol === state.selectedSymbol) || {};
+  const analysisResponse = latestAnalysis.response || {};
+  const last = candles[candles.length - 1] || {};
+  const change = last.open ? ((Number(last.close) / Number(last.open) - 1) * 100) : 0;
+  const bookBias = (Number(features.bid_ask_ratio || 1) - 1) * 8;
+  const trendBias = features.trend_1m === "up" ? 7 : features.trend_1m === "down" ? -7 : 0;
+  const above = Math.max(5, Math.min(95, 50 + change * 500 + bookBias + trendBias));
+  const below = 100 - above;
+  const stake = Number($("#terminalStake")?.value || 1);
+  const payout = 86;
+  const decision = formatTerminalDecision(analysisResponse.decision || latestAnalysis.decision || (above > 60 ? "ACIMA" : below > 60 ? "ABAIXO" : "NO_TRADE"));
+  const reason = analysisResponse.reasoning_summary || analysisResponse.reason || latestAnalysis.summary || "Aguardando o comitê de modelos.";
+  const balanceFormatter = practiceBalance ? usd : money;
+
+  $("#terminalAssetTab").textContent = state.selectedSymbol || "mercado";
+  $("#terminalAsset").textContent = state.selectedSymbol || "mercado";
+  $("#terminalSub").textContent = `${iq?.connected ? "IQ Option PRACTICE" : "Paper interno"} · ${features.trend_1m || "sem tendência"} · 1m`;
+  $("#terminalMode").textContent = iq?.connected ? "IQ PRACTICE" : "PAPER";
+  $("#terminalBalance").textContent = balanceFormatter(practiceBalance || wallet.equity_brl);
+  $("#terminalAbove").textContent = `${above.toFixed(0)}%`;
+  $("#terminalBelow").textContent = `${below.toFixed(0)}%`;
+  $("#terminalProfit").textContent = `+${payout}%`;
+  $("#terminalProfitValue").textContent = `+${balanceFormatter(stake * payout / 100)}`;
+  $("#terminalDecision").textContent = decision;
+  $("#terminalDecisionReason").textContent = reason;
+  $("#terminalAiBadge").textContent = latestAnalysis.model ? `${latestAnalysis.model} · ${decision}` : "IA aguardando setup";
+  $("#terminalPriceTag").textContent = formatPrice(features.last_price || last.close);
+
+  renderTerminalChart(data, above);
+}
+
+function formatTerminalDecision(value) {
+  const text = String(value || "NO_TRADE").toUpperCase();
+  if (["ENTER_LONG", "LONG", "CALL", "BUY", "ACIMA"].includes(text)) return "ACIMA";
+  if (["ENTER_SHORT", "SHORT", "PUT", "SELL", "ABAIXO"].includes(text)) return "ABAIXO";
+  return "NO_TRADE";
+}
+
+function renderTerminalChart(data, aboveBias = 50) {
+  const canvas = $("#terminalChart");
+  if (!canvas) return;
+  const container = canvas.parentElement;
+  const ratio = window.devicePixelRatio || 1;
+  const width = Math.max(620, container.clientWidth);
+  const height = Math.max(520, Math.min(680, Math.round(width * 0.46)));
+  canvas.width = Math.floor(width * ratio);
+  canvas.height = Math.floor(height * ratio);
+  canvas.style.height = `${height}px`;
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#020304";
+  ctx.fillRect(0, 0, width, height);
+
+  const candles = data.snapshots?.[state.selectedSymbol]?.candles?.["1m"] || [];
+  if (!candles.length) {
+    ctx.fillStyle = "#88929c";
+    ctx.font = "700 14px Inter, sans-serif";
+    ctx.fillText("Aguardando candles do mercado...", 28, 42);
+    return;
+  }
+
+  const pad = { l: 48, r: 82, t: 58, b: 44 };
+  const values = candles.flatMap((candle) => [Number(candle.high), Number(candle.low)]).filter(Number.isFinite);
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const span = max - min || 1;
+  const plotW = width - pad.l - pad.r;
+  const plotH = height - pad.t - pad.b;
+  const liveOffset = (Date.now() % 1000) / 1000;
+  const xStep = plotW / Math.max(1, candles.length - 1);
+  const y = (value) => pad.t + (max - Number(value)) / span * plotH;
+  const x = (index) => pad.l + index * xStep + liveOffset * Math.min(xStep, 8);
+  const last = candles[candles.length - 1];
+  const lastY = y(last.close);
+  const nowX = Math.min(width - pad.r - 20, x(candles.length - 1));
+
+  ctx.strokeStyle = "#1d232b";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 6; i++) {
+    const gx = pad.l + (plotW / 6) * i;
+    ctx.beginPath();
+    ctx.moveTo(gx, pad.t);
+    ctx.lineTo(gx, height - pad.b);
+    ctx.stroke();
+  }
+  for (let i = 0; i <= 4; i++) {
+    const gy = pad.t + (plotH / 4) * i;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, gy);
+    ctx.lineTo(width - pad.r, gy);
+    ctx.stroke();
+  }
+
+  const gradient = ctx.createLinearGradient(0, pad.t, 0, height - pad.b);
+  gradient.addColorStop(0, "rgba(239, 114, 23, 0.32)");
+  gradient.addColorStop(0.65, "rgba(239, 114, 23, 0.11)");
+  gradient.addColorStop(1, "rgba(239, 114, 23, 0.02)");
+
+  ctx.beginPath();
+  candles.forEach((candle, index) => {
+    const px = x(index);
+    const py = y(candle.close);
+    if (index === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.lineTo(nowX, height - pad.b);
+  ctx.lineTo(pad.l, height - pad.b);
+  ctx.closePath();
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  ctx.beginPath();
+  candles.forEach((candle, index) => {
+    const px = x(index);
+    const py = y(candle.close);
+    if (index === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  });
+  ctx.strokeStyle = "#f27a1a";
+  ctx.lineWidth = 2;
+  ctx.shadowColor = "rgba(242, 122, 26, 0.55)";
+  ctx.shadowBlur = 10;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.setLineDash([5, 5]);
+  ctx.strokeStyle = "rgba(242, 122, 26, 0.85)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, lastY);
+  ctx.lineTo(width - pad.r + 2, lastY);
+  ctx.stroke();
+  ctx.setLineDash([2, 4]);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+  ctx.beginPath();
+  ctx.moveTo(nowX, pad.t);
+  ctx.lineTo(nowX, height - pad.b);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const pulse = 3 + Math.sin(Date.now() / 180) * 2;
+  ctx.fillStyle = "#25c46b";
+  ctx.beginPath();
+  ctx.arc(nowX, lastY, 4 + pulse, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#f27a1a";
+  ctx.fillRect(width - pad.r + 8, lastY - 14, 74, 28);
+  ctx.fillStyle = "#190802";
+  ctx.font = "800 12px Inter, sans-serif";
+  ctx.fillText(formatPrice(last.close), width - pad.r + 14, lastY + 5);
+
+  ctx.fillStyle = "#7f8791";
+  ctx.font = "12px Inter, sans-serif";
+  for (let i = 0; i <= 3; i++) {
+    const candle = candles[Math.min(candles.length - 1, Math.floor((candles.length - 1) * i / 3))];
+    ctx.fillText(new Date(candle.time * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }), pad.l + (plotW / 3) * i, height - 16);
+  }
+  ctx.fillStyle = aboveBias >= 50 ? "rgba(52, 210, 125, 0.24)" : "rgba(255, 105, 114, 0.24)";
+  ctx.fillRect(pad.l, pad.t, 9, plotH * (aboveBias / 100));
+  ctx.fillStyle = aboveBias >= 50 ? "#34d27d" : "#ff6972";
+  ctx.font = "900 12px Inter, sans-serif";
+  ctx.fillText(`ACIMA ${aboveBias.toFixed(0)}%`, pad.l + 16, pad.t + 20);
+  ctx.fillText(`ABAIXO ${(100 - aboveBias).toFixed(0)}%`, pad.l + 16, height - pad.b - 8);
+}
+
 function renderAnalyses(data) {
   const items = (data.analyses || []).slice(0, 8);
   $("#analyses").innerHTML = items.length
@@ -649,6 +831,15 @@ function bindActions() {
     }
   });
 
+  ["terminalUpBtn", "terminalDownBtn"].forEach((id) => {
+    const button = $(`#${id}`);
+    if (!button) return;
+    button.addEventListener("click", async () => {
+      toast("Pedido manual em modo demo: rodando auditoria da IA antes de qualquer ação.");
+      $("#runOnceBtn").click();
+    });
+  });
+
   $("#refreshPlatformsBtn").addEventListener("click", async () => {
     const button = $("#refreshPlatformsBtn");
     button.disabled = true;
@@ -680,18 +871,24 @@ function bindActions() {
     toast("Saldo paper reiniciado");
   });
 
+  $("#terminalStake")?.addEventListener("input", () => renderTerminal(state.status || {}));
+
   $("#logoutBtn").addEventListener("click", async () => {
     await api("/api/logout", { method: "POST", body: "{}" });
     location.href = appPath("/login");
   });
 }
 
-window.addEventListener("resize", () => renderChart(state.status || {}));
+window.addEventListener("resize", () => {
+  renderChart(state.status || {});
+  renderTerminal(state.status || {});
+});
 
 (async function boot() {
   bindActions();
   await refresh();
   await refreshModels();
   connectSocket();
+  setInterval(() => renderTerminal(state.status || {}), 1000);
   setInterval(refresh, 30000);
 })();

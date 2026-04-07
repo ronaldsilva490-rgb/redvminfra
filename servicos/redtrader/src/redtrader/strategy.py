@@ -7,7 +7,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "risk_profile": "balanced",
     "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
     "tradable_symbols": ["BTCUSDT", "ETHUSDT"],
-    "market_poll_seconds": 20,
+    "market_poll_seconds": 5,
     "news_poll_seconds": 300,
     "cooldown_minutes": 30,
     "max_trades_per_day": 3,
