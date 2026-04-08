@@ -53,6 +53,8 @@ class TraderRuntime:
         self.last_trade_at = float(self.db.get_kv("last_trade_at", 0) or 0)
         self.last_decision_at = 0.0
         self.last_wait_event_at = 0.0
+        self.last_learning_at = 0.0
+        self.learning_task: asyncio.Task | None = None
         self.asset_cooldowns: dict[str, float] = {}
         self.queues: set[asyncio.Queue] = set()
         self.cycle_lock = asyncio.Lock()
@@ -141,6 +143,7 @@ class TraderRuntime:
             await self.refresh_market(config, reason=reason)
             await self.handle_exits(config)
             await self.maybe_send_trade_summaries(config)
+            await self.maybe_learn_from_iq_history(config)
             await self.maybe_enter(config)
 
     async def refresh_market(self, config: dict[str, Any], reason: str = "loop") -> dict[str, dict[str, Any]]:
@@ -246,7 +249,7 @@ class TraderRuntime:
         symbols: dict[str, dict[str, Any]] = {}
         operations: list[dict[str, Any]] = []
 
-        for trade in trades:
+        for trade in trades[-24:]:
             metadata = trade.get("metadata") or {}
             pnl = float(trade.get("pnl_brl") or 0)
             stake = float(trade.get("position_brl") or 0)
@@ -484,6 +487,365 @@ class TraderRuntime:
         if state_changed:
             self.db.set_kv("whatsapp_trade_summary_state", state)
 
+    def iq_learning_state(self) -> dict[str, Any]:
+        state = self.db.get_kv("iqoption_learning_state", {}) or {}
+        return {
+            "last_code_trade_id": int(state.get("last_code_trade_id") or 0),
+            "last_model_trade_id": int(state.get("last_model_trade_id") or 0),
+            "updated_at": float(state.get("updated_at") or 0),
+            "model_updated_at": float(state.get("model_updated_at") or 0),
+            "lessons": list(state.get("lessons") or [])[-20:],
+            "avoid_patterns": list(state.get("avoid_patterns") or [])[-30:],
+            "symbol_direction_stats": dict(state.get("symbol_direction_stats") or {}),
+            "recovery_rules": list(state.get("recovery_rules") or [])[-12:],
+            "last_reflection": dict(state.get("last_reflection") or {}),
+        }
+
+    def set_iq_learning_state(self, state: dict[str, Any]) -> None:
+        clean = {
+            **state,
+            "lessons": list(state.get("lessons") or [])[-20:],
+            "avoid_patterns": list(state.get("avoid_patterns") or [])[-30:],
+            "recovery_rules": list(state.get("recovery_rules") or [])[-12:],
+            "updated_at": time.time(),
+        }
+        self.db.set_kv("iqoption_learning_state", clean)
+
+    async def maybe_learn_from_iq_history(self, config: dict[str, Any]) -> None:
+        learning = config.get("iqoption_learning") or {}
+        if not learning.get("enabled", True):
+            return
+        closed = self._closed_iq_trades(limit=max(200, int(learning.get("recent_limit") or 40) * 4))
+        if not closed:
+            return
+
+        state = self.iq_learning_state()
+        updated_state = self.update_code_learning_state(config, closed, state)
+        if updated_state != state:
+            state = updated_state
+            self.set_iq_learning_state(state)
+
+        if not learning.get("use_model_reflection", True):
+            return
+        if self.learning_task and not self.learning_task.done():
+            return
+        if self.db.open_trades():
+            return
+        now = time.time()
+        if now - self.last_learning_at < float(learning.get("interval_seconds") or 150):
+            return
+        last_model_trade_id = int(state.get("last_model_trade_id") or 0)
+        new_trades = [item for item in closed if int(item.get("id") or 0) > last_model_trade_id]
+        if len(new_trades) < int(learning.get("min_new_closed") or 5):
+            return
+        self.last_learning_at = now
+        recent_limit = int(learning.get("recent_limit") or 40)
+        batch = closed[-recent_limit:]
+        self.learning_task = asyncio.create_task(self.reflect_iq_learning(config, batch, state))
+        self.publish(
+            "learning:scheduled",
+            "Aprendizado operacional agendado",
+            {"trades": len(batch), "new_trades": len(new_trades), "last_trade_id": closed[-1].get("id")},
+        )
+
+    def update_code_learning_state(
+        self,
+        config: dict[str, Any],
+        closed: list[dict[str, Any]],
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        latest_id = int(closed[-1].get("id") or 0)
+        if latest_id <= int(state.get("last_code_trade_id") or 0):
+            return state
+        techniques = config.get("iqoption_techniques") or {}
+        stats: dict[str, dict[str, Any]] = {}
+        avoid_patterns = [item for item in list(state.get("avoid_patterns") or []) if float(item.get("expires_at") or 0) > time.time()]
+        lessons = list(state.get("lessons") or [])
+
+        for trade in closed[-80:]:
+            metadata = trade.get("metadata") or {}
+            side = _binary_direction(trade.get("side")) or str(trade.get("side") or "WAIT").upper()
+            symbol = str(trade.get("symbol") or "-")
+            key = f"{symbol}:{side}"
+            pnl = float(trade.get("pnl_brl") or 0)
+            row = stats.setdefault(key, {"symbol": symbol, "direction": side, "trades": 0, "wins": 0, "losses": 0, "pnl": 0.0, "last_ids": []})
+            row["trades"] += 1
+            row["pnl"] += pnl
+            row["last_ids"].append(trade.get("id"))
+            row["last_ids"] = row["last_ids"][-5:]
+            if pnl > 0:
+                row["wins"] += 1
+            elif pnl < 0:
+                row["losses"] += 1
+
+            candidate = metadata.get("candidate") or {}
+            code_context = candidate.get("code_context") or {}
+            traps = set(code_context.get("traps") or [])
+            gale_stage = int(metadata.get("gale_stage") or 0)
+            if pnl < 0 and techniques.get("anti_repeat_loss", True):
+                severity = 0.45 + min(0.35, gale_stage * 0.12)
+                if _direction_exhausted(side, code_context):
+                    severity += 0.2
+                avoid_patterns.append({
+                    "key": key,
+                    "symbol": symbol,
+                    "direction": side,
+                    "reason": "loss recente com exaustao" if traps else "loss recente",
+                    "severity": round(min(1.0, severity), 2),
+                    "expires_at": time.time() + (240 + gale_stage * 120),
+                    "trade_id": trade.get("id"),
+                    "gale_stage": gale_stage,
+                    "traps": list(traps),
+                })
+
+        for key, row in stats.items():
+            if row["trades"] >= 5:
+                win_rate = row["wins"] / max(1, row["trades"]) * 100
+                row["win_rate"] = round(win_rate, 1)
+                if row["losses"] >= 3 and win_rate < 45 and techniques.get("anti_repeat_loss", True):
+                    lessons.append(
+                        f"{key}: win rate baixo ({win_rate:.1f}%) nas ultimas amostras; exigir consenso maior ou procurar setup oposto."
+                    )
+
+        dedup_lessons = []
+        seen = set()
+        for lesson in lessons:
+            if lesson in seen:
+                continue
+            seen.add(lesson)
+            dedup_lessons.append(str(lesson)[:260])
+
+        return {
+            **state,
+            "last_code_trade_id": latest_id,
+            "symbol_direction_stats": stats,
+            "avoid_patterns": avoid_patterns[-30:],
+            "lessons": dedup_lessons[-20:],
+            "updated_at": time.time(),
+        }
+
+    async def reflect_iq_learning(self, config: dict[str, Any], trades: list[dict[str, Any]], state: dict[str, Any]) -> None:
+        learning = config.get("iqoption_learning") or {}
+        model = str(learning.get("model") or (config.get("models") or {}).get("report") or "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)")
+        compact_trades = []
+        for trade in trades:
+            metadata = trade.get("metadata") or {}
+            candidate = metadata.get("candidate") or {}
+            decision = metadata.get("decision") or {}
+            consensus = decision.get("consensus") or metadata.get("consensus") or {}
+            compact_trades.append({
+                "id": trade.get("id"),
+                "symbol": trade.get("symbol"),
+                "side": trade.get("side"),
+                "pnl": trade.get("pnl_brl"),
+                "stake": trade.get("position_brl"),
+                "gale_stage": metadata.get("gale_stage", 0),
+                "exit_reason": trade.get("exit_reason"),
+                "technical_score": candidate.get("technical_score"),
+                "checks": candidate.get("checks"),
+                "code_context": candidate.get("code_context"),
+                "consensus_tier": consensus.get("tier"),
+                "votes": [
+                    {
+                        "role": vote.get("role"),
+                        "model": vote.get("model"),
+                        "direction": vote.get("direction"),
+                        "valid": vote.get("valid"),
+                        "confidence": vote.get("confidence"),
+                        "latency_ms": vote.get("latency_ms"),
+                    }
+                    for vote in (consensus.get("votes") or [])[:5]
+                ],
+            })
+        system = (
+            "Voce e um especialista de pesquisa em trading DEMO, analise tecnica, opcoes binarias e gestao de risco. "
+            "Seu papel e aprender com erros sem prometer lucro. Gere regras praticas, curtas e testaveis para o RED Trader."
+        )
+        user = (
+            "Analise as operacoes IQ Option DEMO abaixo. Identifique padroes de loss, setups que devem exigir mais consenso, "
+            "tecnicas de recuperacao que parecem ruins e filtros tecnicos que o codigo deve aplicar. "
+            "Nao diga que e infalivel. Responda SOMENTE JSON valido, compacto, sem markdown, neste formato: "
+            '{"lessons":["curto"],"avoid_patterns":[{"symbol":"EURUSD-OTC|*","direction":"CALL|PUT|*","reason":"curto","severity":0.0,"cooldown_minutes":3}],'
+            '"recovery_rules":["curto"],"technique_suggestions":["curto"]}'
+            f"\n\nESTADO_ATUAL:\n{json.dumps(state, ensure_ascii=False)[:2500]}"
+            f"\n\nOPERACOES:\n{json.dumps(compact_trades, ensure_ascii=False)}"
+        )
+        try:
+            result = await self.ai.chat_json(
+                model,
+                system,
+                user,
+                temperature=0.1,
+                timeout=28,
+                num_predict=900,
+                num_ctx=8192,
+            )
+            latest_id = int(trades[-1].get("id") or 0) if trades else int(state.get("last_model_trade_id") or 0)
+            current = self.iq_learning_state()
+            now = time.time()
+            new_lessons = [str(item)[:260] for item in result.get("lessons", []) if str(item).strip()]
+            new_rules = [str(item)[:260] for item in result.get("recovery_rules", []) if str(item).strip()]
+            avoid_patterns = list(current.get("avoid_patterns") or [])
+            for item in result.get("avoid_patterns", []) or []:
+                direction = str(item.get("direction") or "*").upper()
+                symbol = str(item.get("symbol") or "*").upper()
+                avoid_patterns.append({
+                    "key": f"{symbol}:{direction}",
+                    "symbol": symbol,
+                    "direction": direction,
+                    "reason": str(item.get("reason") or "reflexao de aprendizado")[:180],
+                    "severity": max(0.0, min(1.0, _num(item.get("severity")) or 0.5)),
+                    "expires_at": now + max(60, _num(item.get("cooldown_minutes")) * 60 or 240),
+                    "source": "model_reflection",
+                })
+            merged = {
+                **current,
+                "last_model_trade_id": latest_id,
+                "model_updated_at": now,
+                "lessons": _dedup_tail(list(current.get("lessons") or []) + new_lessons, 20),
+                "recovery_rules": _dedup_tail(list(current.get("recovery_rules") or []) + new_rules, 12),
+                "avoid_patterns": avoid_patterns[-30:],
+                "last_reflection": {
+                    "model": model,
+                    "trade_id": latest_id,
+                    "technique_suggestions": result.get("technique_suggestions", []),
+                    "raw": result,
+                },
+            }
+            self.set_iq_learning_state(merged)
+            self.db.add_analysis(
+                symbol="IQ-LEARNING",
+                role="learning",
+                model=model,
+                decision="LESSONS",
+                confidence=None,
+                latency_ms=result.get("_latency_ms"),
+                summary="; ".join(new_lessons[:3])[:500],
+                response=result,
+                prompt={"system": system, "user": user[:6000]},
+            )
+            self.publish(
+                "learning:updated",
+                "Aprendizado operacional atualizado",
+                {"model": model, "trade_id": latest_id, "lessons": new_lessons[:5], "recovery_rules": new_rules[:5]},
+            )
+        except Exception as exc:
+            self.publish("learning:error", "Falha no aprendizado operacional", {"model": model, "error": repr(exc)})
+
+    def learning_context_for_candidate(self, candidate: dict[str, Any]) -> dict[str, Any]:
+        state = self.iq_learning_state()
+        symbol = str(candidate.get("symbol") or "")
+        direction = _binary_direction(candidate.get("action"))
+        now = time.time()
+        relevant_avoid = []
+        for item in state.get("avoid_patterns") or []:
+            if float(item.get("expires_at") or 0) <= now:
+                continue
+            if not _pattern_matches(item.get("symbol") or "*", symbol):
+                continue
+            if direction and not _pattern_matches(item.get("direction") or "*", direction):
+                continue
+            relevant_avoid.append(item)
+        key = f"{symbol}:{direction}" if direction else symbol
+        return {
+            "active_avoid_patterns": relevant_avoid[:6],
+            "lessons": list(state.get("lessons") or [])[-8:],
+            "recovery_rules": list(state.get("recovery_rules") or [])[-6:],
+            "stats_for_direction": (state.get("symbol_direction_stats") or {}).get(key),
+            "last_reflection": state.get("last_reflection") or {},
+        }
+
+    def apply_iq_learning_to_candidates(self, candidates: list[dict[str, Any]], config: dict[str, Any]) -> list[dict[str, Any]]:
+        if not (config.get("iqoption_learning") or {}).get("enabled", True):
+            return candidates
+        techniques = config.get("iqoption_techniques") or {}
+        adjusted = []
+        for candidate in candidates:
+            if candidate.get("trade_type") != "binary_options":
+                adjusted.append(candidate)
+                continue
+            learned = self.learning_context_for_candidate(candidate)
+            features = candidate.get("features") or {}
+            code_context = candidate.get("code_context") or {}
+            action = _binary_direction(candidate.get("action"))
+            penalty = 0.0
+            bonus = 0.0
+            notes = []
+
+            if techniques.get("anti_repeat_loss", True):
+                for item in learned.get("active_avoid_patterns") or []:
+                    severity = max(0.1, _num(item.get("severity")) or 0.4)
+                    penalty += 18 * severity
+                    notes.append(f"memoria evita {item.get('symbol')} {item.get('direction')}: {item.get('reason')}")
+
+            trend_1m = features.get("trend_1m")
+            trend_5m = features.get("trend_5m")
+            trend_15m = features.get("trend_15m")
+            rsi_1s = _num(features.get("rsi_1s"))
+            rsi_1m = _num(features.get("rsi_1m"))
+            rsi_5m = _num(features.get("rsi_5m"))
+            change_1s_15 = _num(features.get("change_1s_15"))
+            change_1m_15 = _num(features.get("change_1m_15"))
+            vol_1m = _num(features.get("ret_std_1m_30"))
+
+            if techniques.get("multi_timeframe_confluence", True):
+                if action == "CALL" and trend_1m == trend_5m == trend_15m == "up":
+                    bonus += 8
+                    notes.append("confluencia multi-timeframe CALL")
+                elif action == "PUT" and trend_1m == trend_5m == trend_15m == "down":
+                    bonus += 8
+                    notes.append("confluencia multi-timeframe PUT")
+                elif action in {"CALL", "PUT"}:
+                    penalty += 5
+                    notes.append("timeframes mistos")
+
+            if techniques.get("momentum_continuation", True):
+                if action == "CALL" and change_1s_15 > 0 and change_1m_15 > 0 and rsi_1m < 76:
+                    bonus += 6
+                elif action == "PUT" and change_1s_15 < 0 and change_1m_15 < 0 and rsi_1m > 24:
+                    bonus += 6
+                else:
+                    penalty += 3
+
+            if techniques.get("reversal_exhaustion", True):
+                if action == "CALL" and _direction_exhausted("CALL", code_context):
+                    penalty += 18
+                    notes.append("CALL em exaustao")
+                if action == "PUT" and _direction_exhausted("PUT", code_context):
+                    penalty += 18
+                    notes.append("PUT em exaustao")
+                if action == "PUT" and (rsi_1s >= 74 or rsi_1m >= 72) and rsi_5m >= 62:
+                    bonus += 5
+                if action == "CALL" and 0 < rsi_1s <= 26 and 0 < rsi_1m <= 38 and 0 < rsi_5m <= 44:
+                    bonus += 5
+
+            if techniques.get("trend_pullback", True):
+                if action == "CALL" and trend_15m == "up" and change_1s_15 < 0 and 28 <= rsi_1s <= 48:
+                    bonus += 5
+                    notes.append("pullback em tendencia de alta")
+                if action == "PUT" and trend_15m == "down" and change_1s_15 > 0 and 52 <= rsi_1s <= 72:
+                    bonus += 5
+                    notes.append("pullback em tendencia de baixa")
+
+            if techniques.get("volatility_filter", True):
+                if not (0.002 <= vol_1m <= 0.32):
+                    penalty += 8
+                    notes.append("volatilidade fora do regime bom")
+
+            candidate = {
+                **candidate,
+                "technical_score": round(float(candidate.get("technical_score") or 0) + bonus - penalty, 2),
+                "learning_context": learned,
+                "learning_adjustment": {
+                    "bonus": round(bonus, 2),
+                    "penalty": round(penalty, 2),
+                    "notes": notes[:8],
+                    "active_techniques": [key for key, value in techniques.items() if value],
+                },
+            }
+            adjusted.append(candidate)
+        return sorted(adjusted, key=lambda item: item["technical_score"], reverse=True)
+
     async def polish_trade_notification(self, config: dict[str, Any], event: str, payload: dict[str, Any], fallback: str) -> str:
         default_notification_model = (
             "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)"
@@ -704,6 +1066,10 @@ class TraderRuntime:
             if item["technical_score"] >= min_score
             and now - float(((item.get("snapshot") or {}).get("ts") or now)) <= max_age
             and float(self.asset_cooldowns.get(item["symbol"], 0) or 0) <= now
+        ]
+        candidates = [
+            item for item in self.apply_iq_learning_to_candidates(candidates, config)
+            if item["technical_score"] >= min_score
         ]
         if not candidates:
             if time.time() - self.last_wait_event_at > 300:
@@ -1224,6 +1590,7 @@ class TraderRuntime:
             "CALL": sum(1 for item in valid_votes if item.get("direction") == "CALL"),
             "PUT": sum(1 for item in valid_votes if item.get("direction") == "PUT"),
         }
+        invalid_vote_count = max(0, len(votes) - len(valid_votes))
         if counts["CALL"] == counts["PUT"]:
             final_direction = None
         else:
@@ -1236,6 +1603,9 @@ class TraderRuntime:
         recovery_min_votes = int(consensus_config.get("recovery_min_votes", 3))
         code_context = candidate.get("code_context") or {}
         code_preferred = code_context.get("preferred_direction")
+        techniques = config.get("iqoption_techniques") or {}
+        learning_context = candidate.get("learning_context") or {}
+        learning_adjustment = candidate.get("learning_adjustment") or {}
         same_symbol_recovery = recovery_stage > 0 and str(recovery.get("last_symbol") or "") == str(candidate["symbol"])
         same_side_recovery = same_symbol_recovery and _binary_direction(recovery.get("last_side")) == final_direction
         same_side_loss_streak = _same_side_loss_streak(
@@ -1252,12 +1622,14 @@ class TraderRuntime:
             "recovery_stage": recovery_stage,
             "votes": votes,
             "counts": counts,
+            "invalid_vote_count": invalid_vote_count,
             "stake_amount": max(1.0, float(config.get("iqoption_amount", 1))),
             "stake_source": "base",
             "same_symbol_recovery": same_symbol_recovery,
             "same_side_recovery": same_side_recovery,
             "same_side_loss_streak": same_side_loss_streak,
             "code_context": code_context,
+            "learning_adjustment": learning_adjustment,
         }
         if not final_direction:
             return {
@@ -1277,7 +1649,33 @@ class TraderRuntime:
                 "critic": {},
                 "fast": {},
             }
+        if techniques.get("adaptive_recovery", True) and invalid_vote_count >= 2 and tier < 4:
+            return {
+                "approved": False,
+                "reason": "Aprendizado bloqueou: muitos votos nulos exigem consenso premium 4/5",
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
         required_recovery_votes = recovery_min_votes if same_symbol_recovery else min(recovery_min_votes, min_votes)
+        if recovery_stage > 0 and techniques.get("adaptive_recovery", True):
+            active_avoids = learning_context.get("active_avoid_patterns") or []
+            relevant_avoids = [
+                item for item in active_avoids
+                if str(item.get("direction") or "*").upper() in {"*", final_direction}
+            ]
+            max_learned_severity = max([_num(item.get("severity")) for item in relevant_avoids] or [0.0])
+            learning_penalty = _num(learning_adjustment.get("penalty"))
+            consensus["adaptive_recovery"] = {
+                "active_avoid_patterns": relevant_avoids[:4],
+                "max_severity": round(max_learned_severity, 2),
+                "learning_penalty": round(learning_penalty, 2),
+            }
+            if max_learned_severity >= 0.75 or learning_penalty >= 22:
+                required_recovery_votes = max(required_recovery_votes, 5)
+            elif max_learned_severity >= 0.45 or learning_penalty >= 14:
+                required_recovery_votes = max(required_recovery_votes, 4)
         consensus["required_recovery_votes"] = required_recovery_votes
         if recovery_stage > 0 and tier < required_recovery_votes:
             return {
@@ -1649,6 +2047,7 @@ class TraderRuntime:
             "demo_audit": self.demo_audit_summary(),
             "iq_recovery": recovery_state,
             "platforms": self.platform_statuses,
+            "iq_learning": self.iq_learning_state(),
             "models": self.models,
             "news": self.latest_news,
             "snapshots": self.latest_snapshots or self.db.list_snapshots(),
@@ -1734,3 +2133,23 @@ def _same_side_loss_streak(feedback: list[dict[str, Any]], symbol: str, directio
             continue
         break
     return streak
+
+
+def _dedup_tail(items: list[Any], limit: int) -> list[str]:
+    out: list[str] = []
+    seen = set()
+    for item in items:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text[:260])
+    return out[-limit:]
+
+
+def _pattern_matches(pattern: Any, value: Any) -> bool:
+    clean_value = str(value or "").upper()
+    parts = [part.strip().upper() for part in str(pattern or "*").split("|") if part.strip()]
+    if not parts or "*" in parts:
+        return True
+    return clean_value in parts

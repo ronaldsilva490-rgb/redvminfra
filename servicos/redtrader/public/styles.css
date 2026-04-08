@@ -357,7 +357,8 @@ label {
   grid-column: 1 / -1;
 }
 
-.tier-editor {
+.tier-editor,
+.technique-editor {
   display: grid;
   gap: 10px;
   padding: 12px;
@@ -366,12 +367,14 @@ label {
   background: rgba(255, 255, 255, 0.03);
 }
 
-.tier-editor header {
+.tier-editor header,
+.technique-editor header {
   display: grid;
   gap: 4px;
 }
 
-.tier-editor small {
+.tier-editor small,
+.technique-editor small {
   color: var(--muted);
 }
 
@@ -379,6 +382,30 @@ label {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+}
+
+.technique-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.technique-grid label {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 1px solid #1c2a38;
+  border-radius: 8px;
+  background: rgba(2, 4, 7, 0.62);
+  color: #dbe6ef;
+}
+
+.technique-grid input {
+  width: auto;
+  min-height: auto;
+  accent-color: var(--orange);
 }
 
 .form-actions {
@@ -574,6 +601,7 @@ label {
 
   .status-strip,
   .model-grid,
+  .technique-grid,
   .advanced-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -593,6 +621,7 @@ label {
   .model-grid,
   .basic-form,
   .tier-grid,
+  .technique-grid,
   .advanced-form {
     grid-template-columns: 1fr;
   }

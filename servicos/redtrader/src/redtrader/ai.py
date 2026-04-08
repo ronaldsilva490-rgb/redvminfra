@@ -40,6 +40,8 @@ class RedSystemsAI:
         user: str,
         temperature: float = 0.05,
         timeout: float = 60,
+        num_predict: int = 512,
+        num_ctx: int = 4096,
     ) -> dict[str, Any]:
         started = time.perf_counter()
         body = {
@@ -50,7 +52,7 @@ class RedSystemsAI:
                 {"role": "user", "content": user},
             ],
             "format": "json",
-            "options": {"temperature": temperature, "num_ctx": 4096, "num_predict": 512},
+            "options": {"temperature": temperature, "num_ctx": num_ctx, "num_predict": num_predict},
         }
         response = await self.client.post(f"{self.proxy_url}/api/chat", json=body, timeout=timeout)
         response.raise_for_status()

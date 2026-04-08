@@ -36,6 +36,25 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "5": 10,
         },
     },
+    "iqoption_learning": {
+        "enabled": True,
+        "apply_code_memory": True,
+        "use_model_reflection": True,
+        "min_new_closed": 5,
+        "interval_seconds": 150,
+        "recent_limit": 40,
+        "max_lessons": 12,
+        "model": "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)",
+    },
+    "iqoption_techniques": {
+        "multi_timeframe_confluence": True,
+        "momentum_continuation": True,
+        "trend_pullback": True,
+        "reversal_exhaustion": True,
+        "volatility_filter": True,
+        "anti_repeat_loss": True,
+        "adaptive_recovery": True,
+    },
     "market_poll_seconds": 0.25,
     "decision_poll_seconds": 3,
     "news_poll_seconds": 300,
@@ -559,6 +578,8 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
         "candidate": candidate,
         "recovery_context": recovery_context,
         "recovery_guidance": recovery_guidance,
+        "learning_context": candidate.get("learning_context") or {},
+        "learning_adjustment": candidate.get("learning_adjustment") or {},
         "recent_trade_feedback": candidate.get("recent_trade_feedback") or [],
         "news": (
             {
@@ -576,6 +597,8 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
         "Analise o candidato abaixo respeitando o perfil operacional informado. "
         "Se o modo for iqoption_demo_binary_only, ativos OTC como EURUSD-OTC sao permitidos e devem ser avaliados como CALL/PUT demo. "
         "Use code_context como pre-leitura quantitativa: se ele apontar exaustao/armadilha, trate como alerta forte. "
+        "Use learning_context como memoria operacional: evite repetir padroes marcados como loss recente, mas permita excecao somente com consenso forte. "
+        "Use learning_adjustment para entender bonus/penalidades que o codigo aplicou ao score antes de chamar os modelos. "
         "Em gale/recuperacao, repetir a mesma direcao do loss anterior exige evidencia muito mais forte SOMENTE se for o mesmo ativo do loss. "
         "Se recovery_guidance.scope for cross_symbol, nao trate como repeticao do mesmo setup: decida pelo candidato atual com agressividade demo. "
         f"{news_rule} Se estiver ambiguo demais, responda WAIT.\n\n"
@@ -649,6 +672,8 @@ def build_critic_prompt(
         "decision": decision,
         "recovery_context": recovery_context,
         "recovery_guidance": recovery_guidance,
+        "learning_context": candidate.get("learning_context") or {},
+        "learning_adjustment": candidate.get("learning_adjustment") or {},
         "news": (
             {
                 "risk_hint": {
@@ -663,6 +688,7 @@ def build_critic_prompt(
     }
     user = (
         "Procure falhas, armadilhas, RSI esticado, volatilidade ruim, liquidez fraca, noticia de risco e RR falso. "
+        "Leve em conta learning_context e learning_adjustment: eles representam erros recentes e penalidades do codigo. "
         "Se recovery_guidance.scope for same_symbol e a decisao repetir a direcao do ultimo loss enquanto code_context apontar exaustao, prefira vetar ou WAIT. "
         "Se recovery_guidance.scope for cross_symbol, nao vete apenas por repetir CALL/PUT do ativo anterior; critique o setup atual. "
         "Para operacoes binarias demo, tambem diga qual direcao voce preferiria agora: CALL, PUT ou WAIT. "

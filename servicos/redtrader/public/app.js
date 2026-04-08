@@ -8,6 +8,7 @@ const roles = [
   ["critic", "Crítico"],
   ["premium_4", "Premium 4"],
   ["premium_5", "Premium 5"],
+  ["learning", "Aprendizado"],
 ];
 
 const state = {
@@ -208,11 +209,20 @@ function renderForms(config) {
       basic.elements[`tier_fixed_${tier}`].value = fixed[tier] ?? ({ "2": 10, "3": 25, "4": 50, "5": 100 }[tier]);
       basic.elements[`tier_pct_${tier}`].value = pctTiers[tier] ?? ({ "2": 1, "3": 2.5, "4": 5, "5": 10 }[tier]);
     }
+    const techniques = config.iqoption_techniques || {};
+    for (const [name, key] of Object.entries(techniqueFieldMap())) {
+      if (basic.elements[name]) basic.elements[name].checked = techniques[key] !== false;
+    }
   }
   if (advanced && !advanced.contains(active)) {
     const consensus = config.iqoption_consensus_stakes || {};
+    const learning = config.iqoption_learning || {};
     advanced.elements.min_votes.value = consensus.min_votes ?? 2;
     advanced.elements.recovery_min_votes.value = consensus.recovery_min_votes ?? 3;
+    advanced.elements.learning_enabled.value = String(learning.enabled !== false);
+    advanced.elements.learning_reflection.value = String(learning.use_model_reflection !== false);
+    advanced.elements.learning_interval_seconds.value = learning.interval_seconds ?? 150;
+    advanced.elements.learning_min_new_closed.value = learning.min_new_closed ?? 5;
     advanced.elements.min_technical_score.value = config.min_technical_score ?? 55;
     advanced.elements.min_ai_confidence.value = config.min_ai_confidence ?? 55;
     advanced.elements.max_decision_latency_ms.value = config.max_decision_latency_ms ?? 8000;
@@ -231,6 +241,28 @@ function renderModelSelects() {
   });
 }
 
+function techniqueFieldMap() {
+  return {
+    tech_multi_timeframe_confluence: "multi_timeframe_confluence",
+    tech_momentum_continuation: "momentum_continuation",
+    tech_trend_pullback: "trend_pullback",
+    tech_reversal_exhaustion: "reversal_exhaustion",
+    tech_volatility_filter: "volatility_filter",
+    tech_anti_repeat_loss: "anti_repeat_loss",
+    tech_adaptive_recovery: "adaptive_recovery",
+  };
+}
+
+function learningSummary(role, data) {
+  if (role !== "learning") return "";
+  const learning = data.iq_learning || {};
+  const lessons = learning.lessons || [];
+  const avoids = (learning.avoid_patterns || []).filter((item) => Number(item.expires_at || 0) > Date.now() / 1000);
+  if (lessons.length) return lessons.slice(-3).join(" · ");
+  if (avoids.length) return avoids.slice(0, 3).map((item) => `${item.symbol} ${item.direction}: ${item.reason}`).join(" · ");
+  return "Memória operacional aguardando perdas/fechamentos suficientes para refletir.";
+}
+
 function renderModelCards(data) {
   const analyses = data.analyses || [];
   const byRole = {};
@@ -242,15 +274,18 @@ function renderModelCards(data) {
     const response = item.response || {};
     const vote = directionLabel(response.decision || response.preferred_decision || item.decision);
     const valid = vote === "CALL" || vote === "PUT";
-    const summary = response.reasoning_summary || response.reason || item.summary || "Aguardando o próximo ciclo.";
+    const summary = response.reasoning_summary || response.reason || item.summary || learningSummary(role, data) || "Aguardando o próximo ciclo.";
     const latency = item.latency_ms ? `${item.latency_ms}ms` : "--";
+    const configuredModel = role === "learning"
+      ? data.config?.iqoption_learning?.model
+      : data.config?.models?.[role];
     return `
       <article class="model-card ${valid ? vote.toLowerCase() : "wait"}">
         <header>
           <span>${escapeHtml(label)}</span>
           <strong>${escapeHtml(vote)}</strong>
         </header>
-        <p>${escapeHtml(shortModel(item.model || data.config?.models?.[role] || role))}</p>
+        <p>${escapeHtml(shortModel(item.model || configuredModel || role))}</p>
         <small>${escapeHtml(item.symbol || "-")} · conf ${Number(item.confidence || response.confidence || 0).toFixed(0)} · ${latency}</small>
         <em>${escapeHtml(summary).slice(0, 230)}</em>
       </article>
@@ -289,6 +324,10 @@ function collectBasicConfig() {
   const form = $("#basicForm");
   const current = state.status?.config || {};
   const consensus = current.iqoption_consensus_stakes || {};
+  const techniques = {};
+  for (const [name, key] of Object.entries(techniqueFieldMap())) {
+    techniques[key] = Boolean(form.elements[name]?.checked);
+  }
   const symbols = splitSymbols(form.elements.symbols.value || "EURUSD-OTC");
   const activeSymbols = symbols.length ? symbols : ["EURUSD-OTC"];
   const mode = form.elements.stake_mode.value;
@@ -323,6 +362,12 @@ function collectBasicConfig() {
       tiers,
       pct_tiers: pctTiers,
     },
+    iqoption_learning: {
+      ...(current.iqoption_learning || {}),
+      enabled: true,
+      apply_code_memory: true,
+    },
+    iqoption_techniques: techniques,
     platforms: {
       ...(current.platforms || {}),
       binance_spot: { enabled: false, mode: "market_data_paper", label: "Binance Spot" },
@@ -337,6 +382,7 @@ function collectAdvancedConfig() {
   const form = $("#advancedForm");
   const current = state.status?.config || {};
   const consensus = current.iqoption_consensus_stakes || {};
+  const learning = current.iqoption_learning || {};
   return {
     ...current,
     min_technical_score: Number(form.elements.min_technical_score.value || 55),
@@ -347,6 +393,14 @@ function collectAdvancedConfig() {
       ...consensus,
       min_votes: Number(form.elements.min_votes.value || 2),
       recovery_min_votes: Number(form.elements.recovery_min_votes.value || 3),
+    },
+    iqoption_learning: {
+      ...learning,
+      enabled: form.elements.learning_enabled.value === "true",
+      use_model_reflection: form.elements.learning_reflection.value === "true",
+      interval_seconds: Number(form.elements.learning_interval_seconds.value || 150),
+      min_new_closed: Number(form.elements.learning_min_new_closed.value || 5),
+      model: form.elements["iqoption_learning.model"].value,
     },
     models: {
       ...(current.models || {}),

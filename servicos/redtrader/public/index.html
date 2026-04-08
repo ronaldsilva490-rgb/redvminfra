@@ -150,6 +150,22 @@
                 </div>
               </section>
 
+              <section class="technique-editor wide">
+                <header>
+                  <strong>Técnicas testáveis</strong>
+                  <small>O código usa isso para dar bônus, penalidade ou pedir mais consenso.</small>
+                </header>
+                <div class="technique-grid">
+                  <label><input name="tech_multi_timeframe_confluence" type="checkbox" /> Confluência multi-timeframe</label>
+                  <label><input name="tech_momentum_continuation" type="checkbox" /> Continuação de momentum</label>
+                  <label><input name="tech_trend_pullback" type="checkbox" /> Pullback de tendência</label>
+                  <label><input name="tech_reversal_exhaustion" type="checkbox" /> Reversão por exaustão</label>
+                  <label><input name="tech_volatility_filter" type="checkbox" /> Filtro de volatilidade</label>
+                  <label><input name="tech_anti_repeat_loss" type="checkbox" /> Memória anti-loss repetido</label>
+                  <label><input name="tech_adaptive_recovery" type="checkbox" /> Recuperação adaptativa</label>
+                </div>
+              </section>
+
               <div class="form-actions wide">
                 <button type="submit">Salvar ajustes</button>
                 <span id="saveState">sincronizado</span>
@@ -194,8 +210,13 @@
           <label>Premium 4<select name="models.premium_4" data-model-select></select></label>
           <label>Premium 5<select name="models.premium_5" data-model-select></select></label>
           <label>Relatório<select name="models.report" data-model-select></select></label>
+          <label>Aprendizado<select name="iqoption_learning.model" data-model-select></select></label>
           <label>Votos mínimos<input name="min_votes" type="number" min="1" max="5" step="1" /></label>
           <label>Votos no gale<input name="recovery_min_votes" type="number" min="1" max="5" step="1" /></label>
+          <label>Aprendizado<select name="learning_enabled"><option value="true">Ligado</option><option value="false">Desligado</option></select></label>
+          <label>Reflexão por IA<select name="learning_reflection"><option value="true">Ligada</option><option value="false">Desligada</option></select></label>
+          <label>Intervalo aprendizado s<input name="learning_interval_seconds" type="number" min="30" step="10" /></label>
+          <label>Novas operações p/ aprender<input name="learning_min_new_closed" type="number" min="1" step="1" /></label>
           <label>Score técnico mínimo<input name="min_technical_score" type="number" min="0" max="200" step="1" /></label>
           <label>Confiança IA mínima<input name="min_ai_confidence" type="number" min="0" max="100" step="1" /></label>
           <label>Latência máxima ms<input name="max_decision_latency_ms" type="number" min="1000" step="250" /></label>
