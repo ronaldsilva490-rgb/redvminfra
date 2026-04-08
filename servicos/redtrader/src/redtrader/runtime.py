@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 import httpx
+from zoneinfo import ZoneInfo
 
 from .ai import RedSystemsAI
 from .config import settings
@@ -185,7 +186,7 @@ class TraderRuntime:
 
     @staticmethod
     def _timestamp() -> str:
-        return datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        return datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M:%S BRT")
 
     async def polish_trade_notification(self, config: dict[str, Any], event: str, payload: dict[str, Any], fallback: str) -> str:
         model = (
