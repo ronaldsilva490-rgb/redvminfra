@@ -135,7 +135,7 @@ function receiveStatus(payload) {
   if (payload.models?.length) state.models = payload.models;
   const symbols = Object.keys(payload.snapshots || {});
   if (!state.selectedSymbol || !symbols.includes(state.selectedSymbol)) {
-    state.selectedSymbol = symbols[0] || (payload.config?.symbols || ["EURUSD-OTC"])[0] || "EURUSD-OTC";
+    state.selectedSymbol = symbols[0] || (payload.config?.symbols || ["EURUSD"])[0] || "EURUSD";
   }
   renderStatus();
 }
@@ -493,8 +493,8 @@ function collectBasicConfig() {
   for (const [name, key] of Object.entries(techniqueFieldMap())) {
     techniques[key] = Boolean(form.elements[name]?.checked);
   }
-  const symbols = splitSymbols(form.elements.symbols.value || "EURUSD-OTC");
-  const activeSymbols = symbols.length ? symbols : ["EURUSD-OTC"];
+  const symbols = splitSymbols(form.elements.symbols.value || "EURUSD,GBPUSD,EURGBP,EURUSD-OTC,GBPUSD-OTC,EURJPY-OTC");
+  const activeSymbols = symbols.length ? symbols : ["EURUSD", "GBPUSD", "EURGBP", "EURUSD-OTC", "GBPUSD-OTC", "EURJPY-OTC"];
   const mode = form.elements.stake_mode.value;
   const riskProfile = form.elements.risk_profile.value;
   const decisionPollByProfile = {

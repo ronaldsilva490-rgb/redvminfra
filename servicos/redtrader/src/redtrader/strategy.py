@@ -5,8 +5,8 @@ from typing import Any
 DEFAULT_CONFIG: dict[str, Any] = {
     "auto_enabled": True,
     "risk_profile": "aggressive",
-    "symbols": ["EURUSD-OTC", "GBPUSD-OTC", "EURJPY-OTC"],
-    "tradable_symbols": ["EURUSD-OTC", "GBPUSD-OTC", "EURJPY-OTC"],
+    "symbols": ["EURUSD", "GBPUSD", "EURGBP", "EURUSD-OTC", "GBPUSD-OTC", "EURJPY-OTC"],
+    "tradable_symbols": ["EURUSD", "GBPUSD", "EURGBP", "EURUSD-OTC", "GBPUSD-OTC", "EURJPY-OTC"],
     "market_provider": "binance_spot",
     "execution_provider": "internal_paper",
     "iqoption_amount": 1.0,
@@ -644,7 +644,7 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
     allowed_decisions = ["WAIT", "AVOID", "CALL", "PUT"] if is_binary else ["WAIT", "AVOID", "ENTER_LONG"]
     decision_schema = "|".join(allowed_decisions)
     market_scope = (
-        "operacoes binarias DEMO/PRACTICE na IQ Option, com ativos OTC permitidos e expiracao curta"
+        "operacoes binarias DEMO/PRACTICE na IQ Option, com pares normais ou OTC conforme o ativo informado e expiracao curta"
         if is_binary
         else "paper trading cripto spot, sem alavancagem"
     )
@@ -713,7 +713,7 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
             {
                 "risk_hint": {
                     "level": "neutral",
-                    "reason": "feed de noticias cripto ignorado para OTC demo da IQ",
+                    "reason": "feed de noticias cripto ignorado para IQ demo",
                 },
                 "headlines": [],
             }
@@ -723,7 +723,7 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
     }
     user = (
         "Analise o candidato abaixo respeitando o perfil operacional informado. "
-        "Se o modo for iqoption_demo_binary_only, ativos OTC como EURUSD-OTC sao permitidos e devem ser avaliados como CALL/PUT demo. "
+        "Se o modo for iqoption_demo_binary_only, avalie o ativo informado como CALL/PUT demo na IQ, seja par normal (ex.: EURUSD) ou OTC (ex.: EURUSD-OTC). "
         "Use code_context como pre-leitura quantitativa: se ele apontar exaustao/armadilha, trate como alerta forte. "
         "Use learning_context como memoria operacional: evite repetir padroes marcados como loss recente, mas permita excecao somente com consenso forte. "
         "Use learning_adjustment para entender bonus/penalidades que o codigo aplicou ao score antes de chamar os modelos. "
@@ -760,7 +760,7 @@ def build_critic_prompt(
     profile = risk_profile_context(config)
     is_binary = candidate.get("trade_type") == "binary_options"
     market_scope = (
-        "operacoes binarias DEMO/PRACTICE na IQ Option, com ativos OTC permitidos"
+        "operacoes binarias DEMO/PRACTICE na IQ Option, com pares normais ou OTC conforme o ativo informado"
         if is_binary
         else "paper trading cripto spot"
     )
@@ -813,7 +813,7 @@ def build_critic_prompt(
             {
                 "risk_hint": {
                     "level": "neutral",
-                    "reason": "feed de noticias cripto ignorado para OTC demo da IQ",
+                    "reason": "feed de noticias cripto ignorado para IQ demo",
                 },
                 "headlines": [],
             }

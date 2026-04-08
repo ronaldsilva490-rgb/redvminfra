@@ -22,6 +22,8 @@ class IQOptionDemoAdapter:
         self.frame_cache: dict[str, dict[str, Any]] = {}
         self.stream_cache: dict[str, dict[str, Any]] = {}
         self.history_cursor = 0
+        self.binary_status_cache: dict[str, dict[str, Any]] = {}
+        self.binary_status_ts = 0.0
 
     async def close(self) -> None:
         await asyncio.to_thread(self._close_sync)
@@ -83,11 +85,14 @@ class IQOptionDemoAdapter:
                 pass
             self.api = None
             self.frame_cache.clear()
+            self.binary_status_cache.clear()
+            self.binary_status_ts = 0.0
 
     def _fetch_symbols_sync(self, symbols: list[str]) -> dict[str, dict[str, Any]]:
         output: dict[str, dict[str, Any]] = {}
         with self.lock:
             api = self._ensure_connected()
+            availability_map = self._binary_status_map(api)
             now = time.time()
             stale_symbols = [
                 symbol for symbol in symbols
@@ -99,23 +104,34 @@ class IQOptionDemoAdapter:
                 self.history_cursor += 1
             for symbol in symbols:
                 try:
-                    snapshot = self._fetch_symbol_with_retry(api, symbol, refresh_history=symbol == refresh_target)
+                    snapshot = self._fetch_symbol_with_retry(
+                        api,
+                        symbol,
+                        refresh_history=symbol == refresh_target,
+                        availability=availability_map.get(symbol) or {},
+                    )
                     output[symbol] = snapshot
                 except Exception as exc:
                     output[symbol] = {"symbol": symbol, "provider": "iqoption_demo", "ts": time.time(), "error": repr(exc)}
         return output
 
-    def _fetch_symbol_with_retry(self, api: Any, symbol: str, refresh_history: bool) -> dict[str, Any]:
+    def _fetch_symbol_with_retry(self, api: Any, symbol: str, refresh_history: bool, availability: dict[str, Any]) -> dict[str, Any]:
         try:
-            return self._fetch_symbol_sync(api, symbol, refresh_history=refresh_history)
+            return self._fetch_symbol_sync(api, symbol, refresh_history=refresh_history, availability=availability)
         except Exception as exc:
             if "reconnect" not in repr(exc).lower() and "closed" not in repr(exc).lower():
                 raise
             self._close_sync()
             api = self._ensure_connected()
-            return self._fetch_symbol_sync(api, symbol, refresh_history=refresh_history)
+            availability_map = self._binary_status_map(api)
+            return self._fetch_symbol_sync(
+                api,
+                symbol,
+                refresh_history=refresh_history,
+                availability=availability_map.get(symbol) or availability,
+            )
 
-    def _fetch_symbol_sync(self, api: Any, symbol: str, refresh_history: bool) -> dict[str, Any]:
+    def _fetch_symbol_sync(self, api: Any, symbol: str, refresh_history: bool, availability: dict[str, Any]) -> dict[str, Any]:
         now = time.time()
         candles_1s = self._realtime_candles(api, symbol, 1, 600)
         cached_frames = self.frame_cache.get(symbol) or {}
@@ -182,9 +198,52 @@ class IQOptionDemoAdapter:
                 "5m": candles_5m[-80:],
                 "15m": candles_15m[-80:],
             },
+            "binary_availability": availability or {},
         }
         snapshot["features"] = self._features(snapshot)
         return snapshot
+
+    def _binary_status_map(self, api: Any) -> dict[str, dict[str, Any]]:
+        now = time.time()
+        if self.binary_status_cache and now - self.binary_status_ts < 45:
+            return self.binary_status_cache
+
+        output: dict[str, dict[str, Any]] = {}
+        payload = api.get_all_init_v2() or {}
+        for market in ("turbo", "binary"):
+            actives = (payload.get(market) or {}).get("actives") or {}
+            for active in actives.values():
+                raw_name = str(active.get("name") or "")
+                symbol = raw_name.split(".")[-1] if "." in raw_name else raw_name
+                enabled = bool(active.get("enabled"))
+                suspended = bool(active.get("is_suspended"))
+                option = active.get("option") or {}
+                profit = option.get("profit") or {}
+                row = output.setdefault(symbol, {"symbol": symbol})
+                row[f"{market}_open"] = enabled and not suspended
+                row[f"{market}_enabled"] = enabled
+                row[f"{market}_suspended"] = suspended
+                row[f"{market}_commission"] = _float(profit.get("commission"))
+                row[f"{market}_payout_pct"] = max(0.0, 100.0 - _float(profit.get("commission")))
+                row["minimal_bet"] = _float(active.get("minimal_bet"), row.get("minimal_bet") or 0.0)
+                row["maximal_bet"] = _float(active.get("maximal_bet"), row.get("maximal_bet") or 0.0)
+                start_time = _float(option.get("start_time"))
+                if start_time > 0:
+                    row[f"{market}_start_time"] = start_time
+                expirations = option.get("expiration_times") or []
+                if expirations:
+                    row[f"{market}_expiration_times"] = expirations
+        for row in output.values():
+            row["open"] = bool(row.get("turbo_open") or row.get("binary_open"))
+            start_times = [
+                _float(row.get("turbo_start_time")),
+                _float(row.get("binary_start_time")),
+            ]
+            future_times = [item for item in start_times if item > now]
+            row["next_open_ts"] = min(future_times) if future_times else 0.0
+        self.binary_status_cache = output
+        self.binary_status_ts = now
+        return output
 
     def _realtime_candles(self, api: Any, symbol: str, size: int, maxdict: int) -> list[dict[str, Any]]:
         key = f"{symbol}:{size}"
@@ -212,6 +271,9 @@ class IQOptionDemoAdapter:
             api = self._ensure_connected()
             if api.get_balance_mode() != "PRACTICE":
                 raise RuntimeError("practice_not_selected")
+            availability = self._binary_status_map(api).get(active) or {}
+            if availability and not availability.get("open", True):
+                raise RuntimeError(f"iqoption_buy_suspended:{active}")
             ok, order_id = api.buy(float(amount), active, action, expiration_minutes)
             if not ok:
                 raise RuntimeError(f"iqoption_buy_failed:{order_id}")
@@ -319,4 +381,10 @@ class IQOptionDemoAdapter:
             "volume_5m_vs_avg30": f5["volume_last_vs_avg30"] or 1.0,
             "spread_pct": 0.0,
             "bid_ask_ratio": 1.0,
+            "binary_open": bool((snapshot.get("binary_availability") or {}).get("open")),
+            "binary_turbo_open": bool((snapshot.get("binary_availability") or {}).get("turbo_open")),
+            "binary_binary_open": bool((snapshot.get("binary_availability") or {}).get("binary_open")),
+            "binary_minimal_bet": _float((snapshot.get("binary_availability") or {}).get("minimal_bet")),
+            "binary_turbo_payout_pct": _float((snapshot.get("binary_availability") or {}).get("turbo_payout_pct")),
+            "binary_next_open_ts": _float((snapshot.get("binary_availability") or {}).get("next_open_ts")),
         }

@@ -396,6 +396,11 @@ class TraderRuntime:
         return bool(settings.redia_notify_url and settings.redia_notify_token and settings.redia_notify_to)
 
     @staticmethod
+    def _symbol_market_label(symbol: Any) -> str:
+        text = str(symbol or "").upper().strip()
+        return "OTC" if text.endswith("-OTC") else "PAR NORMAL"
+
+    @staticmethod
     def _money(value: Any) -> str:
         try:
             return f"${float(value):,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
@@ -412,6 +417,30 @@ class TraderRuntime:
             return datetime.fromtimestamp(float(value), BRT_TZ).strftime("%d/%m/%Y %H:%M:%S BRT")
         except (TypeError, ValueError, OSError):
             return "-"
+
+    def _binary_open_info(self, symbol: Any, snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
+        source = snapshot or self.latest_snapshots.get(str(symbol or "")) or {}
+        availability = source.get("binary_availability") or {}
+        next_open_ts = _num(availability.get("next_open_ts"))
+        return {
+            "open": bool(availability.get("open", True)),
+            "next_open_ts": next_open_ts,
+            "next_open_at": self._timestamp_from_epoch(next_open_ts) if next_open_ts > 0 else "-",
+            "turbo_open": bool(availability.get("turbo_open")),
+            "binary_open": bool(availability.get("binary_open")),
+        }
+
+    def _should_notify_trade_rejection(self, symbol: Any, raw_error: str, next_open_ts: float = 0.0) -> bool:
+        state = self.db.get_kv("whatsapp_trade_rejection_state", {}) or {}
+        key = str(symbol or "").upper().strip() or "UNKNOWN"
+        now = time.time()
+        fingerprint = f"{raw_error}|{int(next_open_ts or 0)}"
+        current = state.get(key) or {}
+        if current.get("fingerprint") == fingerprint and now - float(current.get("sent_at") or 0) < 900:
+            return False
+        state[key] = {"fingerprint": fingerprint, "sent_at": now}
+        self.db.set_kv("whatsapp_trade_rejection_state", state)
+        return True
 
     @staticmethod
     def _trade_outcome(pnl_brl: Any, status: str | None = None) -> str:
@@ -510,7 +539,7 @@ class TraderRuntime:
             "title": title,
             "timestamp": self._timestamp(),
             "period": period_label,
-            "market": "IQ Option Demo / OTC",
+            "market": "IQ Option Demo / Binárias (OTC + normal)",
             "total": total,
             "wins": wins,
             "losses": losses,
@@ -872,7 +901,7 @@ class TraderRuntime:
             "Analise as operacoes IQ Option DEMO abaixo. Identifique padroes de loss, setups que devem exigir mais consenso, "
             "tecnicas de recuperacao que parecem ruins e filtros tecnicos que o codigo deve aplicar. "
             "Nao diga que e infalivel. Responda SOMENTE JSON valido, compacto, sem markdown, neste formato: "
-            '{"lessons":["curto"],"avoid_patterns":[{"symbol":"EURUSD-OTC|*","direction":"CALL|PUT|*","reason":"curto","severity":0.0,"cooldown_minutes":3}],'
+            '{"lessons":["curto"],"avoid_patterns":[{"symbol":"EURUSD|*","direction":"CALL|PUT|*","reason":"curto","severity":0.0,"cooldown_minutes":3}],'
             '"recovery_rules":["curto"],"technique_suggestions":["curto"]}'
             f"\n\nESTADO_ATUAL:\n{json.dumps(state, ensure_ascii=False)[:2500]}"
             f"\n\nOPERACOES:\n{json.dumps(compact_trades, ensure_ascii=False)}"
@@ -1132,6 +1161,7 @@ class TraderRuntime:
             "timestamp": self._timestamp(),
             "trade_id": trade_id,
             "symbol": candidate.get("symbol"),
+            "market_type": self._symbol_market_label(candidate.get("symbol")),
             "direction": str(decision.get("action") or candidate.get("action") or "").upper(),
             "amount": self._money(amount),
             "expiration_min": int(config.get("iqoption_expiration_minutes", 1)),
@@ -1144,7 +1174,7 @@ class TraderRuntime:
         lines = [
             "🚀 *RED Trader | ENTRADA DEMO*",
             f"🕒 {payload['timestamp']}",
-            f"🎯 *#{trade_id}* · *{payload['symbol']}* · *{payload['direction']}*",
+            f"📍 *{payload['market_type']}* · *#{trade_id}* · *{payload['symbol']}* · *{payload['direction']}*",
             f"💵 Entrada: *{payload['amount']}*",
             f"⏱ Expiração: *{payload['expiration_min']} min* · Gale: *{gale_stage}*",
             f"🧠 Consenso: *{payload['consensus_tier']} votos* · `{payload['stake_source']}`",
@@ -1154,7 +1184,7 @@ class TraderRuntime:
             lines.append(f"📌 _Leitura IA:_ {reason}")
         fallback = "\n".join(lines)
         text = await self.polish_trade_notification(config, "trade_opened", payload, fallback)
-        await self.send_whatsapp_notification(text, {"event": "trade_opened", "trade_id": trade_id})
+        await self.send_whatsapp_notification(text, {"event": "trade_opened", "trade_id": trade_id, "market_type": payload["market_type"]})
 
     async def notify_whatsapp_trade_closed(
         self,
@@ -1172,6 +1202,7 @@ class TraderRuntime:
             "timestamp": self._timestamp(),
             "trade_id": trade.get("id"),
             "symbol": trade.get("symbol"),
+            "market_type": self._symbol_market_label(trade.get("symbol")),
             "direction": str(trade.get("side") or "").upper(),
             "amount": self._money(trade.get("position_brl")),
             "result": outcome,
@@ -1183,14 +1214,56 @@ class TraderRuntime:
         fallback = "\n".join([
             f"{icon} *RED Trader | FECHAMENTO DEMO*",
             f"🕒 {payload['timestamp']}",
-            f"🎯 *#{payload['trade_id']}* · *{payload['symbol']}* · *{payload['direction']}*",
+            f"📍 *{payload['market_type']}* · *#{payload['trade_id']}* · *{payload['symbol']}* · *{payload['direction']}*",
             f"💵 Entrada: *{payload['amount']}* · Gale: *{payload['gale_stage']}*",
             f"{icon} Resultado: *{outcome}* (`{status}`)",
             f"💰 P/L: *{payload['pnl']}*",
             f"🏦 Banca IQ: *{payload['balance_after_close']}*",
         ])
         text = await self.polish_trade_notification(config, "trade_closed", payload, fallback)
-        await self.send_whatsapp_notification(text, {"event": "trade_closed", "trade_id": trade.get("id"), "status": status})
+        await self.send_whatsapp_notification(text, {"event": "trade_closed", "trade_id": trade.get("id"), "status": status, "market_type": payload["market_type"]})
+
+    async def notify_whatsapp_trade_rejected(
+        self,
+        config: dict[str, Any],
+        candidate: dict[str, Any],
+        decision: dict[str, Any],
+        amount: float,
+        iq_action: str,
+        raw_error: str,
+    ) -> None:
+        symbol = str(candidate.get("symbol") or "")
+        snapshot = candidate.get("snapshot") or self.latest_snapshots.get(symbol) or {}
+        open_info = self._binary_open_info(symbol, snapshot)
+        next_open_ts = float(open_info.get("next_open_ts") or 0.0)
+        if not self._should_notify_trade_rejection(symbol, raw_error, next_open_ts):
+            return
+
+        clean_error = str(raw_error or "").strip().strip("'\"")
+        clean_error = clean_error.replace("iqoption_buy_failed:", "").replace("iqoption_buy_suspended:", "ativo suspenso: ")
+        payload = {
+            "timestamp": self._timestamp(),
+            "symbol": symbol,
+            "market_type": self._symbol_market_label(symbol),
+            "direction": str(decision.get("action") or candidate.get("action") or iq_action or "").upper(),
+            "amount": self._money(amount),
+            "consensus_tier": (decision.get("consensus") or {}).get("tier", "-"),
+            "error": clean_error,
+            "next_open_at": open_info.get("next_open_at") if next_open_ts > 0 else "",
+            "next_open_ts": next_open_ts,
+        }
+        lines = [
+            "🟡 *RED Trader | TENTATIVA NÃO EXECUTADA*",
+            f"🕒 {payload['timestamp']}",
+            f"📍 *{payload['market_type']}* · *{payload['symbol']}* · *{payload['direction']}*",
+            f"💵 Valor tentado: *{payload['amount']}* · Consenso: *{payload['consensus_tier']} votos*",
+            f"⚠️ Motivo real: `{payload['error']}`",
+        ]
+        if payload["next_open_at"]:
+            lines.append(f"⏰ Próxima abertura informada pela IQ: *{payload['next_open_at']}*")
+        fallback = "\n".join(lines)
+        text = await self.polish_trade_notification(config, "trade_rejected", payload, fallback)
+        await self.send_whatsapp_notification(text, {"event": "trade_rejected", "symbol": symbol, "market_type": payload["market_type"], "next_open_ts": next_open_ts})
 
     async def handle_exits(self, config: dict[str, Any]) -> None:
         open_trades = self.db.open_trades()
@@ -1313,7 +1386,14 @@ class TraderRuntime:
                 order = await self.iqoption.buy(candidate["symbol"], iq_action, amount, expiration_minutes)
             except Exception as exc:
                 error_text = repr(exc)
-                cooldown_seconds = 180 if "not available" in error_text or "Cannot purchase" in error_text else 25
+                open_info = self._binary_open_info(candidate["symbol"], candidate.get("snapshot") or {})
+                next_open_ts = float(open_info.get("next_open_ts") or 0.0)
+                cooldown_seconds = 25
+                if "iqoption_buy_suspended" in error_text or "Cannot purchase" in error_text or "suspended" in error_text.lower():
+                    if next_open_ts > time.time():
+                        cooldown_seconds = max(20, min(120, int(next_open_ts - time.time())))
+                    else:
+                        cooldown_seconds = 60
                 self.asset_cooldowns[candidate["symbol"]] = time.time() + cooldown_seconds
                 self.publish(
                     "trade:error",
@@ -1323,7 +1403,11 @@ class TraderRuntime:
                         "action": iq_action,
                         "error": error_text,
                         "asset_cooldown_seconds": cooldown_seconds,
+                        "next_open_at": open_info.get("next_open_at"),
                     },
+                )
+                asyncio.create_task(
+                    self.notify_whatsapp_trade_rejected(config, candidate, decision, amount, iq_action, error_text)
                 )
                 return
             self.set_iqoption_balance(order.get("balance_after_open"))
