@@ -1,8 +1,12 @@
 import asyncio
 import time
+from datetime import datetime
 from typing import Any
 
+import httpx
+
 from .ai import RedSystemsAI
+from .config import settings
 from .db import Database
 from .iqoption_demo import IQOptionDemoAdapter
 from .market import BinanceMarketClient
@@ -168,6 +172,96 @@ class TraderRuntime:
             self.publish("platforms:error", "Falha ao sincronizar plataformas", {"error": repr(exc)})
         return self.platform_statuses
 
+    def _notify_enabled(self) -> bool:
+        return bool(settings.redia_notify_url and settings.redia_notify_token and settings.redia_notify_to)
+
+    @staticmethod
+    def _money(value: Any) -> str:
+        try:
+            return f"${float(value):,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+        except (TypeError, ValueError):
+            return "$0,00"
+
+    @staticmethod
+    def _timestamp() -> str:
+        return datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+    async def send_whatsapp_notification(self, text: str, metadata: dict[str, Any]) -> None:
+        if not self._notify_enabled():
+            return
+        try:
+            async with httpx.AsyncClient(timeout=8) as client:
+                response = await client.post(
+                    settings.redia_notify_url,
+                    headers={"Authorization": f"Bearer {settings.redia_notify_token}"},
+                    json={
+                        "to": settings.redia_notify_to,
+                        "text": text,
+                        "source": "redtrader",
+                        "metadata": metadata,
+                    },
+                )
+                response.raise_for_status()
+        except Exception as exc:
+            self.publish("whatsapp:notify_error", "Falha ao notificar trade no WhatsApp", {"error": repr(exc), "metadata": metadata})
+
+    async def notify_whatsapp_trade_opened(
+        self,
+        config: dict[str, Any],
+        trade_id: int,
+        candidate: dict[str, Any],
+        decision: dict[str, Any],
+        amount: float,
+        metadata: dict[str, Any],
+    ) -> None:
+        order = metadata.get("iqoption_order") or {}
+        consensus = decision.get("consensus") or {}
+        gale_stage = int(metadata.get("gale_stage") or 0)
+        balance = order.get("balance_after_open") or self.wallet_summary().get("equity_brl")
+        reason = str(decision.get("reasoning_summary") or "").strip()
+        if len(reason) > 220:
+            reason = reason[:217].rstrip() + "..."
+        lines = [
+            "RED Trader | ENTRADA DEMO",
+            f"Horario: {self._timestamp()}",
+            f"Operacao: #{trade_id}",
+            f"Ativo: {candidate.get('symbol')}",
+            f"Direcao: {str(decision.get('action') or candidate.get('action') or '').upper()}",
+            f"Entrada: {self._money(amount)}",
+            f"Expiracao: {int(config.get('iqoption_expiration_minutes', 1))} min",
+            f"Gale: {gale_stage}",
+            f"Consenso: {consensus.get('tier', '-')} votos ({metadata.get('stake_source') or decision.get('stake_source') or 'base'})",
+            f"Banca IQ apos entrada: {self._money(balance)}",
+        ]
+        if reason:
+            lines.append(f"Leitura IA: {reason}")
+        await self.send_whatsapp_notification("\n".join(lines), {"event": "trade_opened", "trade_id": trade_id})
+
+    async def notify_whatsapp_trade_closed(
+        self,
+        config: dict[str, Any],
+        trade: dict[str, Any],
+        status: str,
+        pnl_brl: float,
+        result: dict[str, Any],
+    ) -> None:
+        metadata = trade.get("metadata") or {}
+        balance = result.get("balance_after_close") or self.wallet_summary().get("equity_brl")
+        outcome = "WIN" if pnl_brl > 0 else ("LOSS" if pnl_brl < 0 else str(status or "EMPATE").upper())
+        lines = [
+            "RED Trader | FECHAMENTO DEMO",
+            f"Horario: {self._timestamp()}",
+            f"Operacao: #{trade.get('id')}",
+            f"Ativo: {trade.get('symbol')}",
+            f"Direcao: {str(trade.get('side') or '').upper()}",
+            f"Entrada: {self._money(trade.get('position_brl'))}",
+            f"Resultado: {outcome} ({status})",
+            f"Lucro/Prejuizo: {self._money(pnl_brl)}",
+            f"Gale: {metadata.get('gale_stage', 0)}",
+            f"Banca IQ: {self._money(balance)}",
+        ]
+        await self.send_whatsapp_notification("\n".join(lines), {"event": "trade_closed", "trade_id": trade.get("id"), "status": status})
+
     async def handle_exits(self, config: dict[str, Any]) -> None:
         open_trades = self.db.open_trades()
         if not open_trades:
@@ -199,6 +293,7 @@ class TraderRuntime:
                         f"IQ Option demo fechou {trade['symbol']}: {status}",
                         {"trade_id": trade["id"], "provider": "iqoption_demo", "result": result, "pnl_brl": pnl_brl},
                     )
+                    asyncio.create_task(self.notify_whatsapp_trade_closed(config, trade, status, pnl_brl, result))
                 except Exception as exc:
                     if "iqoption_result_not_ready" in repr(exc) and held > expiry_seconds + 240:
                         self.db.close_trade(int(trade["id"]), float(price), 0.0, 0.0, "iqoption_demo:unknown_timeout")
@@ -207,6 +302,7 @@ class TraderRuntime:
                             f"IQ Option demo expirou sem retorno auditavel em {trade['symbol']}",
                             {"trade_id": trade["id"], "provider": "iqoption_demo", "error": repr(exc)},
                         )
+                        asyncio.create_task(self.notify_whatsapp_trade_closed(config, trade, "unknown_timeout", 0.0, {"error": repr(exc)}))
                         continue
                     self.publish("trade:error", "Falha ao checar resultado IQ Option demo", {"trade_id": trade["id"], "error": repr(exc)})
                 continue
@@ -327,6 +423,8 @@ class TraderRuntime:
             f"{'IQ Option demo' if execution_provider == 'iqoption_demo' else 'Paper'} trade aberto em {candidate['symbol']}",
             {"trade_id": trade_id, "symbol": candidate["symbol"], "side": side, "position_brl": position_brl, "entry_price": candidate["price"], "provider": execution_provider},
         )
+        if execution_provider == "iqoption_demo":
+            asyncio.create_task(self.notify_whatsapp_trade_opened(config, trade_id, candidate, decision, position_brl, metadata))
 
     def store_trade_snapshot(self, trade_id: int, symbol: str, phase: str) -> None:
         history = self.db.get_kv("trade_market_history", {}) or {}

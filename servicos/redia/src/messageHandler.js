@@ -356,7 +356,7 @@ async function processQueue({ sock, chatId, config }) {
   }
 }
 
-function setupMessageHandler(sock) {
+function setupMessageHandler(sock, options = {}) {
   sock.ev.on("messages.upsert", async ({ messages, type }) => {
     if (type !== "notify") return;
     const config = store.getConfig();
@@ -370,6 +370,14 @@ function setupMessageHandler(sock) {
       const dedup = `${chatId}:${id}`;
       if (processed.has(dedup)) continue;
       processed.set(dedup, Date.now());
+      if (msg.key.fromMe && typeof options.shouldIgnoreOutbound === "function" && options.shouldIgnoreOutbound(chatId, id, msg)) {
+        activity.publish("whatsapp:outbound_ignored", {
+          chat_id: chatId,
+          message_id: id,
+          reason: "external_notification",
+        });
+        continue;
+      }
       if (!isRecent(msg, config)) continue;
 
       const kind = chatId.endsWith("@g.us") ? "group" : "private";

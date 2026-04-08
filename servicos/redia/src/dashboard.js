@@ -66,6 +66,11 @@ function startDashboard({ whatsapp }) {
   app.use("/api", (req, res, next) => {
     const header = String(req.headers.authorization || "");
     const bearer = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+    if (req.path.startsWith("/internal/")) {
+      const internalToken = String(process.env.REDIA_INTERNAL_TOKEN || "").trim();
+      if (internalToken && bearer === internalToken) return next();
+      return res.status(401).json({ error: "REDIA internal token required" });
+    }
     if (req.path.startsWith("/image/worker")) {
       const workerToken = String(store.getConfig().image_generation?.worker_token || process.env.REDIA_IMAGE_WORKER_TOKEN || "").trim();
       if (workerToken && bearer === workerToken) return next();
@@ -105,6 +110,30 @@ function startDashboard({ whatsapp }) {
 
   app.get("/api/activity", (req, res) => {
     res.json({ events: activity.recent(Number(req.query.limit || 160)) });
+  });
+
+  app.post("/api/internal/notify-whatsapp", async (req, res) => {
+    const to = String(req.body?.to || process.env.REDIA_NOTIFY_DEFAULT_TO || "").trim();
+    const text = String(req.body?.text || "").trim();
+    if (!to) return res.status(400).json({ ok: false, error: "missing to" });
+    if (!text) return res.status(400).json({ ok: false, error: "missing text" });
+    try {
+      const sent = await whatsapp.sendTextNotification(to, text);
+      activity.publish("whatsapp:external_notification", {
+        chat_id: sent.chat_id,
+        chars: text.length,
+        source: req.body?.source || "external",
+        metadata: req.body?.metadata || {},
+      });
+      res.json({ ok: true, sent });
+    } catch (err) {
+      activity.publish("whatsapp:external_notification_error", {
+        to,
+        source: req.body?.source || "external",
+        error: err.message,
+      });
+      res.status(502).json({ ok: false, error: err.message });
+    }
   });
 
   app.get("/api/image/jobs", (req, res) => {

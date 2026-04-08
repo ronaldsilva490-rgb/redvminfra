@@ -35,6 +35,9 @@ class Settings:
     iqoption_password = _env("IQOPTION_PASSWORD", "")
     iqoption_force_practice = _env("IQOPTION_FORCE_PRACTICE", "true").lower() in {"1", "true", "yes", "on"}
     iqoption_timeout_seconds = int(_env("IQOPTION_TIMEOUT_SECONDS", "25"))
+    redia_notify_url = _env("REDIA_NOTIFY_URL", "http://127.0.0.1:3099/api/internal/notify-whatsapp").rstrip("/")
+    redia_notify_token = _env("REDIA_NOTIFY_TOKEN", "")
+    redia_notify_to = _env("REDIA_NOTIFY_TO", "")
 
 
 settings = Settings()

@@ -10,7 +10,7 @@ const {
 } = require("@whiskeysockets/baileys");
 const { authPath } = require("./paths");
 const { setupMessageHandler } = require("./messageHandler");
-const { sendImage } = require("./sender");
+const { sendImage, sendText } = require("./sender");
 
 const runtime = {
   status: "stopped",
@@ -22,6 +22,32 @@ const runtime = {
 
 let sock = null;
 let connecting = false;
+const ignoredOutbound = new Map();
+
+function outboundKey(chatId, id) {
+  return `${chatId}:${id}`;
+}
+
+function rememberIgnoredOutbound(sent) {
+  const rows = Array.isArray(sent) ? sent : [sent];
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+  for (const item of rows) {
+    const chatId = item?.key?.remoteJid;
+    const id = item?.key?.id;
+    if (chatId && id) ignoredOutbound.set(outboundKey(chatId, id), expiresAt);
+  }
+}
+
+function shouldIgnoreOutbound(chatId, id) {
+  const now = Date.now();
+  for (const [key, expiresAt] of ignoredOutbound.entries()) {
+    if (expiresAt <= now) ignoredOutbound.delete(key);
+  }
+  const key = outboundKey(chatId, id);
+  if (!ignoredOutbound.has(key)) return false;
+  ignoredOutbound.delete(key);
+  return true;
+}
 
 function getRuntime() {
   return { ...runtime };
@@ -30,6 +56,43 @@ function getRuntime() {
 async function sendImageToChat(chatId, image, caption = "") {
   if (!sock || runtime.status !== "authenticated") throw new Error("WhatsApp nao esta autenticado");
   return sendImage(sock, chatId, image, caption);
+}
+
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+async function resolveChatId(input) {
+  const raw = String(input || "").trim();
+  if (!raw) throw new Error("Destino WhatsApp vazio");
+  if (raw.includes("@")) return raw;
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) throw new Error("Destino WhatsApp invalido");
+  const candidates = [];
+  if (digits.startsWith("55")) candidates.push(`${digits}@s.whatsapp.net`);
+  if (!digits.startsWith("55")) candidates.push(`55${digits}@s.whatsapp.net`);
+  if (!digits.startsWith("55") && digits.length === 10) {
+    candidates.push(`55${digits.slice(0, 2)}9${digits.slice(2)}@s.whatsapp.net`);
+  }
+  try {
+    const checks = await sock.onWhatsApp(...unique(candidates));
+    const found = checks.find((item) => item?.exists && item?.jid);
+    if (found?.jid) return found.jid;
+  } catch {
+    // best effort; fallback below
+  }
+  return unique(candidates)[0];
+}
+
+async function sendTextNotification(to, text) {
+  if (!sock || runtime.status !== "authenticated") throw new Error("WhatsApp nao esta autenticado");
+  const chatId = await resolveChatId(to);
+  const sent = await sendText(sock, chatId, String(text || "").trim(), null);
+  rememberIgnoredOutbound(sent);
+  return {
+    chat_id: chatId,
+    message_ids: sent.map((item) => item?.key?.id).filter(Boolean),
+  };
 }
 
 async function startWhatsApp(config) {
@@ -87,7 +150,7 @@ async function startWhatsApp(config) {
       }
     });
 
-    setupMessageHandler(sock);
+    setupMessageHandler(sock, { shouldIgnoreOutbound });
     return getRuntime();
   } catch (err) {
     runtime.status = "error";
@@ -120,4 +183,4 @@ async function stopWhatsApp({ reset = false } = {}) {
   return getRuntime();
 }
 
-module.exports = { startWhatsApp, stopWhatsApp, getRuntime, sendImageToChat };
+module.exports = { startWhatsApp, stopWhatsApp, getRuntime, sendImageToChat, sendTextNotification };
