@@ -32,6 +32,73 @@ try:
 except Exception:
     pass
 
+IQ_GATE_PROFILES: dict[str, dict[str, Any]] = {
+    "conservative": {
+        "min_votes": 4,
+        "recovery_cross": 4,
+        "recovery_same": 5,
+        "same_side_recovery_min": 5,
+        "exhaustion_min": 5,
+        "gale2_same_min": 5,
+        "same_side_exhausted_min": 5,
+        "same_side_loss_min": 5,
+        "code_wait_min": 5,
+        "code_conflict_min": 5,
+        "invalid_block_count": 1,
+        "invalid_block_tier": 5,
+        "learned_mid_min": 5,
+        "learned_high_min": 5,
+    },
+    "balanced": {
+        "min_votes": 3,
+        "recovery_cross": 3,
+        "recovery_same": 4,
+        "same_side_recovery_min": 4,
+        "exhaustion_min": 4,
+        "gale2_same_min": 5,
+        "same_side_exhausted_min": 5,
+        "same_side_loss_min": 5,
+        "code_wait_min": 4,
+        "code_conflict_min": 5,
+        "invalid_block_count": 2,
+        "invalid_block_tier": 4,
+        "learned_mid_min": 4,
+        "learned_high_min": 5,
+    },
+    "aggressive": {
+        "min_votes": 2,
+        "recovery_cross": 2,
+        "recovery_same": 3,
+        "same_side_recovery_min": 3,
+        "exhaustion_min": 3,
+        "gale2_same_min": 4,
+        "same_side_exhausted_min": 4,
+        "same_side_loss_min": 4,
+        "code_wait_min": 3,
+        "code_conflict_min": 4,
+        "invalid_block_count": 3,
+        "invalid_block_tier": 3,
+        "learned_mid_min": 3,
+        "learned_high_min": 4,
+    },
+    "full_aggressive": {
+        "min_votes": 2,
+        "recovery_cross": 2,
+        "recovery_same": 2,
+        "same_side_recovery_min": 3,
+        "exhaustion_min": 3,
+        "gale2_same_min": 4,
+        "same_side_exhausted_min": 4,
+        "same_side_loss_min": 3,
+        "code_wait_min": 2,
+        "code_conflict_min": 3,
+        "invalid_block_count": 4,
+        "invalid_block_tier": 2,
+        "learned_mid_min": 2,
+        "learned_high_min": 3,
+    },
+}
+
 
 class TraderRuntime:
     def __init__(self, db: Database, market: BinanceMarketClient, news: NewsClient, ai: RedSystemsAI):
@@ -68,9 +135,13 @@ class TraderRuntime:
         return deep_merge(DEFAULT_CONFIG, self.db.get_kv("config", {}) or {})
 
     def update_config(self, patch: dict[str, Any]) -> dict[str, Any]:
-        merged = deep_merge(self.config(), patch)
+        current = self.config()
+        old_profile = current.get("risk_profile")
+        merged = deep_merge(current, patch)
         if merged.get("risk_profile") not in RISK_PROFILES:
             merged["risk_profile"] = DEFAULT_CONFIG["risk_profile"]
+        if "risk_profile" in patch and merged.get("risk_profile") != old_profile:
+            merged = deep_merge(merged, RISK_PROFILES[merged["risk_profile"]]["settings"])
         merged["symbols"] = [str(item).upper() for item in merged.get("symbols", []) if str(item).strip()]
         merged["tradable_symbols"] = [str(item).upper() for item in merged.get("tradable_symbols", []) if str(item).strip()]
         self.db.set_kv("config", merged)
@@ -1599,8 +1670,8 @@ class TraderRuntime:
         recovery = candidate.get("recovery_context") or {}
         recovery_stage = int(recovery.get("stage") or 0)
         consensus_config = config.get("iqoption_consensus_stakes") or {}
-        min_votes = int(consensus_config.get("min_votes", 2))
-        recovery_min_votes = int(consensus_config.get("recovery_min_votes", 3))
+        gate_profile = _iq_gate_profile(config)
+        min_votes = int(gate_profile["min_votes"])
         code_context = candidate.get("code_context") or {}
         code_preferred = code_context.get("preferred_direction")
         techniques = config.get("iqoption_techniques") or {}
@@ -1623,6 +1694,8 @@ class TraderRuntime:
             "votes": votes,
             "counts": counts,
             "invalid_vote_count": invalid_vote_count,
+            "min_votes": min_votes,
+            "profile_gate": gate_profile,
             "stake_amount": max(1.0, float(config.get("iqoption_amount", 1))),
             "stake_source": "base",
             "same_symbol_recovery": same_symbol_recovery,
@@ -1649,16 +1722,22 @@ class TraderRuntime:
                 "critic": {},
                 "fast": {},
             }
-        if techniques.get("adaptive_recovery", True) and invalid_vote_count >= 2 and tier < 4:
+        if (
+            techniques.get("adaptive_recovery", True)
+            and invalid_vote_count >= int(gate_profile["invalid_block_count"])
+            and tier < int(gate_profile["invalid_block_tier"])
+        ):
             return {
                 "approved": False,
-                "reason": "Aprendizado bloqueou: muitos votos nulos exigem consenso premium 4/5",
+                "reason": f"Aprendizado bloqueou no perfil {gate_profile['key']}: muitos votos nulos exigem {gate_profile['invalid_block_tier']}/5",
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
                 "fast": {},
             }
-        required_recovery_votes = recovery_min_votes if same_symbol_recovery else min(recovery_min_votes, min_votes)
+        required_recovery_votes = min_votes
+        if recovery_stage > 0:
+            required_recovery_votes = int(gate_profile["recovery_same"] if same_symbol_recovery else gate_profile["recovery_cross"])
         if recovery_stage > 0 and techniques.get("adaptive_recovery", True):
             active_avoids = learning_context.get("active_avoid_patterns") or []
             relevant_avoids = [
@@ -1673,9 +1752,9 @@ class TraderRuntime:
                 "learning_penalty": round(learning_penalty, 2),
             }
             if max_learned_severity >= 0.75 or learning_penalty >= 22:
-                required_recovery_votes = max(required_recovery_votes, 5)
+                required_recovery_votes = max(required_recovery_votes, int(gate_profile["learned_high_min"]))
             elif max_learned_severity >= 0.45 or learning_penalty >= 14:
-                required_recovery_votes = max(required_recovery_votes, 4)
+                required_recovery_votes = max(required_recovery_votes, int(gate_profile["learned_mid_min"]))
         consensus["required_recovery_votes"] = required_recovery_votes
         if recovery_stage > 0 and tier < required_recovery_votes:
             return {
@@ -1686,64 +1765,71 @@ class TraderRuntime:
                 "critic": {},
                 "fast": {},
             }
-        if recovery_stage > 0 and same_side_recovery and tier < 4:
+        same_side_recovery_min = int(gate_profile["same_side_recovery_min"])
+        if recovery_stage > 0 and same_side_recovery and tier < same_side_recovery_min:
             return {
                 "approved": False,
-                "reason": "Gale repetindo direcao do loss exige voto premium",
+                "reason": f"Gale repetindo direcao do loss exige {same_side_recovery_min}/5 no perfil {gate_profile['key']}",
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
                 "fast": {},
             }
-        if direction_exhausted and tier < 4:
+        exhaustion_min = int(gate_profile["exhaustion_min"])
+        if direction_exhausted and tier < exhaustion_min:
             return {
                 "approved": False,
-                "reason": "Zona de exaustao exige pelo menos 4/5",
+                "reason": f"Zona de exaustao exige pelo menos {exhaustion_min}/5 no perfil {gate_profile['key']}",
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
                 "fast": {},
             }
-        if recovery_stage >= 2 and same_side_recovery and tier < 5:
+        gale2_same_min = int(gate_profile["gale2_same_min"])
+        if recovery_stage >= 2 and same_side_recovery and tier < gale2_same_min:
             return {
                 "approved": False,
-                "reason": "Gale 2 na mesma direcao exige pentagrama 5/5",
+                "reason": f"Gale 2 na mesma direcao exige {gale2_same_min}/5 no perfil {gate_profile['key']}",
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
                 "fast": {},
             }
-        if same_side_recovery and direction_exhausted and tier < 5:
+        same_side_exhausted_min = int(gate_profile["same_side_exhausted_min"])
+        if same_side_recovery and direction_exhausted and tier < same_side_exhausted_min:
             return {
                 "approved": False,
-                "reason": "Gale na mesma direcao em zona de exaustao exige 5/5",
+                "reason": f"Gale na mesma direcao em zona de exaustao exige {same_side_exhausted_min}/5",
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
                 "fast": {},
             }
-        if same_side_loss_streak >= 2 and tier < 5:
+        same_side_loss_min = int(gate_profile["same_side_loss_min"])
+        if same_side_loss_streak >= 2 and tier < same_side_loss_min:
             return {
                 "approved": False,
-                "reason": "Sequencia recente perdeu na mesma direcao; exige 5/5",
+                "reason": f"Sequencia recente perdeu na mesma direcao; exige {same_side_loss_min}/5",
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
                 "fast": {},
             }
-        if code_preferred == "WAIT" and tier < 4:
+        code_wait_min = int(gate_profile["code_wait_min"])
+        if code_preferred == "WAIT" and tier < code_wait_min:
             return {
                 "approved": False,
-                "reason": "Codigo quantitativo pediu WAIT; exige 4/5 para contrariar",
+                "reason": f"Codigo quantitativo pediu WAIT; perfil {gate_profile['key']} exige {code_wait_min}/5 para contrariar",
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
                 "fast": {},
             }
-        if code_preferred in {"CALL", "PUT"} and code_preferred != final_direction and tier < 5:
+        code_conflict_min = int(gate_profile["code_conflict_min"])
+        if code_preferred in {"CALL", "PUT"} and code_preferred != final_direction and tier < code_conflict_min:
             return {
                 "approved": False,
-                "reason": "Modelos contrariaram o codigo sem unanimidade",
+                "reason": f"Modelos contrariaram o codigo; perfil {gate_profile['key']} exige {code_conflict_min}/5",
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
@@ -2043,6 +2129,7 @@ class TraderRuntime:
             "running": self.running,
             "config": config,
             "risk_profiles": available_risk_profiles(),
+            "iq_gate_profiles": IQ_GATE_PROFILES,
             "wallet": self.wallet_summary(),
             "demo_audit": self.demo_audit_summary(),
             "iq_recovery": recovery_state,
@@ -2153,3 +2240,10 @@ def _pattern_matches(pattern: Any, value: Any) -> bool:
     if not parts or "*" in parts:
         return True
     return clean_value in parts
+
+
+def _iq_gate_profile(config: dict[str, Any]) -> dict[str, Any]:
+    key = str(config.get("risk_profile") or "balanced")
+    if key not in IQ_GATE_PROFILES:
+        key = "balanced"
+    return {"key": key, **IQ_GATE_PROFILES[key]}

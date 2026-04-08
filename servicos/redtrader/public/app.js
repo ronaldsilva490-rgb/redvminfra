@@ -287,8 +287,9 @@ function renderConsensusBanner(data) {
   const validVotes = votes.filter((vote) => vote.valid && (vote.direction === "CALL" || vote.direction === "PUT"));
   const direction = consensus.direction || "-";
   const tier = Number(consensus.tier || validVotes.length || 0);
-  const minVotes = Number(consensus.required_recovery_votes || data.config?.iqoption_consensus_stakes?.min_votes || 3);
+  const minVotes = Number(consensus.required_recovery_votes || consensus.min_votes || data.config?.iqoption_consensus_stakes?.min_votes || 3);
   const invalidCount = Number(consensus.invalid_vote_count ?? Math.max(0, votes.length - validVotes.length));
+  const profile = consensus.profile_gate?.key || data.config?.risk_profile || "-";
   const css = event.type === "trade:opened" ? "ok" : "blocked";
   const validText = validVotes.length
     ? validVotes.map((vote) => `${vote.role}:${vote.direction}`).join(" · ")
@@ -296,7 +297,7 @@ function renderConsensusBanner(data) {
   el.className = `consensus-banner ${css}`;
   el.innerHTML = `
     <strong>${event.type === "trade:opened" ? "Entrada liberada" : "Entrada bloqueada"}</strong>
-    <span>${escapeHtml(direction)} · ${tier}/${votes.length || 5} votos válidos · mínimo ${minVotes} · nulos/WAIT ${invalidCount}</span>
+    <span>${escapeHtml(profile)} · ${escapeHtml(direction)} · ${tier}/${votes.length || 5} votos válidos · mínimo ${minVotes} · nulos/WAIT ${invalidCount}</span>
     <small>${escapeHtml(payload.reason || event.message || "-")} · ${escapeHtml(validText)}</small>
   `;
 }
@@ -369,6 +370,19 @@ function collectBasicConfig() {
   const symbols = splitSymbols(form.elements.symbols.value || "EURUSD-OTC");
   const activeSymbols = symbols.length ? symbols : ["EURUSD-OTC"];
   const mode = form.elements.stake_mode.value;
+  const riskProfile = form.elements.risk_profile.value;
+  const decisionPollByProfile = {
+    conservative: 4,
+    balanced: 3,
+    aggressive: 1.5,
+    full_aggressive: 1,
+  };
+  const marketPollByProfile = {
+    conservative: 0.5,
+    balanced: 0.35,
+    aggressive: 0.25,
+    full_aggressive: 0.25,
+  };
   const tiers = {};
   const pctTiers = {};
   for (const tier of ["2", "3", "4", "5"]) {
@@ -378,7 +392,7 @@ function collectBasicConfig() {
   return {
     ...current,
     auto_enabled: form.elements.auto_enabled.value === "true",
-    risk_profile: form.elements.risk_profile.value,
+    risk_profile: riskProfile,
     market_provider: "iqoption_demo",
     execution_provider: "iqoption_demo",
     symbols: activeSymbols,
@@ -390,8 +404,8 @@ function collectBasicConfig() {
     iqoption_gale_max_steps: Number(form.elements.iqoption_gale_max_steps.value || 0),
     iqoption_gale_max_amount: Number(form.elements.iqoption_gale_max_amount.value || 100),
     cooldown_minutes: Number(form.elements.cooldown_minutes.value || 0.5),
-    market_poll_seconds: 0.25,
-    decision_poll_seconds: 2,
+    market_poll_seconds: marketPollByProfile[riskProfile] || 0.25,
+    decision_poll_seconds: decisionPollByProfile[riskProfile] || 2,
     max_open_positions: 1,
     iqoption_consensus_stakes: {
       ...consensus,
