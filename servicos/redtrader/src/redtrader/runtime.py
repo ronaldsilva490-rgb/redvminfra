@@ -1917,10 +1917,16 @@ class TraderRuntime:
         lead_guard_direction = role_direction_map.get("critic")
         lead_guard_confirm = bool(role_valid_map.get("critic")) and lead_guard_direction == final_direction
         specialist_direction = role_direction_map.get(specialist_role)
+        specialist_raw_decision = str((vote_by_role.get(specialist_role) or {}).get("raw_decision") or "")
         specialist_opposes = (
             bool(role_valid_map.get(specialist_role))
             and specialist_direction in {"CALL", "PUT"}
             and specialist_direction != final_direction
+        )
+        specialist_cautions = (
+            bool(vote_by_role.get(specialist_role))
+            and not role_valid_map.get(specialist_role)
+            and _is_caution_signal(specialist_raw_decision)
         )
         consensus = {
             "enabled": bool(consensus_config.get("enabled", True)),
@@ -1948,7 +1954,9 @@ class TraderRuntime:
             "guard_wait_count": guard_wait_count,
             "lead_guard_confirm": lead_guard_confirm,
             "specialist_direction": specialist_direction,
+            "specialist_raw_decision": specialist_raw_decision,
             "specialist_opposes": specialist_opposes,
+            "specialist_cautions": specialist_cautions,
         }
         if not final_direction:
             reason = "Comite empatou ou nao confirmou direcao"
@@ -2023,11 +2031,11 @@ class TraderRuntime:
         if (
             recovery_stage > 0
             and core_confirm_count >= 2
-            and specialist_opposes
+            and (specialist_opposes or specialist_cautions)
             and guard_confirm_count < specialist_guard_min
         ):
             reason = (
-                "Especialista de reversao contrariou o nucleo sem confirmacao dos guardioes"
+                "Especialista sinalizou cautela contra o nucleo sem confirmacao dos guardioes"
             )
             self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
@@ -2038,9 +2046,9 @@ class TraderRuntime:
                 "critic": {},
                 "fast": {},
             }
-        if recovery_stage > 0 and repeated_side_recovery and specialist_opposes and not lead_guard_confirm:
+        if recovery_stage > 0 and repeated_side_recovery and (specialist_opposes or specialist_cautions) and not lead_guard_confirm:
             reason = (
-                "Recuperacao repetindo a mesma direcao foi bloqueada: especialista divergiu e o critico nao confirmou"
+                "Recuperacao repetindo a mesma direcao foi bloqueada: especialista pediu cautela e o critico nao confirmou"
             )
             self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
@@ -2261,7 +2269,9 @@ class TraderRuntime:
             chain.append("qwen3-coder-next")
         if role == "premium_5" and primary == "ministral-3:3b":
             chain.append("qwen3-coder-next")
-        if primary == "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)":
+        if role == "decision" and primary == "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)":
+            chain.append("meta/llama-4-maverick-17b-128e-instruct (NVIDIA)")
+        elif primary == "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)":
             chain.append("qwen3-coder-next")
         elif primary == "qwen3-coder-next":
             chain.append("qwen/qwen3-next-80b-a3b-instruct (NVIDIA)")
@@ -2692,12 +2702,18 @@ def _binary_direction(value: Any) -> str | None:
     return None
 
 
+def _is_caution_signal(value: Any) -> bool:
+    text = str(value or "").upper().strip()
+    return text in {"WAIT", "AVOID", "BLOCK", "VETO", "NO_TRADE", "SKIP"}
+
+
 def _vote(role: str, model: Any, direction: str | None, response: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     return {
         "role": role,
         "model": str(model or ""),
         "ok": bool(result.get("ok")),
         "direction": direction,
+        "raw_decision": str(response.get("decision") or response.get("preferred_decision") or "").upper().strip(),
         "confidence": normalize_confidence(response.get("confidence")),
         "risk_level": response.get("risk_level"),
         "latency_ms": response.get("_latency_ms"),
