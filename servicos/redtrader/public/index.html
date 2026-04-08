@@ -112,6 +112,10 @@
                 <strong id="terminalDecision">NO_TRADE</strong>
                 <small id="terminalDecisionReason">Aguardando análise.</small>
               </div>
+              <div class="terminal-entries">
+                <span>Entradas da IA</span>
+                <div id="terminalEntries" class="terminal-entry-list">Aguardando entradas.</div>
+              </div>
             </aside>
           </div>
         </section>
@@ -259,10 +263,61 @@
           <div class="section-head">
             <div>
               <p class="eyebrow">Controle</p>
-              <h2>Configuração</h2>
+              <h2>Configuração fácil</h2>
             </div>
             <span id="saveState" class="pill">sincronizado</span>
           </div>
+
+          <form id="quickConfigForm" class="quick-settings-grid">
+            <label>
+              Robô
+              <select name="auto_enabled">
+                <option value="true">Ligado</option>
+                <option value="false">Pausado</option>
+              </select>
+            </label>
+            <label>
+              Agressividade
+              <select name="risk_profile">
+                <option value="full_aggressive">Full agressivo</option>
+                <option value="aggressive">Agressivo</option>
+                <option value="balanced">Balanceado</option>
+                <option value="conservative">Conservador</option>
+              </select>
+            </label>
+            <label>
+              Ativo IQ
+              <input name="symbol" type="text" placeholder="EURUSD-OTC" />
+            </label>
+            <label>
+              Valor por entrada
+              <input name="iqoption_amount" type="number" min="1" step="1" />
+            </label>
+            <label>
+              Expiração
+              <select name="iqoption_expiration_minutes">
+                <option value="1">1 minuto</option>
+                <option value="2">2 minutos</option>
+                <option value="5">5 minutos</option>
+              </select>
+            </label>
+            <label>
+              Nova tentativa
+              <select name="cooldown_minutes">
+                <option value="0.5">30 segundos</option>
+                <option value="1">1 minuto</option>
+                <option value="2">2 minutos</option>
+                <option value="5">5 minutos</option>
+              </select>
+            </label>
+            <div class="form-actions">
+              <button type="submit">Aplicar modo IQ</button>
+            </div>
+          </form>
+          <p class="quick-note">Modo fácil usa somente IQ Option Demo/PRACTICE. As outras plataformas ficam fora do caminho enquanto a gente audita os modelos.</p>
+
+          <details class="advanced-config">
+            <summary>Configuração avançada</summary>
           <form id="configForm" class="settings-grid">
             <label>
               Auto paper
@@ -370,6 +425,7 @@
               <button type="submit">Salvar</button>
             </div>
           </form>
+          </details>
         </section>
 
         <section id="logs" class="panel">

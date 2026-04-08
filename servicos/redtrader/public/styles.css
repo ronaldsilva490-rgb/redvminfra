@@ -446,6 +446,56 @@ h2 {
   font-size: 18px;
 }
 
+.terminal-entries {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #242c36;
+  border-radius: 8px;
+  background: #0b0f14;
+}
+
+.terminal-entries > span {
+  color: #9aa4af;
+  font-size: 12px;
+}
+
+.terminal-entry-list {
+  display: grid;
+  gap: 7px;
+}
+
+.terminal-entry-list article {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border: 1px solid #252c35;
+  border-radius: 8px;
+  background: #070a0e;
+}
+
+.terminal-entry-list article.open {
+  border-color: rgba(53, 255, 147, 0.52);
+}
+
+.terminal-entry-list article.win strong {
+  color: #35ff93;
+}
+
+.terminal-entry-list article.loss strong {
+  color: #ff6972;
+}
+
+.terminal-entry-list strong {
+  font-size: 12px;
+}
+
+.terminal-entry-list span,
+.terminal-entry-list small {
+  color: #9aa4af;
+  font-size: 11px;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -811,6 +861,38 @@ td {
   gap: 14px;
 }
 
+.quick-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.quick-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.advanced-config {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #080e15;
+  padding: 0;
+}
+
+.advanced-config summary {
+  cursor: pointer;
+  padding: 16px;
+  color: #ffb2b5;
+  font-weight: 900;
+}
+
+.advanced-config .settings-grid {
+  padding: 0 16px 16px;
+}
+
 .wide {
   grid-column: span 2;
 }
@@ -928,7 +1010,7 @@ input:focus, select:focus {
   }
   .terminal-decision,
   .terminal-profit { grid-column: span 2; }
-  .platform-grid, .audit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .platform-grid, .audit-grid, .quick-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid-2 { grid-template-columns: 1fr; }
   .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -942,7 +1024,7 @@ input:focus, select:focus {
     flex-direction: column;
   }
   h1 { font-size: 34px; }
-  .stats, .market-grid, .settings-grid, .platform-grid, .audit-grid { grid-template-columns: 1fr; }
+  .stats, .market-grid, .settings-grid, .platform-grid, .audit-grid, .quick-settings-grid { grid-template-columns: 1fr; }
   .terminal-topbar,
   .terminal-tabs,
   .terminal-account { align-items: stretch; flex-direction: column; width: 100%; }

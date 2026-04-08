@@ -77,6 +77,7 @@ function renderAll() {
   if (!data) return;
   renderStats(data);
   renderTerminal(data);
+  renderQuickConfig(data.config || {});
   renderAudit(data.demo_audit || {});
   renderPlatforms(data);
   renderPlatformConfigHelp(state.selectedPlatformConfig);
@@ -416,6 +417,7 @@ function renderTerminal(data) {
   $("#terminalDecisionReason").textContent = reason;
   $("#terminalAiBadge").textContent = latestAnalysis.model ? `${latestAnalysis.model} · ${decision}` : "IA aguardando setup";
   $("#terminalPriceTag").textContent = formatPrice(features.last_price || last.close);
+  renderTerminalEntries(data);
 
   renderTerminalChart(data, above);
 }
@@ -425,6 +427,25 @@ function formatTerminalDecision(value) {
   if (["ENTER_LONG", "LONG", "CALL", "BUY", "ACIMA"].includes(text)) return "ACIMA";
   if (["ENTER_SHORT", "SHORT", "PUT", "SELL", "ABAIXO"].includes(text)) return "ABAIXO";
   return "NO_TRADE";
+}
+
+function renderTerminalEntries(data) {
+  const list = $("#terminalEntries");
+  if (!list) return;
+  const trades = (data.trades || []).filter((trade) => trade.symbol === state.selectedSymbol).slice(0, 6);
+  list.innerHTML = trades.length
+    ? trades.map((trade) => {
+        const pnl = Number(trade.pnl_brl || 0);
+        const meta = trade.metadata || {};
+        return `
+          <article class="${trade.status === "OPEN" ? "open" : pnl >= 0 ? "win" : "loss"}">
+            <strong>#${trade.id} ${escapeHtml(trade.side || "-")} · ${escapeHtml(trade.status || "-")}</strong>
+            <span>${money(trade.position_brl)} · ${trade.status === "OPEN" ? "ao vivo" : money(pnl)}</span>
+            <small>${escapeHtml(meta.iqoption_order_id || "")}</small>
+          </article>
+        `;
+      }).join("")
+    : `<p class="muted">Aguardando a primeira entrada da IA.</p>`;
 }
 
 function renderTerminalChart(data, aboveBias = 50) {
@@ -542,6 +563,8 @@ function renderTerminalChart(data, aboveBias = 50) {
   ctx.font = "800 12px Inter, sans-serif";
   ctx.fillText(formatPrice(last.close), width - pad.r + 14, lastY + 5);
 
+  drawTerminalTradeMarkers(ctx, data, candles, { pad, width, height, plotW, plotH, min, max, y, nowX });
+
   ctx.fillStyle = "#7f8791";
   ctx.font = "12px Inter, sans-serif";
   for (let i = 0; i <= 3; i++) {
@@ -554,6 +577,61 @@ function renderTerminalChart(data, aboveBias = 50) {
   ctx.font = "900 12px Inter, sans-serif";
   ctx.fillText(`ACIMA ${aboveBias.toFixed(0)}%`, pad.l + 16, pad.t + 20);
   ctx.fillText(`ABAIXO ${(100 - aboveBias).toFixed(0)}%`, pad.l + 16, height - pad.b - 8);
+}
+
+function drawTerminalTradeMarkers(ctx, data, candles, scale) {
+  const trades = (data.trades || []).filter((trade) => trade.symbol === state.selectedSymbol).slice(0, 24);
+  if (!trades.length) return;
+  const firstTime = Number(candles[0]?.time || 0);
+  const lastTime = Number(candles[candles.length - 1]?.time || firstTime + 60);
+  const timeSpan = Math.max(1, lastTime - firstTime);
+  const xFromTime = (ts) => {
+    const raw = scale.pad.l + ((Number(ts || lastTime) - firstTime) / timeSpan) * scale.plotW;
+    return Math.max(scale.pad.l + 8, Math.min(scale.nowX, raw));
+  };
+
+  ctx.save();
+  trades.forEach((trade) => {
+    const isOpen = trade.status === "OPEN";
+    const pnl = Number(trade.pnl_brl || 0);
+    const color = isOpen ? "#35ff93" : pnl >= 0 ? "#35ff93" : "#ff6972";
+    const px = xFromTime(trade.opened_at);
+    const entry = Number(trade.entry_price || 0);
+    const py = Number.isFinite(entry) && entry > 0 ? scale.y(entry) : scale.pad.t + scale.plotH / 2;
+    const side = String(trade.side || "").toUpperCase();
+    const label = `#${trade.id} ${side}`;
+
+    ctx.setLineDash([3, 5]);
+    ctx.strokeStyle = isOpen ? "rgba(53, 255, 147, 0.7)" : "rgba(255, 255, 255, 0.34)";
+    ctx.beginPath();
+    ctx.moveTo(px, scale.pad.t);
+    ctx.lineTo(px, scale.height - scale.pad.b);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    if (side === "PUT" || side === "ABAIXO") {
+      ctx.moveTo(px, py + 10);
+      ctx.lineTo(px - 8, py - 6);
+      ctx.lineTo(px + 8, py - 6);
+    } else {
+      ctx.moveTo(px, py - 10);
+      ctx.lineTo(px - 8, py + 6);
+      ctx.lineTo(px + 8, py + 6);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(2, 3, 4, 0.88)";
+    ctx.fillRect(px + 8, py - 17, 76, 26);
+    ctx.strokeStyle = color;
+    ctx.strokeRect(px + 8, py - 17, 76, 26);
+    ctx.fillStyle = color;
+    ctx.font = "900 11px Inter, sans-serif";
+    ctx.fillText(label, px + 14, py);
+  });
+  ctx.restore();
 }
 
 function renderAnalyses(data) {
@@ -624,6 +702,18 @@ function renderEvents(events) {
 }
 
 let configRendered = false;
+function renderQuickConfig(config) {
+  const form = $("#quickConfigForm");
+  if (!form || form.contains(document.activeElement)) return;
+  const symbol = (config.symbols || ["EURUSD-OTC"])[0] || "EURUSD-OTC";
+  form.auto_enabled.value = String(Boolean(config.auto_enabled));
+  form.risk_profile.value = config.risk_profile || "full_aggressive";
+  form.symbol.value = symbol;
+  form.iqoption_amount.value = config.iqoption_amount ?? 1;
+  form.iqoption_expiration_minutes.value = String(config.iqoption_expiration_minutes || 1);
+  form.cooldown_minutes.value = String(config.cooldown_minutes || 0.5);
+}
+
 function renderConfig(config) {
   if (!config || configRendered) return;
   const form = $("#configForm");
@@ -653,6 +743,34 @@ function renderConfig(config) {
   form.tradable_symbols.value = (config.tradable_symbols || []).join(",");
   renderModelSelects(config);
   configRendered = true;
+}
+
+function collectQuickConfig() {
+  const form = $("#quickConfigForm");
+  const current = state.status?.config || {};
+  const symbol = String(form.symbol.value || "EURUSD-OTC").trim().toUpperCase();
+  return {
+    ...current,
+    auto_enabled: form.auto_enabled.value === "true",
+    risk_profile: form.risk_profile.value,
+    market_provider: "iqoption_demo",
+    execution_provider: "iqoption_demo",
+    symbols: [symbol],
+    tradable_symbols: [symbol],
+    iqoption_amount: Number(form.iqoption_amount.value || 1),
+    iqoption_expiration_minutes: Number(form.iqoption_expiration_minutes.value || 1),
+    cooldown_minutes: Number(form.cooldown_minutes.value || 0.5),
+    market_poll_seconds: 5,
+    max_open_positions: Math.max(Number(current.max_open_positions || 10), 10),
+    max_trades_per_day: Math.max(Number(current.max_trades_per_day || 200), 200),
+    platforms: {
+      ...(current.platforms || {}),
+      binance_spot: { enabled: false, mode: "market_data_paper", label: "Binance Spot" },
+      tastytrade_sandbox: { enabled: false, mode: "sandbox", label: "tastytrade Sandbox" },
+      webull_paper: { enabled: false, mode: "paper", label: "Webull Paper" },
+      iqoption_experimental: { enabled: true, mode: "demo", label: "IQ Option Demo" },
+    },
+  };
 }
 
 function renderRiskProfileSelect(config) {
@@ -804,6 +922,22 @@ function bindActions() {
 
   $("#riskProfileSelect").addEventListener("change", (event) => {
     applyRiskProfilePreset(event.target.value);
+  });
+
+  $("#quickConfigForm")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    $("#saveState").textContent = "aplicando";
+    try {
+      const payload = collectQuickConfig();
+      await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
+      configRendered = false;
+      await refresh();
+      $("#saveState").textContent = "modo fácil salvo";
+      toast("Modo IQ aplicado");
+    } catch (err) {
+      $("#saveState").textContent = "erro";
+      toast(err.message || "Falha ao aplicar modo IQ");
+    }
   });
 
   $("#configForm").addEventListener("submit", async (event) => {
