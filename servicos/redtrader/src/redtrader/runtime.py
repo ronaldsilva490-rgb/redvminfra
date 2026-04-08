@@ -473,6 +473,17 @@ class TraderRuntime:
         if not final.get("ok"):
             return {"approved": False, "reason": "Modelo decisor falhou", "fast": fast, "final": final}
         response = final["response"]
+        final_latency = int(response.get("_latency_ms") or 0)
+        max_decision_latency = int(config.get("max_decision_latency_ms", 8000) or 8000)
+        if final_latency and final_latency > max_decision_latency:
+            return {
+                "approved": False,
+                "reason": f"Decisao ficou velha ({final_latency}ms)",
+                "fast": fast,
+                "final": final,
+                "latency_ms": final_latency,
+                "max_latency_ms": max_decision_latency,
+            }
         confidence = normalize_confidence(response.get("confidence"))
         decision = str(response.get("decision", "")).upper()
         risk_reward = _num(response.get("risk_reward"))
