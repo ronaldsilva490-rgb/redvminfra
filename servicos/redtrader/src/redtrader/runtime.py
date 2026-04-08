@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 from datetime import datetime
 from typing import Any
@@ -186,6 +187,36 @@ class TraderRuntime:
     def _timestamp() -> str:
         return datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
+    async def polish_trade_notification(self, config: dict[str, Any], event: str, payload: dict[str, Any], fallback: str) -> str:
+        model = (
+            (config.get("models") or {}).get("notification")
+            or "mistralai/mistral-small-4-119b-2603 (NVIDIA)"
+        )
+        system = (
+            "Voce formata notificacoes do RED Trader para um grupo de WhatsApp. "
+            "Use portugues do Brasil, markdown do WhatsApp e emojis. "
+            "Seja bonito, curto, claro e auditavel. Nao prometa lucro e deixe claro que e DEMO quando fizer sentido. "
+            "Responda SOMENTE JSON valido no formato {\"text\":\"...\"}."
+        )
+        user = (
+            "Reescreva a notificacao abaixo para WhatsApp, mantendo TODOS os numeros importantes. "
+            "Limite: 900 caracteres. Sem conselho financeiro, sem texto extra fora do JSON.\n\n"
+            f"EVENTO: {event}\n"
+            f"DADOS: {json.dumps(payload, ensure_ascii=False)}\n"
+            f"FALLBACK: {fallback}"
+        )
+        try:
+            result = await asyncio.wait_for(
+                self.ai.chat_json(model, system, user, temperature=0.25, timeout=10),
+                timeout=12,
+            )
+            text = str(result.get("text") or "").strip()
+            if 20 <= len(text) <= 1200:
+                return text
+        except Exception as exc:
+            self.publish("whatsapp:notify_format_fallback", "IA nao formatou notificacao; usando template", {"event": event, "error": repr(exc)})
+        return fallback
+
     async def send_whatsapp_notification(self, text: str, metadata: dict[str, Any]) -> None:
         if not self._notify_enabled():
             return
@@ -221,21 +252,33 @@ class TraderRuntime:
         reason = str(decision.get("reasoning_summary") or "").strip()
         if len(reason) > 220:
             reason = reason[:217].rstrip() + "..."
+        payload = {
+            "timestamp": self._timestamp(),
+            "trade_id": trade_id,
+            "symbol": candidate.get("symbol"),
+            "direction": str(decision.get("action") or candidate.get("action") or "").upper(),
+            "amount": self._money(amount),
+            "expiration_min": int(config.get("iqoption_expiration_minutes", 1)),
+            "gale_stage": gale_stage,
+            "consensus_tier": consensus.get("tier", "-"),
+            "stake_source": metadata.get("stake_source") or decision.get("stake_source") or "base",
+            "balance_after_open": self._money(balance),
+            "ai_reading": reason,
+        }
         lines = [
-            "RED Trader | ENTRADA DEMO",
-            f"Horario: {self._timestamp()}",
-            f"Operacao: #{trade_id}",
-            f"Ativo: {candidate.get('symbol')}",
-            f"Direcao: {str(decision.get('action') or candidate.get('action') or '').upper()}",
-            f"Entrada: {self._money(amount)}",
-            f"Expiracao: {int(config.get('iqoption_expiration_minutes', 1))} min",
-            f"Gale: {gale_stage}",
-            f"Consenso: {consensus.get('tier', '-')} votos ({metadata.get('stake_source') or decision.get('stake_source') or 'base'})",
-            f"Banca IQ apos entrada: {self._money(balance)}",
+            "🚀 *RED Trader | ENTRADA DEMO*",
+            f"🕒 {payload['timestamp']}",
+            f"🎯 *#{trade_id}* · *{payload['symbol']}* · *{payload['direction']}*",
+            f"💵 Entrada: *{payload['amount']}*",
+            f"⏱ Expiração: *{payload['expiration_min']} min* · Gale: *{gale_stage}*",
+            f"🧠 Consenso: *{payload['consensus_tier']} votos* · `{payload['stake_source']}`",
+            f"🏦 Banca IQ: *{payload['balance_after_open']}*",
         ]
         if reason:
-            lines.append(f"Leitura IA: {reason}")
-        await self.send_whatsapp_notification("\n".join(lines), {"event": "trade_opened", "trade_id": trade_id})
+            lines.append(f"📌 _Leitura IA:_ {reason}")
+        fallback = "\n".join(lines)
+        text = await self.polish_trade_notification(config, "trade_opened", payload, fallback)
+        await self.send_whatsapp_notification(text, {"event": "trade_opened", "trade_id": trade_id})
 
     async def notify_whatsapp_trade_closed(
         self,
@@ -248,19 +291,30 @@ class TraderRuntime:
         metadata = trade.get("metadata") or {}
         balance = result.get("balance_after_close") or self.wallet_summary().get("equity_brl")
         outcome = "WIN" if pnl_brl > 0 else ("LOSS" if pnl_brl < 0 else str(status or "EMPATE").upper())
-        lines = [
-            "RED Trader | FECHAMENTO DEMO",
-            f"Horario: {self._timestamp()}",
-            f"Operacao: #{trade.get('id')}",
-            f"Ativo: {trade.get('symbol')}",
-            f"Direcao: {str(trade.get('side') or '').upper()}",
-            f"Entrada: {self._money(trade.get('position_brl'))}",
-            f"Resultado: {outcome} ({status})",
-            f"Lucro/Prejuizo: {self._money(pnl_brl)}",
-            f"Gale: {metadata.get('gale_stage', 0)}",
-            f"Banca IQ: {self._money(balance)}",
-        ]
-        await self.send_whatsapp_notification("\n".join(lines), {"event": "trade_closed", "trade_id": trade.get("id"), "status": status})
+        icon = "✅" if pnl_brl > 0 else ("❌" if pnl_brl < 0 else "➖")
+        payload = {
+            "timestamp": self._timestamp(),
+            "trade_id": trade.get("id"),
+            "symbol": trade.get("symbol"),
+            "direction": str(trade.get("side") or "").upper(),
+            "amount": self._money(trade.get("position_brl")),
+            "result": outcome,
+            "raw_status": status,
+            "pnl": self._money(pnl_brl),
+            "gale_stage": metadata.get("gale_stage", 0),
+            "balance_after_close": self._money(balance),
+        }
+        fallback = "\n".join([
+            f"{icon} *RED Trader | FECHAMENTO DEMO*",
+            f"🕒 {payload['timestamp']}",
+            f"🎯 *#{payload['trade_id']}* · *{payload['symbol']}* · *{payload['direction']}*",
+            f"💵 Entrada: *{payload['amount']}* · Gale: *{payload['gale_stage']}*",
+            f"{icon} Resultado: *{outcome}* (`{status}`)",
+            f"💰 P/L: *{payload['pnl']}*",
+            f"🏦 Banca IQ: *{payload['balance_after_close']}*",
+        ])
+        text = await self.polish_trade_notification(config, "trade_closed", payload, fallback)
+        await self.send_whatsapp_notification(text, {"event": "trade_closed", "trade_id": trade.get("id"), "status": status})
 
     async def handle_exits(self, config: dict[str, Any]) -> None:
         open_trades = self.db.open_trades()
