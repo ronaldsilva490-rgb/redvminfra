@@ -17,6 +17,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "iqoption_gale_payout_pct": 85,
     "iqoption_gale_max_amount": 100,
     "market_poll_seconds": 1,
+    "decision_poll_seconds": 5,
     "news_poll_seconds": 300,
     "cooldown_minutes": 30,
     "max_trades_per_day": 3,

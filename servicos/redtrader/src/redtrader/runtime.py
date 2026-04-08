@@ -106,8 +106,8 @@ class TraderRuntime:
                 self.publish("error", "Falha no ciclo principal", {"error": repr(exc)})
             elapsed = time.time() - started
             config = self.config()
-            min_sleep = 0.6 if config.get("market_provider") == "iqoption_demo" else 3
-            await asyncio.sleep(max(min_sleep, float(config.get("market_poll_seconds", 20)) - elapsed))
+            min_sleep = 3 if config.get("market_provider") == "iqoption_demo" else 10
+            await asyncio.sleep(max(min_sleep, float(config.get("decision_poll_seconds", 5)) - elapsed))
 
     async def cycle(self, reason: str = "manual") -> None:
         async with self.cycle_lock:

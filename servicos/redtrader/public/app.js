@@ -836,6 +836,7 @@ function collectQuickConfig() {
     iqoption_gale_max_amount: 100,
     cooldown_minutes: Number(form.cooldown_minutes.value || 0.5),
     market_poll_seconds: 1,
+    decision_poll_seconds: 5,
     max_open_positions: 1,
     max_trades_per_day: Math.max(Number(current.max_trades_per_day || 200), 200),
     daily_stop_loss_pct: Math.max(Number(current.daily_stop_loss_pct || 50), 50),
