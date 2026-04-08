@@ -162,7 +162,7 @@ class IQOptionDemoAdapter:
             status: str | None = None
             profit = 0.0
             while time.time() < deadline:
-                payload = api.get_optioninfo_v2(20)
+                payload = api.get_optioninfo_v2(100)
                 closed = ((payload or {}).get("msg") or {}).get("closed_options") or []
                 for item in closed:
                     raw_ids = item.get("id") or []

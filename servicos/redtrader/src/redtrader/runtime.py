@@ -165,6 +165,14 @@ class TraderRuntime:
                         {"trade_id": trade["id"], "provider": "iqoption_demo", "result": result, "pnl_brl": pnl_brl},
                     )
                 except Exception as exc:
+                    if "iqoption_result_not_ready" in repr(exc) and held > expiry_seconds + 240:
+                        self.db.close_trade(int(trade["id"]), float(price), 0.0, 0.0, "iqoption_demo:unknown_timeout")
+                        self.publish(
+                            "trade:closed",
+                            f"IQ Option demo expirou sem retorno auditavel em {trade['symbol']}",
+                            {"trade_id": trade["id"], "provider": "iqoption_demo", "error": repr(exc)},
+                        )
+                        continue
                     self.publish("trade:error", "Falha ao checar resultado IQ Option demo", {"trade_id": trade["id"], "error": repr(exc)})
                 continue
             entry = float(trade["entry_price"])
