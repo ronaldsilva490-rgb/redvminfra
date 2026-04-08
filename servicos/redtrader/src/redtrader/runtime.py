@@ -937,10 +937,10 @@ class TraderRuntime:
         loss_total = max(0.0, float(state.get("loss_total") or 0))
         multiplier = max(1.0, float(config.get("iqoption_gale_multiplier", 2.35)))
         max_amount = max(base, float(config.get("iqoption_gale_max_amount", 100)))
-        target_profit = base
+        target_profit = preferred_base
         recovery_amount = (loss_total + target_profit) / payout
-        multiplier_amount = base * (multiplier ** stage)
-        amount = min(max(recovery_amount, multiplier_amount, base), max_amount)
+        multiplier_amount = preferred_base * (multiplier ** stage)
+        amount = min(max(recovery_amount, multiplier_amount, preferred_base), max_amount)
         return round(amount, 2), state
 
     def recent_iq_feedback(self, limit: int = 4) -> list[dict[str, Any]]:
@@ -1445,10 +1445,22 @@ class TraderRuntime:
         consensus_config = config.get("iqoption_consensus_stakes") or {}
         if not consensus_config.get("enabled", True):
             return base
+        mode = str(consensus_config.get("mode") or config.get("iqoption_stake_mode") or "fixed").lower()
+        if mode in {"balance_pct", "percent", "pct", "percentage"}:
+            pct_tiers = consensus_config.get("pct_tiers") or {}
+            pct_value = None
+            for key in [str(int(tier)), "2"]:
+                if key in pct_tiers:
+                    pct_value = _num(pct_tiers[key])
+                    break
+            if pct_value and pct_value > 0:
+                equity = max(1.0, float(self.wallet_summary().get("equity_brl") or base))
+                return round(max(1.0, equity * pct_value / 100), 2)
+            return base
         tiers = consensus_config.get("tiers") or {}
         for key in [str(int(tier)), "2"]:
             if key in tiers:
-                return max(1.0, float(tiers[key]))
+                return round(max(1.0, float(tiers[key])), 2)
         return base
 
     async def safe_ai_call(

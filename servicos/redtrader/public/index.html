@@ -3,504 +3,210 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>RED Trader Painel</title>
+    <title>RED Trader Terminal</title>
     <link rel="icon" href="favicon.ico" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="layout">
-      <aside class="sidebar">
-        <a class="brand" href="#top" aria-label="RED Trader">
+    <main class="app">
+      <header class="topbar">
+        <a class="brand" href="#terminal" aria-label="RED Trader">
           <img src="assets/logo.png" alt="RED" />
           <span>Trader</span>
         </a>
-        <nav class="nav">
-          <a href="#top">Visão</a>
-          <a href="#terminal">Terminal</a>
-          <a href="#platforms">Plataformas</a>
-          <a href="#chart">Gráfico</a>
-          <a href="#committee">Comitê</a>
-          <a href="#trades">Operações</a>
-          <a href="#settings">Config</a>
-          <a href="#logs">Logs</a>
-        </nav>
-        <section class="side-card">
-          <span>Modo</span>
-          <strong>Paper trading</strong>
-          <small>Sem ordem real, sem chave de corretora.</small>
-        </section>
-        <button id="logoutBtn" class="ghost full" type="button">Sair</button>
-      </aside>
-
-      <section class="content">
-        <header id="top" class="hero">
-          <div>
-            <p class="eyebrow">RED Systems</p>
-            <h1>RED Trader Painel</h1>
-            <p class="hero-copy">Saldo demo, dados reais e IA decidindo apenas depois dos gates de risco.</p>
-          </div>
-          <div class="hero-actions">
-            <button id="runOnceBtn" type="button">Rodar análise agora</button>
-            <button id="resetBtn" class="secondary" type="button">Resetar paper</button>
-          </div>
-        </header>
-
-        <section id="terminal" class="terminal-shell" aria-label="Terminal demo de operação">
-          <header class="terminal-topbar">
-            <div class="terminal-brand">
-              <span class="terminal-mark">RED</span>
-              <strong>IQ Demo Terminal</strong>
-            </div>
-            <div class="terminal-tabs">
-              <span id="terminalAssetTab" class="terminal-tab active">sincronizando</span>
-              <span class="terminal-tab">IA audit</span>
-              <span class="terminal-tab">PRACTICE</span>
-            </div>
-            <div class="terminal-account">
-              <span id="terminalMode">demo</span>
-              <strong id="terminalBalance">R$ 0,00</strong>
-            </div>
-          </header>
-
-          <div class="terminal-body">
-            <aside class="terminal-leftbar">
-              <span>Portfólio</span>
-              <span>Histórico</span>
-              <span>Modelos</span>
-              <span>Auditoria</span>
-              <span>Logs</span>
-            </aside>
-
-            <section class="terminal-stage">
-              <div class="terminal-asset-head">
-                <div>
-                  <strong id="terminalAsset">BTCUSDT</strong>
-                  <small id="terminalSub">Blitz demo · IA auditada</small>
-                </div>
-                <div class="terminal-sentiment">
-                  <span>ACIMA <strong id="terminalAbove">50%</strong></span>
-                  <span>ABAIXO <strong id="terminalBelow">50%</strong></span>
-                </div>
-                <div class="terminal-zoom">
-                  <button id="terminalZoomOutBtn" type="button">-</button>
-                  <input id="terminalZoomRange" type="range" min="1" max="40" step="1" value="20" aria-label="Zoom do grafico" />
-                  <button id="terminalZoomInBtn" type="button">+</button>
-                  <button id="terminalLiveBtn" type="button">AO VIVO</button>
-                  <button id="terminalFullscreenBtn" type="button">TELA</button>
-                  <span id="terminalZoomLabel">zoom 20x</span>
-                </div>
-              </div>
-              <canvas id="terminalChart" width="1400" height="620"></canvas>
-              <div id="terminalPriceTag" class="terminal-price-tag">0.00</div>
-              <div id="terminalAiBadge" class="terminal-ai-badge">IA aguardando setup</div>
-            </section>
-
-            <aside class="terminal-tradebar">
-              <label>
-                Invest
-                <input id="terminalStake" type="number" min="1" step="1" value="10" />
-              </label>
-              <div class="stake-presets" aria-label="Valores rapidos de entrada">
-                <button type="button" data-stake-value="1">1</button>
-                <button type="button" data-stake-value="2">2</button>
-                <button type="button" data-stake-value="5">5</button>
-                <button type="button" data-stake-value="10">10</button>
-              </div>
-              <label>
-                Expiração
-                <select id="terminalExpiry">
-                  <option value="30">30 seg</option>
-                  <option value="60">1 min</option>
-                  <option value="120">2 min</option>
-                </select>
-              </label>
-              <div class="terminal-profit">
-                <span>Lucro estimado</span>
-                <strong id="terminalProfit">+0%</strong>
-                <small id="terminalProfitValue">+R$ 0,00</small>
-              </div>
-              <div class="terminal-gale">
-                <span>Recuperacao</span>
-                <strong id="terminalGale">BASE</strong>
-                <small id="terminalGaleDetail">proxima entrada $1.00</small>
-              </div>
-              <button id="terminalUpBtn" class="terminal-order up" type="button">ACIMA</button>
-              <button id="terminalDownBtn" class="terminal-order down" type="button">ABAIXO</button>
-              <div class="terminal-decision">
-                <span>Leitura da IA</span>
-                <strong id="terminalDecision">NO_TRADE</strong>
-                <small id="terminalDecisionReason">Aguardando análise.</small>
-              </div>
-              <div class="terminal-entries">
-                <span>Entradas da IA</span>
-                <div id="terminalEntries" class="terminal-entry-list">Aguardando entradas.</div>
-              </div>
-            </aside>
-          </div>
-
-          <section class="terminal-model-strip" aria-label="Votos dos modelos da IA">
-            <article>
-              <span>Scout rapido</span>
-              <strong id="terminalFastVote">aguardando</strong>
-              <small id="terminalFastReason">llama-4-maverick</small>
-            </article>
-            <article>
-              <span>Decisor</span>
-              <strong id="terminalDecisionVote">aguardando</strong>
-              <small id="terminalDecisionVoteReason">qwen3-next</small>
-            </article>
-            <article>
-              <span>Critico</span>
-              <strong id="terminalCriticVote">aguardando</strong>
-              <small id="terminalCriticVoteReason">devstral-2</small>
-            </article>
-            <article>
-              <span>Premium 4</span>
-              <strong id="terminalPremium4Vote">standby</strong>
-              <small id="terminalPremium4Reason">ativa so no 3/3</small>
-            </article>
-            <article>
-              <span>Premium 5</span>
-              <strong id="terminalPremium5Vote">standby</strong>
-              <small id="terminalPremium5Reason">ativa so no 4/4</small>
-            </article>
-          </section>
-        </section>
-
-        <section class="stats">
+        <section class="status-strip" aria-label="Resumo do robô">
           <article>
-            <span>Saldo paper</span>
-            <strong id="equity">R$ 0,00</strong>
+            <span>Banca IQ</span>
+            <strong id="balanceValue">$0.00</strong>
           </article>
           <article>
-            <span>PnL realizado</span>
-            <strong id="realized">R$ 0,00</strong>
-          </article>
-          <article>
-            <span>Operações 100%</span>
-            <strong id="wins">0</strong>
-          </article>
-          <article>
-            <span>Falhas</span>
-            <strong id="losses">0</strong>
+            <span>P/L auditado</span>
+            <strong id="pnlValue">$0.00</strong>
           </article>
           <article>
             <span>Win rate</span>
-            <strong id="winRate">0%</strong>
+            <strong id="winRateValue">0%</strong>
           </article>
           <article>
-            <span>Status</span>
-            <strong id="runtime">sincronizando</strong>
-          </article>
-          <article>
-            <span>Plataformas</span>
-            <strong id="platformsOnline">0/0</strong>
+            <span>Próxima entrada</span>
+            <strong id="nextStakeValue">$0.00</strong>
           </article>
         </section>
+        <div class="top-actions">
+          <button id="runOnceBtn" type="button">Analisar agora</button>
+          <button id="refreshBtn" class="ghost" type="button">Atualizar</button>
+          <button id="logoutBtn" class="ghost" type="button">Sair</button>
+        </div>
+      </header>
 
-        <section class="panel audit-panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Pacto demo</p>
-              <h2>XP da auditoria de IA</h2>
-            </div>
-            <strong id="auditStatus" class="audit-status">bloqueada</strong>
+      <section id="terminal" class="terminal">
+        <header class="terminal-head">
+          <div>
+            <p class="eyebrow">IQ Option Demo / PRACTICE</p>
+            <h1 id="terminalTitle">Terminal ao vivo</h1>
           </div>
-          <div class="audit-grid">
-            <article>
-              <span>Nível</span>
-              <strong id="auditLevel">0</strong>
-            </article>
-            <article>
-              <span>XP</span>
-              <strong id="auditXp">0</strong>
-            </article>
-            <article>
-              <span>Sequência 100%</span>
-              <strong id="auditStreak">0</strong>
-            </article>
-            <article>
-              <span>Profit factor</span>
-              <strong id="auditProfitFactor">0.00</strong>
-            </article>
-            <article>
-              <span>Max drawdown</span>
-              <strong id="auditDrawdown">0%</strong>
-            </article>
+          <div id="symbolTabs" class="symbol-tabs" aria-label="Pares monitorados"></div>
+          <div class="terminal-meta">
+            <span id="runtimeState">sincronizando</span>
+            <strong id="feedAge">feed --</strong>
           </div>
-          <div id="auditChecks" class="audit-checks"></div>
-          <p id="auditNote" class="muted">Ainda em auditoria demo.</p>
-        </section>
+        </header>
 
-        <section id="platforms" class="panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Multi-plataforma</p>
-              <h2>Conexões de mercado e paper</h2>
-            </div>
-            <button id="refreshPlatformsBtn" class="secondary" type="button">Atualizar conexões</button>
-          </div>
-          <div id="platformGrid" class="platform-grid"></div>
-          <div id="platformConfigHelp" class="platform-config-help hidden"></div>
-        </section>
-
-        <section id="chart" class="panel chart-panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Mercado ao vivo</p>
-              <h2>Gráfico e leitura técnica</h2>
-            </div>
-            <div id="symbolTabs" class="tabs"></div>
-          </div>
-          <div class="chart-wrap">
-            <canvas id="priceChart" width="1200" height="460"></canvas>
-          </div>
-          <div id="marketCards" class="market-grid"></div>
-        </section>
-
-        <section id="committee" class="grid-2">
-          <article class="panel">
-            <div class="section-head">
+        <section class="terminal-grid">
+          <div class="chart-panel">
+            <div class="chart-toolbar">
               <div>
-                <p class="eyebrow">Comitê de IA</p>
-                <h2>Últimas análises</h2>
+                <span id="selectedSymbol">EURUSD-OTC</span>
+                <strong id="terminalPrice">0.00000</strong>
               </div>
+              <label>
+                Zoom
+                <input id="zoomRange" type="range" min="1" max="80" step="1" value="30" />
+              </label>
+              <button id="liveBtn" class="ghost" type="button">AO VIVO</button>
             </div>
-            <div id="analyses" class="analysis-list"></div>
-          </article>
-          <article class="panel">
-            <div class="section-head">
-              <div>
-                <p class="eyebrow">Notícias</p>
-                <h2>Risco de mercado</h2>
+            <canvas id="terminalCanvas" width="1600" height="820"></canvas>
+          </div>
+
+          <aside class="control-panel" aria-label="Ajustes básicos">
+            <div class="control-card hot">
+              <span>Robô</span>
+              <strong id="botState">rodando</strong>
+              <small id="openTradeState">sem posição aberta</small>
+            </div>
+
+            <form id="basicForm" class="basic-form">
+              <label>
+                Operação
+                <select name="auto_enabled">
+                  <option value="true">Ligado</option>
+                  <option value="false">Pausado</option>
+                </select>
+              </label>
+              <label>
+                Agressividade
+                <select name="risk_profile">
+                  <option value="full_aggressive">Full agressivo</option>
+                  <option value="aggressive">Agressivo</option>
+                  <option value="balanced">Balanceado</option>
+                  <option value="conservative">Conservador</option>
+                </select>
+              </label>
+              <label class="wide">
+                Pares IQ monitorados
+                <input name="symbols" type="text" placeholder="EURUSD-OTC,GBPUSD-OTC,USDJPY-OTC" />
+              </label>
+              <label>
+                Expiração
+                <select name="iqoption_expiration_minutes">
+                  <option value="1">1 minuto</option>
+                  <option value="2">2 minutos</option>
+                  <option value="5">5 minutos</option>
+                </select>
+              </label>
+              <label>
+                Nova análise
+                <select name="cooldown_minutes">
+                  <option value="0.25">15 segundos</option>
+                  <option value="0.5">30 segundos</option>
+                  <option value="1">1 minuto</option>
+                  <option value="2">2 minutos</option>
+                </select>
+              </label>
+              <label>
+                Modo de valor
+                <select name="stake_mode">
+                  <option value="fixed">Valores fixos</option>
+                  <option value="balance_pct">% da banca</option>
+                </select>
+              </label>
+              <label>
+                Base mínima
+                <input name="iqoption_amount" type="number" min="1" step="0.01" />
+              </label>
+              <label>
+                Gales
+                <input name="iqoption_gale_max_steps" type="number" min="0" max="5" step="1" />
+              </label>
+              <label>
+                Teto gale
+                <input name="iqoption_gale_max_amount" type="number" min="1" step="1" />
+              </label>
+
+              <section class="tier-editor wide">
+                <header>
+                  <strong>Consenso e valor</strong>
+                  <small>2/5, 3/5, 4/5 e 5/5 votos válidos</small>
+                </header>
+                <div class="tier-grid">
+                  <label>2/5 $<input name="tier_fixed_2" type="number" min="1" step="0.01" /></label>
+                  <label>3/5 $<input name="tier_fixed_3" type="number" min="1" step="0.01" /></label>
+                  <label>4/5 $<input name="tier_fixed_4" type="number" min="1" step="0.01" /></label>
+                  <label>5/5 $<input name="tier_fixed_5" type="number" min="1" step="0.01" /></label>
+                  <label>2/5 %<input name="tier_pct_2" type="number" min="0.1" step="0.1" /></label>
+                  <label>3/5 %<input name="tier_pct_3" type="number" min="0.1" step="0.1" /></label>
+                  <label>4/5 %<input name="tier_pct_4" type="number" min="0.1" step="0.1" /></label>
+                  <label>5/5 %<input name="tier_pct_5" type="number" min="0.1" step="0.1" /></label>
+                </div>
+              </section>
+
+              <div class="form-actions wide">
+                <button type="submit">Salvar ajustes</button>
+                <span id="saveState">sincronizado</span>
               </div>
-              <span id="newsRisk" class="pill">sincronizando</span>
-            </div>
-            <div id="newsList" class="news-list"></div>
-          </article>
-        </section>
-
-        <section id="trades" class="panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Auditoria</p>
-              <h2>Operações paper</h2>
-            </div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Par</th>
-                  <th>Status</th>
-                  <th>Entrada</th>
-                  <th>Saída</th>
-                  <th>Posição</th>
-                  <th>PnL</th>
-                  <th>Motivo</th>
-                </tr>
-              </thead>
-              <tbody id="tradesBody"></tbody>
-            </table>
-          </div>
-        </section>
-
-        <section id="settings" class="panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Controle</p>
-              <h2>Configuração fácil</h2>
-            </div>
-            <span id="saveState" class="pill">sincronizado</span>
-          </div>
-
-          <form id="quickConfigForm" class="quick-settings-grid">
-            <label>
-              Robô
-              <select name="auto_enabled">
-                <option value="true">Ligado</option>
-                <option value="false">Pausado</option>
-              </select>
-            </label>
-            <label>
-              Agressividade
-              <select name="risk_profile">
-                <option value="full_aggressive">Full agressivo</option>
-                <option value="aggressive">Agressivo</option>
-                <option value="balanced">Balanceado</option>
-                <option value="conservative">Conservador</option>
-              </select>
-            </label>
-            <label>
-              Ativo IQ
-              <input name="symbol" type="text" placeholder="EURUSD-OTC" />
-            </label>
-            <label>
-              Valor por entrada
-              <input name="iqoption_amount" type="number" min="1" step="1" />
-            </label>
-            <div class="quick-presets">
-              <span>Valor rapido</span>
-              <button type="button" data-stake-value="1">1</button>
-              <button type="button" data-stake-value="2">2</button>
-              <button type="button" data-stake-value="5">5</button>
-              <button type="button" data-stake-value="10">10</button>
-            </div>
-            <label>
-              Expiração
-              <select name="iqoption_expiration_minutes">
-                <option value="1">1 minuto</option>
-                <option value="2">2 minutos</option>
-                <option value="5">5 minutos</option>
-              </select>
-            </label>
-            <label>
-              Nova tentativa
-              <select name="cooldown_minutes">
-                <option value="0.5">30 segundos</option>
-                <option value="1">1 minuto</option>
-                <option value="2">2 minutos</option>
-                <option value="5">5 minutos</option>
-              </select>
-            </label>
-            <div class="form-actions">
-              <button type="submit">Aplicar modo IQ</button>
-            </div>
-          </form>
-          <p class="quick-note">Modo fácil usa somente IQ Option Demo/PRACTICE. As outras plataformas ficam fora do caminho enquanto a gente audita os modelos.</p>
-
-          <details class="advanced-config">
-            <summary>Configuração avançada</summary>
-          <form id="configForm" class="settings-grid">
-            <label>
-              Auto paper
-              <select name="auto_enabled">
-                <option value="true">Ligado</option>
-                <option value="false">Desligado</option>
-              </select>
-            </label>
-            <label class="wide">
-              Perfil de risco
-              <select name="risk_profile" id="riskProfileSelect"></select>
-            </label>
-            <label>
-              Mercado
-              <select name="market_provider">
-                <option value="binance_spot">Binance Spot</option>
-                <option value="iqoption_demo">IQ Option Demo</option>
-              </select>
-            </label>
-            <label>
-              Execução
-              <select name="execution_provider">
-                <option value="internal_paper">Paper interno</option>
-                <option value="iqoption_demo">IQ Option Demo</option>
-              </select>
-            </label>
-            <div id="riskProfileInfo" class="profile-card wide"></div>
-            <label>
-              Saldo inicial BRL
-              <input name="initial_balance_brl" type="number" min="1" step="1" />
-            </label>
-            <label>
-              Posição por trade %
-              <input name="position_pct" type="number" min="1" max="100" step="1" />
-            </label>
-            <label>
-              Cooldown min
-              <input name="cooldown_minutes" type="number" min="1" step="1" />
-            </label>
-            <label>
-              Max trades/dia
-              <input name="max_trades_per_day" type="number" min="1" step="1" />
-            </label>
-            <label>
-              Máx. posições abertas
-              <input name="max_open_positions" type="number" min="1" step="1" />
-            </label>
-            <label>
-              Stop diário %
-              <input name="daily_stop_loss_pct" type="number" min="0.5" step="0.5" />
-            </label>
-            <label>
-              Meta diária %
-              <input name="daily_target_pct" type="number" min="0.5" step="0.5" />
-            </label>
-            <label>
-              Score técnico mínimo
-              <input name="min_technical_score" type="number" min="0" max="100" step="1" />
-            </label>
-            <label>
-              Confiança IA mínima
-              <input name="min_ai_confidence" type="number" min="0" max="100" step="1" />
-            </label>
-            <label>
-              Risco/retorno mínimo
-              <input name="min_risk_reward" type="number" min="0.5" max="5" step="0.05" />
-            </label>
-            <label>
-              Tempo máx. em trade min
-              <input name="max_hold_minutes" type="number" min="0.5" step="0.5" />
-            </label>
-            <label>
-              Valor IQ demo
-              <input name="iqoption_amount" type="number" min="1" step="1" />
-            </label>
-            <label>
-              Expiração IQ min
-              <input name="iqoption_expiration_minutes" type="number" min="1" step="1" />
-            </label>
-            <label>
-              Pares observados
-              <input name="symbols" type="text" placeholder="EURUSD-OTC,GBPUSD-OTC ou BTCUSDT,ETHUSDT" />
-            </label>
-            <label>
-              Pares operáveis
-              <input name="tradable_symbols" type="text" placeholder="BTCUSDT,ETHUSDT" />
-            </label>
-            <label>
-              Filtro rápido
-              <select name="models.fast_filter" data-model-select></select>
-            </label>
-            <label>
-              Decisor
-              <select name="models.decision" data-model-select></select>
-            </label>
-            <label>
-              Crítico
-              <select name="models.critic" data-model-select></select>
-            </label>
-            <label>
-              Premium 4
-              <select name="models.premium_4" data-model-select></select>
-            </label>
-            <label>
-              Premium 5
-              <select name="models.premium_5" data-model-select></select>
-            </label>
-            <label>
-              Relatório
-              <select name="models.report" data-model-select></select>
-            </label>
-            <div class="form-actions">
-              <button type="submit">Salvar</button>
-            </div>
-          </form>
-          </details>
-        </section>
-
-        <section id="logs" class="panel">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Tempo real</p>
-              <h2>Logs do robô</h2>
-            </div>
-          </div>
-          <div id="events" class="events"></div>
+            </form>
+          </aside>
         </section>
       </section>
+
+      <section class="model-section">
+        <div class="section-title">
+          <p class="eyebrow">Comitê em tempo real</p>
+          <h2>O que cada modelo está fazendo</h2>
+        </div>
+        <div id="modelCards" class="model-grid"></div>
+      </section>
+
+      <section class="lower-grid">
+        <article class="panel">
+          <div class="section-title">
+            <p class="eyebrow">Auditoria</p>
+            <h2>Últimas operações</h2>
+          </div>
+          <div id="tradesList" class="trade-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="section-title">
+            <p class="eyebrow">Logs</p>
+            <h2>Motor e notificações</h2>
+          </div>
+          <div id="eventsList" class="event-list"></div>
+        </article>
+      </section>
+
+      <details class="advanced">
+        <summary>Configuração avançada de modelos e gates</summary>
+        <form id="advancedForm" class="advanced-form">
+          <label>Scout rápido<select name="models.fast_filter" data-model-select></select></label>
+          <label>Decisor<select name="models.decision" data-model-select></select></label>
+          <label>Crítico<select name="models.critic" data-model-select></select></label>
+          <label>Premium 4<select name="models.premium_4" data-model-select></select></label>
+          <label>Premium 5<select name="models.premium_5" data-model-select></select></label>
+          <label>Relatório<select name="models.report" data-model-select></select></label>
+          <label>Votos mínimos<input name="min_votes" type="number" min="1" max="5" step="1" /></label>
+          <label>Votos no gale<input name="recovery_min_votes" type="number" min="1" max="5" step="1" /></label>
+          <label>Score técnico mínimo<input name="min_technical_score" type="number" min="0" max="200" step="1" /></label>
+          <label>Confiança IA mínima<input name="min_ai_confidence" type="number" min="0" max="100" step="1" /></label>
+          <label>Latência máxima ms<input name="max_decision_latency_ms" type="number" min="1000" step="250" /></label>
+          <label>Idade máxima do sinal s<input name="max_signal_age_seconds" type="number" min="1" step="0.5" /></label>
+          <div class="form-actions wide">
+            <button type="submit">Salvar avançado</button>
+          </div>
+        </form>
+      </details>
     </main>
+
     <div id="toast" class="toast hidden"></div>
     <script src="app.js"></script>
   </body>
