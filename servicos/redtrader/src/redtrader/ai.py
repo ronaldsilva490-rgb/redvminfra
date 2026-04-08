@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 import time
@@ -40,8 +41,8 @@ class RedSystemsAI:
         user: str,
         temperature: float = 0.05,
         timeout: float = 60,
-        num_predict: int = 512,
-        num_ctx: int = 4096,
+        num_predict: int = 320,
+        num_ctx: int = 3072,
     ) -> dict[str, Any]:
         started = time.perf_counter()
         body = {
@@ -54,12 +55,43 @@ class RedSystemsAI:
             "format": "json",
             "options": {"temperature": temperature, "num_ctx": num_ctx, "num_predict": num_predict},
         }
-        response = await self.client.post(f"{self.proxy_url}/api/chat", json=body, timeout=timeout)
-        response.raise_for_status()
-        payload = response.json()
-        content = (payload.get("message") or {}).get("content") or payload.get("response") or ""
-        parsed = extract_json(content)
-        parsed["_model"] = payload.get("model") or model
-        parsed["_latency_ms"] = round((time.perf_counter() - started) * 1000)
-        parsed["_raw_preview"] = content[:1200]
-        return parsed
+        deadline = time.perf_counter() + max(1.0, float(timeout))
+        last_error: Exception | None = None
+        last_content = ""
+        for attempt in range(1, 3):
+            remaining = max(1.0, deadline - time.perf_counter())
+            try:
+                response = await self.client.post(f"{self.proxy_url}/api/chat", json=body, timeout=remaining)
+                response.raise_for_status()
+                payload = response.json()
+                content = (payload.get("message") or {}).get("content") or payload.get("response") or ""
+                last_content = content
+                parsed = extract_json(content)
+                parsed["_model"] = payload.get("model") or model
+                parsed["_latency_ms"] = round((time.perf_counter() - started) * 1000)
+                parsed["_raw_preview"] = content[:1200]
+                parsed["_attempt"] = attempt
+                return parsed
+            except (json.JSONDecodeError, ValueError, httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+                last_error = exc
+                should_retry = False
+                if isinstance(exc, httpx.HTTPStatusError):
+                    should_retry = exc.response.status_code >= 500
+                else:
+                    should_retry = True
+                if attempt >= 2 or not should_retry or (deadline - time.perf_counter()) < 1.2:
+                    break
+                await asyncio.sleep(0.15)
+        if last_error is not None and last_content:
+            try:
+                parsed = extract_json(last_content)
+                parsed["_model"] = model
+                parsed["_latency_ms"] = round((time.perf_counter() - started) * 1000)
+                parsed["_raw_preview"] = last_content[:1200]
+                parsed["_attempt"] = 2
+                return parsed
+            except Exception:
+                pass
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("chat_json_failed")

@@ -907,8 +907,8 @@ class TraderRuntime:
                 "last_reflection": {
                     "model": model,
                     "trade_id": latest_id,
-                    "technique_suggestions": result.get("technique_suggestions", []),
-                    "raw": result,
+                    "technique_suggestions": [str(item)[:140] for item in (result.get("technique_suggestions", []) or [])[:6]],
+                    "summary": "; ".join([str(item)[:120] for item in new_lessons[:3]])[:360],
                 },
             }
             self.set_iq_learning_state(merged)
@@ -951,7 +951,12 @@ class TraderRuntime:
             "lessons": list(state.get("lessons") or [])[-8:],
             "recovery_rules": list(state.get("recovery_rules") or [])[-6:],
             "stats_for_direction": (state.get("symbol_direction_stats") or {}).get(key),
-            "last_reflection": state.get("last_reflection") or {},
+            "last_reflection": {
+                "model": (state.get("last_reflection") or {}).get("model"),
+                "trade_id": (state.get("last_reflection") or {}).get("trade_id"),
+                "technique_suggestions": list(((state.get("last_reflection") or {}).get("technique_suggestions") or []))[:4],
+                "summary": str(((state.get("last_reflection") or {}).get("summary") or ""))[:360],
+            },
         }
 
     def apply_iq_learning_to_candidates(self, candidates: list[dict[str, Any]], config: dict[str, Any]) -> list[dict[str, Any]]:
@@ -2049,6 +2054,9 @@ class TraderRuntime:
         timeout: float,
         committee_id: int | None = None,
     ) -> dict[str, Any]:
+        chain = self.model_fallback_chain(role, model)
+        fallback_extra = max(0.0, (len(chain) - 1) * 4.5)
+        overall_timeout = timeout + fallback_extra + 0.75
         try:
             return await asyncio.wait_for(
                 self.safe_ai_call(
@@ -2060,7 +2068,7 @@ class TraderRuntime:
                     timeout=max(3, int(timeout)),
                     committee_id=committee_id,
                 ),
-                timeout=timeout + 0.75,
+                timeout=overall_timeout,
             )
         except asyncio.TimeoutError:
             if committee_id is not None:
@@ -2080,6 +2088,22 @@ class TraderRuntime:
                 {"role": role, "model": model, "symbol": symbol, "timeout_seconds": timeout},
             )
             return {"ok": False, "error": f"timeout>{timeout:.2f}s"}
+
+    @staticmethod
+    def model_fallback_chain(role: str, model: str | None) -> list[str]:
+        primary = str(model or "").strip()
+        if not primary:
+            return []
+        chain = [primary]
+        if primary == "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)":
+            chain.append("qwen3-coder-next")
+        elif primary == "qwen3-coder-next":
+            chain.append("qwen/qwen3-next-80b-a3b-instruct (NVIDIA)")
+        deduped: list[str] = []
+        for item in chain:
+            if item and item not in deduped:
+                deduped.append(item)
+        return deduped
 
     async def extra_premium_votes(
         self,
@@ -2147,65 +2171,109 @@ class TraderRuntime:
     ) -> dict[str, Any]:
         if not model:
             return {"ok": False, "error": "modelo nao configurado"}
-        try:
-            if committee_id is not None:
-                self.update_committee_role(
-                    committee_id,
-                    role,
-                    "running",
-                    model=model,
-                    symbol=symbol,
-                    summary="Analisando o par agora.",
+        chain = self.model_fallback_chain(role, model)
+        errors: list[dict[str, Any]] = []
+        total = len(chain)
+        for index, current_model in enumerate(chain, start=1):
+            try:
+                attempt_timeout = float(timeout)
+                if total > 1:
+                    attempt_timeout = min(attempt_timeout, 6.0 if index == 1 else 6.5)
+                if committee_id is not None:
+                    self.update_committee_role(
+                        committee_id,
+                        role,
+                        "running",
+                        model=current_model,
+                        symbol=symbol,
+                        summary="Analisando o par agora." if index == 1 else f"Fallback {index}/{total} em andamento.",
+                    )
+                self.publish(
+                    "ai:start",
+                    f"{role} analisando {symbol}",
+                    {
+                        "role": role,
+                        "model": current_model,
+                        "symbol": symbol,
+                        "attempt": index,
+                        "total_attempts": total,
+                        "attempt_timeout": attempt_timeout,
+                    },
                 )
-            self.publish("ai:start", f"{role} analisando {symbol}", {"role": role, "model": model, "symbol": symbol})
-            response = await self.ai.chat_json(model, system, prompt, timeout=timeout)
-            decision = str(response.get("decision") or response.get("risk_level") or "unknown")
-            confidence = normalize_confidence(response.get("confidence"))
-            summary = response.get("reasoning_summary") or response.get("reason") or ""
-            self.db.add_analysis(
-                symbol=symbol,
-                role=role,
-                model=model,
-                decision=decision,
-                confidence=confidence,
-                latency_ms=response.get("_latency_ms"),
-                summary=str(summary),
-                response=response,
-                prompt={"system": system, "user": prompt[:6000]},
-            )
-            self.publish(
-                "ai:done",
-                f"{role} terminou: {decision}",
-                {"role": role, "model": model, "symbol": symbol, "latency_ms": response.get("_latency_ms"), "response": response},
-            )
-            if committee_id is not None:
-                self.update_committee_role(
-                    committee_id,
-                    role,
-                    "done",
-                    model=model,
+                response = await self.ai.chat_json(current_model, system, prompt, timeout=attempt_timeout)
+                effective_model = str(response.get("_model") or current_model)
+                decision = str(response.get("decision") or response.get("risk_level") or "unknown")
+                confidence = normalize_confidence(response.get("confidence"))
+                summary = response.get("reasoning_summary") or response.get("reason") or ""
+                self.db.add_analysis(
                     symbol=symbol,
-                    decision=_binary_direction(response.get("decision") or response.get("preferred_decision")) or "WAIT",
+                    role=role,
+                    model=effective_model,
+                    decision=decision,
                     confidence=confidence,
                     latency_ms=response.get("_latency_ms"),
-                    summary=str(summary)[:280] or "Resposta recebida.",
-                    error=None,
+                    summary=str(summary),
+                    response=response,
+                    prompt={"system": system, "user": prompt[:6000]},
                 )
-            return {"ok": True, "response": response}
-        except Exception as exc:
-            if committee_id is not None:
-                self.update_committee_role(
-                    committee_id,
-                    role,
-                    "error",
-                    model=model,
-                    symbol=symbol,
-                    decision="WAIT",
-                    summary="Falhou neste ciclo.",
-                    error=repr(exc),
+                self.publish(
+                    "ai:done",
+                    f"{role} terminou: {decision}",
+                    {
+                        "role": role,
+                        "model": effective_model,
+                        "symbol": symbol,
+                        "latency_ms": response.get("_latency_ms"),
+                        "response": response,
+                        "attempt": index,
+                        "fallback_from": model if index > 1 else None,
+                    },
                 )
-            self.publish("ai:error", f"{role} falhou", {"role": role, "model": model, "symbol": symbol, "error": repr(exc)})
-            return {"ok": False, "error": repr(exc)}
+                if committee_id is not None:
+                    summary_text = str(summary)[:280] or "Resposta recebida."
+                    if index > 1:
+                        summary_text = f"[fallback] {summary_text}"
+                    self.update_committee_role(
+                        committee_id,
+                        role,
+                        "done",
+                        model=effective_model,
+                        symbol=symbol,
+                        decision=_binary_direction(response.get("decision") or response.get("preferred_decision")) or "WAIT",
+                        confidence=confidence,
+                        latency_ms=response.get("_latency_ms"),
+                        summary=summary_text,
+                        error=None,
+                    )
+                return {"ok": True, "response": response, "model_used": effective_model, "attempt": index}
+            except Exception as exc:
+                errors.append({"model": current_model, "error": repr(exc)})
+                if index < total:
+                    self.publish(
+                        "ai:fallback",
+                        f"{role} trocando de rota",
+                        {"role": role, "symbol": symbol, "failed_model": current_model, "next_model": chain[index], "error": repr(exc)},
+                    )
+                    continue
+                final_error = errors[-1]["error"]
+                if committee_id is not None:
+                    self.update_committee_role(
+                        committee_id,
+                        role,
+                        "error",
+                        model=current_model,
+                        symbol=symbol,
+                        decision="WAIT",
+                        summary="Falhou neste ciclo.",
+                        error=final_error,
+                    )
+                self.publish(
+                    "ai:error",
+                    f"{role} falhou",
+                    {"role": role, "model": current_model, "symbol": symbol, "error": final_error, "attempts": errors},
+                )
+                return {"ok": False, "error": final_error, "attempts": errors}
+        return {"ok": False, "error": "no_model_attempt"}
 
     def wallet_summary(self) -> dict[str, Any]:
         wallet = self.db.get_kv("wallet", {}) or {}

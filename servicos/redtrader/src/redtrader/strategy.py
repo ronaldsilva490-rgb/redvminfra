@@ -86,7 +86,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "decision": "gemma3:4b",
         "critic": "ministral-3:3b",
         "premium_4": "ministral-3:8b",
-        "premium_5": "qwen3-coder-next",
+        "premium_5": "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)",
         "report": "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)",
     },
     "platforms": {
@@ -524,6 +524,120 @@ def score_snapshot(snapshot: dict[str, Any], config: dict[str, Any], news_risk: 
     }
 
 
+def _limit_text(value: Any, limit: int = 180) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _compact_features(features: dict[str, Any]) -> dict[str, Any]:
+    keys = [
+        "last_price",
+        "trend_1s",
+        "trend_1m",
+        "trend_5m",
+        "trend_15m",
+        "rsi_1s",
+        "rsi_1m",
+        "rsi_5m",
+        "rsi_15m",
+        "change_1s_5",
+        "change_1s_15",
+        "change_1m_15",
+        "change_5m_15",
+        "ret_std_1m_30",
+        "spread_pct",
+        "volume_1m_vs_avg30",
+    ]
+    return {key: features.get(key) for key in keys if key in features}
+
+
+def _compact_code_context(code_context: dict[str, Any]) -> dict[str, Any]:
+    if not code_context:
+        return {}
+    return {
+        "preferred_direction": code_context.get("preferred_direction"),
+        "scores": code_context.get("scores"),
+        "up_count": code_context.get("up_count"),
+        "down_count": code_context.get("down_count"),
+        "traps": list(code_context.get("traps") or [])[:4],
+        "notes": [_limit_text(item, 120) for item in list(code_context.get("notes") or [])[:4]],
+        "call_exhaustion_risk": bool(code_context.get("call_exhaustion_risk")),
+        "put_exhaustion_risk": bool(code_context.get("put_exhaustion_risk")),
+        "call_overextended": bool(code_context.get("call_overextended")),
+        "put_overextended": bool(code_context.get("put_overextended")),
+    }
+
+
+def _compact_learning_context(learning_context: dict[str, Any]) -> dict[str, Any]:
+    if not learning_context:
+        return {}
+    avoids = []
+    for item in list(learning_context.get("active_avoid_patterns") or [])[:4]:
+        avoids.append(
+            {
+                "symbol": item.get("symbol"),
+                "direction": item.get("direction"),
+                "severity": item.get("severity"),
+                "reason": _limit_text(item.get("reason"), 120),
+            }
+        )
+    last_reflection = learning_context.get("last_reflection") or {}
+    return {
+        "active_avoid_patterns": avoids,
+        "lessons": [_limit_text(item, 140) for item in list(learning_context.get("lessons") or [])[-4:]],
+        "recovery_rules": [_limit_text(item, 140) for item in list(learning_context.get("recovery_rules") or [])[-4:]],
+        "stats_for_direction": learning_context.get("stats_for_direction"),
+        "last_reflection": {
+            "model": last_reflection.get("model"),
+            "trade_id": last_reflection.get("trade_id"),
+            "technique_suggestions": [_limit_text(item, 120) for item in list(last_reflection.get("technique_suggestions") or [])[:4]],
+        },
+    }
+
+
+def _compact_recent_trade_feedback(feedback: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out = []
+    for item in feedback[:3]:
+        pnl = _num(item.get("pnl"))
+        out.append(
+            {
+                "id": item.get("id"),
+                "symbol": item.get("symbol"),
+                "side": item.get("side"),
+                "status": item.get("status"),
+                "gale_stage": item.get("gale_stage", 0),
+                "amount": item.get("amount"),
+                "pnl": item.get("pnl"),
+                "outcome": "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "DRAW"),
+                "reasoning": _limit_text(item.get("reasoning"), 120),
+            }
+        )
+    return out
+
+
+def _compact_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    snapshot = candidate.get("snapshot") or {}
+    return {
+        "symbol": candidate.get("symbol"),
+        "trade_type": candidate.get("trade_type"),
+        "action": candidate.get("action"),
+        "price": candidate.get("price"),
+        "technical_score": candidate.get("technical_score"),
+        "checks": candidate.get("checks"),
+        "risk_reward": candidate.get("risk_reward"),
+        "stop_loss_pct": candidate.get("stop_loss_pct"),
+        "take_profit_pct": candidate.get("take_profit_pct"),
+        "position_pct": candidate.get("position_pct"),
+        "expiration_minutes": candidate.get("expiration_minutes"),
+        "provider": snapshot.get("provider"),
+        "snapshot_ts": snapshot.get("ts"),
+        "features": _compact_features(candidate.get("features") or {}),
+        "code_context": _compact_code_context(candidate.get("code_context") or {}),
+    }
+
+
 def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None, config: dict[str, Any]) -> tuple[str, str]:
     profile = risk_profile_context(config)
     is_binary = candidate.get("trade_type") == "binary_options"
@@ -583,12 +697,18 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
             "cooldown_minutes": config.get("cooldown_minutes"),
             "allowed_decisions": allowed_decisions,
         },
-        "candidate": candidate,
-        "recovery_context": recovery_context,
+        "candidate": _compact_candidate(candidate),
+        "recovery_context": {
+            "stage": recovery_context.get("stage"),
+            "last_symbol": recovery_context.get("last_symbol"),
+            "last_side": recovery_context.get("last_side"),
+            "loss_total": recovery_context.get("loss_total"),
+            "next_amount": recovery_context.get("next_amount"),
+        },
         "recovery_guidance": recovery_guidance,
-        "learning_context": candidate.get("learning_context") or {},
+        "learning_context": _compact_learning_context(candidate.get("learning_context") or {}),
         "learning_adjustment": candidate.get("learning_adjustment") or {},
-        "recent_trade_feedback": candidate.get("recent_trade_feedback") or [],
+        "recent_trade_feedback": _compact_recent_trade_feedback(candidate.get("recent_trade_feedback") or []),
         "news": (
             {
                 "risk_hint": {
@@ -676,11 +796,17 @@ def build_critic_prompt(
             "label": profile["label"],
             "description": profile["description"],
         },
-        "candidate": candidate,
+        "candidate": _compact_candidate(candidate),
         "decision": decision,
-        "recovery_context": recovery_context,
+        "recovery_context": {
+            "stage": recovery_context.get("stage"),
+            "last_symbol": recovery_context.get("last_symbol"),
+            "last_side": recovery_context.get("last_side"),
+            "loss_total": recovery_context.get("loss_total"),
+            "next_amount": recovery_context.get("next_amount"),
+        },
         "recovery_guidance": recovery_guidance,
-        "learning_context": candidate.get("learning_context") or {},
+        "learning_context": _compact_learning_context(candidate.get("learning_context") or {}),
         "learning_adjustment": candidate.get("learning_adjustment") or {},
         "news": (
             {
