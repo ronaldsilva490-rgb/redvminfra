@@ -1,7 +1,7 @@
 import asyncio
 import json
 import time
-from datetime import datetime
+from datetime import datetime, time as datetime_time, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -24,6 +24,13 @@ from .strategy import (
     deep_merge,
     normalize_confidence,
 )
+
+
+BRT_TZ = timezone(timedelta(hours=-3), "BRT")
+try:
+    BRT_TZ = ZoneInfo("America/Sao_Paulo")
+except Exception:
+    pass
 
 
 class TraderRuntime:
@@ -133,6 +140,7 @@ class TraderRuntime:
 
             await self.refresh_market(config, reason=reason)
             await self.handle_exits(config)
+            await self.maybe_send_trade_summaries(config)
             await self.maybe_enter(config)
 
     async def refresh_market(self, config: dict[str, Any], reason: str = "loop") -> dict[str, dict[str, Any]]:
@@ -186,12 +194,305 @@ class TraderRuntime:
 
     @staticmethod
     def _timestamp() -> str:
-        return datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M:%S BRT")
+        return datetime.now(BRT_TZ).strftime("%d/%m/%Y %H:%M:%S BRT")
+
+    @staticmethod
+    def _timestamp_from_epoch(value: Any) -> str:
+        try:
+            return datetime.fromtimestamp(float(value), BRT_TZ).strftime("%d/%m/%Y %H:%M:%S BRT")
+        except (TypeError, ValueError, OSError):
+            return "-"
+
+    @staticmethod
+    def _trade_outcome(pnl_brl: Any, status: str | None = None) -> str:
+        try:
+            pnl = float(pnl_brl or 0)
+        except (TypeError, ValueError):
+            pnl = 0.0
+        if pnl > 0:
+            return "WIN"
+        if pnl < 0:
+            return "LOSS"
+        return str(status or "EMPATE").replace("iqoption_demo:", "").upper()
+
+    @staticmethod
+    def _profit_factor(gross_profit: float, gross_loss: float) -> str:
+        if abs(gross_loss) < 0.000001:
+            return "∞" if gross_profit > 0 else "0,00"
+        return f"{gross_profit / abs(gross_loss):.2f}".replace(".", ",")
+
+    def _closed_iq_trades(self, limit: int = 5000) -> list[dict[str, Any]]:
+        rows = []
+        for trade in self.db.list_trades(limit=limit):
+            metadata = trade.get("metadata") or {}
+            if trade.get("status") == "CLOSED" and metadata.get("execution_provider") == "iqoption_demo":
+                rows.append(trade)
+        rows.sort(key=lambda item: int(item.get("id") or 0))
+        return rows
+
+    def _build_trade_summary_payload(
+        self,
+        trades: list[dict[str, Any]],
+        title: str,
+        period_label: str,
+    ) -> dict[str, Any]:
+        total = len(trades)
+        wins = losses = neutral = 0
+        gross_profit = 0.0
+        gross_loss = 0.0
+        pnl_total = 0.0
+        stake_total = 0.0
+        gales = 0
+        symbols: dict[str, dict[str, Any]] = {}
+        operations: list[dict[str, Any]] = []
+
+        for trade in trades:
+            metadata = trade.get("metadata") or {}
+            pnl = float(trade.get("pnl_brl") or 0)
+            stake = float(trade.get("position_brl") or 0)
+            gale_stage = int(metadata.get("gale_stage") or 0)
+            symbol = str(trade.get("symbol") or "-")
+            outcome = self._trade_outcome(pnl, str(trade.get("exit_reason") or ""))
+            pnl_total += pnl
+            stake_total += stake
+            if gale_stage > 0:
+                gales += 1
+            if pnl > 0:
+                wins += 1
+                gross_profit += pnl
+            elif pnl < 0:
+                losses += 1
+                gross_loss += pnl
+            else:
+                neutral += 1
+
+            bucket = symbols.setdefault(symbol, {"symbol": symbol, "count": 0, "wins": 0, "losses": 0, "neutral": 0, "pnl": 0.0})
+            bucket["count"] += 1
+            bucket["pnl"] += pnl
+            if outcome == "WIN":
+                bucket["wins"] += 1
+            elif outcome == "LOSS":
+                bucket["losses"] += 1
+            else:
+                bucket["neutral"] += 1
+
+            operations.append({
+                "id": trade.get("id"),
+                "symbol": symbol,
+                "direction": str(trade.get("side") or "").upper(),
+                "stake": self._money(stake),
+                "result": outcome,
+                "pnl": self._money(pnl),
+                "pnl_raw": pnl,
+                "gale_stage": gale_stage,
+                "opened_at": self._timestamp_from_epoch(trade.get("opened_at")),
+                "closed_at": self._timestamp_from_epoch(trade.get("closed_at") or trade.get("opened_at")),
+                "exit_reason": str(trade.get("exit_reason") or "").replace("iqoption_demo:", ""),
+            })
+
+        win_rate = (wins / total * 100) if total else 0.0
+        avg_stake = (stake_total / total) if total else 0.0
+        best_trade = max(operations, key=lambda item: float(item["pnl_raw"]), default=None)
+        worst_trade = min(operations, key=lambda item: float(item["pnl_raw"]), default=None)
+        symbol_rows = sorted(symbols.values(), key=lambda item: abs(float(item["pnl"])), reverse=True)
+
+        return {
+            "title": title,
+            "timestamp": self._timestamp(),
+            "period": period_label,
+            "market": "IQ Option Demo / OTC",
+            "total": total,
+            "wins": wins,
+            "losses": losses,
+            "neutral": neutral,
+            "win_rate": f"{win_rate:.1f}%",
+            "pnl_total": self._money(pnl_total),
+            "pnl_total_raw": pnl_total,
+            "gross_profit": self._money(gross_profit),
+            "gross_loss": self._money(gross_loss),
+            "profit_factor": self._profit_factor(gross_profit, gross_loss),
+            "stake_total": self._money(stake_total),
+            "avg_stake": self._money(avg_stake),
+            "gales": gales,
+            "symbols": [
+                {
+                    **item,
+                    "pnl": self._money(item["pnl"]),
+                }
+                for item in symbol_rows[:8]
+            ],
+            "operations": operations,
+            "best_trade": best_trade,
+            "worst_trade": worst_trade,
+            "balance": self._money(self.wallet_summary().get("equity_brl")),
+        }
+
+    def _summary_fallback_text(self, payload: dict[str, Any], *, daily: bool = False) -> str:
+        pnl_raw = float(payload.get("pnl_total_raw") or 0)
+        pnl_icon = "✅" if pnl_raw > 0 else ("❌" if pnl_raw < 0 else "➖")
+        title_icon = "🌙" if daily else "📊"
+        symbol_lines = []
+        for item in payload.get("symbols") or []:
+            symbol_lines.append(
+                f"• *{item['symbol']}*: {item['count']} ops · {item['wins']}W/{item['losses']}L · P/L *{item['pnl']}*"
+            )
+        operations = payload.get("operations") or []
+        operation_lines = []
+        shown_operations = operations[-10:] if daily else operations
+        for item in shown_operations:
+            icon = "✅" if item["result"] == "WIN" else ("❌" if item["result"] == "LOSS" else "➖")
+            gale = f" · G{item['gale_stage']}" if int(item.get("gale_stage") or 0) else ""
+            operation_lines.append(
+                f"• {icon} *#{item['id']}* {item['symbol']} {item['direction']} · {item['stake']}{gale} · {item['pnl']}"
+            )
+        if daily and len(operations) > len(shown_operations):
+            operation_lines.append(f"• _+{len(operations) - len(shown_operations)} operações anteriores no período_")
+
+        if not symbol_lines:
+            symbol_lines.append("• _Sem ativos no período._")
+        if not operation_lines:
+            operation_lines.append("• _Sem operações fechadas no período._")
+
+        header = [
+            f"{title_icon} *RED Trader | {payload['title']}*",
+            f"🕒 {payload['timestamp']}",
+            f"🏛 Mercado: *{payload['market']}*",
+            f"📌 Período: {payload['period']}",
+            "",
+            f"{pnl_icon} Resultado: *{payload['pnl_total']}*",
+            f"🎯 Win rate: *{payload['win_rate']}* · {payload['wins']}W/{payload['losses']}L/{payload['neutral']}N",
+            f"⚖️ Profit factor: *{payload['profit_factor']}*",
+            f"💵 Volume: *{payload['stake_total']}* · Média: *{payload['avg_stake']}*",
+            f"🧬 Gales usados: *{payload['gales']}*",
+            f"🏦 Banca IQ: *{payload['balance']}*",
+            "",
+            "🪙 *Ativos:*",
+            "\n".join(symbol_lines),
+            "",
+            "📋 *Operações:*",
+            "\n".join(operation_lines),
+        ]
+        return "\n".join(header)
+
+    async def send_trade_summary(
+        self,
+        config: dict[str, Any],
+        event: str,
+        trades: list[dict[str, Any]],
+        title: str,
+        period_label: str,
+        *,
+        daily: bool = False,
+    ) -> None:
+        payload = self._build_trade_summary_payload(trades, title, period_label)
+        fallback = self._summary_fallback_text(payload, daily=daily)
+        operations = payload.get("operations") or []
+        ai_payload = {
+            **payload,
+            "operations": operations[-10:] if daily else operations,
+            "operation_count": len(operations),
+            "omitted_operations": max(0, len(operations) - (10 if daily else len(operations))),
+        }
+        text = await self.polish_trade_notification(config, event, ai_payload, fallback)
+        await self.send_whatsapp_notification(
+            text,
+            {
+                "event": event,
+                "trade_ids": [item.get("id") for item in trades],
+                "period": period_label,
+                "daily": daily,
+            },
+        )
+
+    async def maybe_send_trade_summaries(self, config: dict[str, Any]) -> None:
+        if not self._notify_enabled():
+            return
+        state = self.db.get_kv("whatsapp_trade_summary_state", {}) or {}
+        closed_trades = self._closed_iq_trades()
+
+        latest_id = int(closed_trades[-1].get("id") or 0) if closed_trades else 0
+        state_changed = False
+        if "last_batch_trade_id" not in state:
+            state["last_batch_trade_id"] = latest_id
+            state_changed = True
+            self.publish(
+                "whatsapp:summary_state_initialized",
+                "Resumo de 5 operacoes inicializado sem backfill",
+                {"last_batch_trade_id": latest_id},
+            )
+        else:
+            last_batch_id = int(state.get("last_batch_trade_id") or 0)
+            pending = [item for item in closed_trades if int(item.get("id") or 0) > last_batch_id]
+            if len(pending) >= 5:
+                batch = pending[:5]
+                state["last_batch_trade_id"] = int(batch[-1].get("id") or last_batch_id)
+                state_changed = True
+                period = f"{batch[0].get('id')} até {batch[-1].get('id')} · {self._timestamp_from_epoch(batch[0].get('closed_at'))} -> {self._timestamp_from_epoch(batch[-1].get('closed_at'))}"
+                asyncio.create_task(
+                    self.send_trade_summary(
+                        config,
+                        "summary_5_trades",
+                        batch,
+                        "Resumo das últimas 5 operações",
+                        period,
+                        daily=False,
+                    )
+                )
+                self.publish(
+                    "whatsapp:summary_scheduled",
+                    "Resumo das ultimas 5 operacoes agendado",
+                    {"trade_ids": [item.get("id") for item in batch], "last_batch_trade_id": state["last_batch_trade_id"]},
+                )
+
+        now_brt = datetime.now(BRT_TZ)
+        if now_brt.hour > 0 or (now_brt.hour == 0 and now_brt.minute >= 1):
+            target_day = (now_brt.date() - timedelta(days=1))
+            target_key = target_day.isoformat()
+            if "last_daily_date" not in state:
+                state["last_daily_date"] = target_key
+                state_changed = True
+                self.publish(
+                    "whatsapp:daily_summary_initialized",
+                    "Resumo diario inicializado sem backfill",
+                    {"last_daily_date": target_key},
+                )
+            elif state.get("last_daily_date") != target_key:
+                start = datetime.combine(target_day, datetime_time(hour=0, minute=1), tzinfo=BRT_TZ).timestamp()
+                end = datetime.combine(target_day, datetime_time(hour=23, minute=59, second=59), tzinfo=BRT_TZ).timestamp()
+                daily_trades = [
+                    item for item in closed_trades
+                    if start <= float(item.get("closed_at") or item.get("opened_at") or 0) <= end
+                ]
+                state["last_daily_date"] = target_key
+                state_changed = True
+                asyncio.create_task(
+                    self.send_trade_summary(
+                        config,
+                        "daily_summary",
+                        daily_trades,
+                        "Fechamento diário",
+                        f"{target_day.strftime('%d/%m/%Y')} · 00:01 até 23:59 BRT",
+                        daily=True,
+                    )
+                )
+                self.publish(
+                    "whatsapp:daily_summary_scheduled",
+                    "Resumo diario de operacoes agendado",
+                    {"date": target_key, "trades": len(daily_trades)},
+                )
+
+        if state_changed:
+            self.db.set_kv("whatsapp_trade_summary_state", state)
 
     async def polish_trade_notification(self, config: dict[str, Any], event: str, payload: dict[str, Any], fallback: str) -> str:
+        default_notification_model = (
+            "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)"
+            if "summary" in event
+            else "mistralai/mistral-small-4-119b-2603 (NVIDIA)"
+        )
         model = (
             (config.get("models") or {}).get("notification")
-            or "mistralai/mistral-small-4-119b-2603 (NVIDIA)"
+            or default_notification_model
         )
         system = (
             "Voce formata notificacoes do RED Trader para um grupo de WhatsApp. "
