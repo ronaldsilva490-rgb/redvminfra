@@ -11,7 +11,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "execution_provider": "internal_paper",
     "iqoption_amount": 1.0,
     "iqoption_expiration_minutes": 1,
-    "market_poll_seconds": 5,
+    "market_poll_seconds": 1,
     "news_poll_seconds": 300,
     "cooldown_minutes": 30,
     "max_trades_per_day": 3,

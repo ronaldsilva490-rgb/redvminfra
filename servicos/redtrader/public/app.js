@@ -4,6 +4,7 @@ const state = {
   riskProfiles: {},
   selectedSymbol: "BTCUSDT",
   selectedPlatformConfig: null,
+  terminalZoom: 3,
   socket: null,
 };
 
@@ -417,6 +418,9 @@ function renderTerminal(data) {
   $("#terminalDecisionReason").textContent = reason;
   $("#terminalAiBadge").textContent = latestAnalysis.model ? `${latestAnalysis.model} · ${decision}` : "IA aguardando setup";
   $("#terminalPriceTag").textContent = formatPrice(features.last_price || last.close);
+  $("#terminalZoomLabel").textContent = `zoom ${Number(state.terminalZoom || 1).toFixed(1)}x`;
+  const zoomRange = $("#terminalZoomRange");
+  if (zoomRange && zoomRange !== document.activeElement) zoomRange.value = String(state.terminalZoom || 3);
   renderTerminalEntries(data);
 
   renderTerminalChart(data, above);
@@ -465,7 +469,10 @@ function renderTerminalChart(data, aboveBias = 50) {
   ctx.fillStyle = "#020304";
   ctx.fillRect(0, 0, width, height);
 
-  const candles = data.snapshots?.[state.selectedSymbol]?.candles?.["1m"] || [];
+  const allCandles = data.snapshots?.[state.selectedSymbol]?.candles?.["1m"] || [];
+  const zoom = Math.max(1, Number(state.terminalZoom || 1));
+  const visibleCount = Math.max(16, Math.min(allCandles.length, Math.round(allCandles.length / zoom)));
+  const candles = allCandles.slice(-visibleCount);
   if (!candles.length) {
     ctx.fillStyle = "#88929c";
     ctx.font = "700 14px Inter, sans-serif";
@@ -580,10 +587,13 @@ function renderTerminalChart(data, aboveBias = 50) {
 }
 
 function drawTerminalTradeMarkers(ctx, data, candles, scale) {
-  const trades = (data.trades || []).filter((trade) => trade.symbol === state.selectedSymbol).slice(0, 24);
-  if (!trades.length) return;
   const firstTime = Number(candles[0]?.time || 0);
   const lastTime = Number(candles[candles.length - 1]?.time || firstTime + 60);
+  const trades = (data.trades || [])
+    .filter((trade) => trade.symbol === state.selectedSymbol)
+    .filter((trade) => Number(trade.opened_at || 0) >= firstTime - 60 && Number(trade.opened_at || 0) <= lastTime + 120)
+    .slice(0, 12);
+  if (!trades.length) return;
   const timeSpan = Math.max(1, lastTime - firstTime);
   const xFromTime = (ts) => {
     const raw = scale.pad.l + ((Number(ts || lastTime) - firstTime) / timeSpan) * scale.plotW;
@@ -712,6 +722,26 @@ function renderQuickConfig(config) {
   form.iqoption_amount.value = config.iqoption_amount ?? 1;
   form.iqoption_expiration_minutes.value = String(config.iqoption_expiration_minutes || 1);
   form.cooldown_minutes.value = String(config.cooldown_minutes || 0.5);
+  const terminalStake = $("#terminalStake");
+  if (terminalStake && terminalStake !== document.activeElement) terminalStake.value = String(config.iqoption_amount ?? 1);
+  renderStakePresets(Number(config.iqoption_amount ?? 1));
+}
+
+function setStakeValue(value) {
+  const stake = Math.max(1, Number(value || 1));
+  const terminalStake = $("#terminalStake");
+  const quickStake = $("#quickConfigForm")?.elements.iqoption_amount;
+  if (terminalStake) terminalStake.value = String(stake);
+  if (quickStake) quickStake.value = String(stake);
+  renderStakePresets(stake);
+  renderTerminal(state.status || {});
+}
+
+function renderStakePresets(value) {
+  const stake = Number(value || 0);
+  $$("[data-stake-value]").forEach((button) => {
+    button.classList.toggle("active", Number(button.dataset.stakeValue) === stake);
+  });
 }
 
 function renderConfig(config) {
@@ -760,7 +790,7 @@ function collectQuickConfig() {
     iqoption_amount: Number(form.iqoption_amount.value || 1),
     iqoption_expiration_minutes: Number(form.iqoption_expiration_minutes.value || 1),
     cooldown_minutes: Number(form.cooldown_minutes.value || 0.5),
-    market_poll_seconds: 5,
+    market_poll_seconds: 1,
     max_open_positions: Math.max(Number(current.max_open_positions || 10), 10),
     max_trades_per_day: Math.max(Number(current.max_trades_per_day || 200), 200),
     platforms: {
@@ -982,6 +1012,27 @@ function bindActions() {
     });
   });
 
+  $("#terminalZoomRange")?.addEventListener("input", (event) => {
+    state.terminalZoom = Number(event.target.value || 1);
+    renderTerminal(state.status || {});
+  });
+
+  $("#terminalZoomInBtn")?.addEventListener("click", () => {
+    state.terminalZoom = Math.min(6, Number(state.terminalZoom || 1) + 0.5);
+    renderTerminal(state.status || {});
+  });
+
+  $("#terminalZoomOutBtn")?.addEventListener("click", () => {
+    state.terminalZoom = Math.max(1, Number(state.terminalZoom || 1) - 0.5);
+    renderTerminal(state.status || {});
+  });
+
+  $$("[data-stake-value]").forEach((button) => {
+    button.addEventListener("click", () => setStakeValue(button.dataset.stakeValue));
+  });
+
+  $("#quickConfigForm")?.elements.iqoption_amount?.addEventListener("input", (event) => setStakeValue(event.target.value));
+
   $("#refreshPlatformsBtn").addEventListener("click", async () => {
     const button = $("#refreshPlatformsBtn");
     button.disabled = true;
@@ -1013,7 +1064,12 @@ function bindActions() {
     toast("Saldo paper reiniciado");
   });
 
-  $("#terminalStake")?.addEventListener("input", () => renderTerminal(state.status || {}));
+  $("#terminalStake")?.addEventListener("input", (event) => {
+    const quickStake = $("#quickConfigForm")?.elements.iqoption_amount;
+    if (quickStake && quickStake !== document.activeElement) quickStake.value = event.target.value;
+    renderStakePresets(Number(event.target.value || 0));
+    renderTerminal(state.status || {});
+  });
 
   $("#logoutBtn").addEventListener("click", async () => {
     await api("/api/logout", { method: "POST", body: "{}" });
@@ -1031,6 +1087,6 @@ window.addEventListener("resize", () => {
   await refresh();
   await refreshModels();
   connectSocket();
-  setInterval(() => renderTerminal(state.status || {}), 1000);
+  setInterval(() => renderTerminal(state.status || {}), 250);
   setInterval(refresh, 30000);
 })();

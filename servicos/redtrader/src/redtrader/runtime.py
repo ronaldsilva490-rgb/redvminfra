@@ -28,6 +28,7 @@ class TraderRuntime:
         self.ai = ai
         self.iqoption = IQOptionDemoAdapter()
         self.task: asyncio.Task | None = None
+        self.market_task: asyncio.Task | None = None
         self.running = False
         self.latest_snapshots: dict[str, dict[str, Any]] = {}
         self.latest_news: dict[str, Any] = {}
@@ -37,9 +38,11 @@ class TraderRuntime:
         self.models: list[str] = []
         self.last_news_at = 0.0
         self.last_trade_at = float(self.db.get_kv("last_trade_at", 0) or 0)
+        self.last_decision_at = 0.0
         self.last_wait_event_at = 0.0
         self.queues: set[asyncio.Queue] = set()
         self.cycle_lock = asyncio.Lock()
+        self.market_lock = asyncio.Lock()
         if self.db.get_kv("config") is None:
             self.db.set_kv("config", DEFAULT_CONFIG)
         if self.db.get_kv("wallet") is None:
@@ -63,6 +66,7 @@ class TraderRuntime:
             return
         self.running = True
         self.task = asyncio.create_task(self.loop())
+        self.market_task = asyncio.create_task(self.market_loop())
         self.publish("runtime", "RED Trader iniciado", {})
 
     async def stop(self) -> None:
@@ -73,7 +77,25 @@ class TraderRuntime:
                 await self.task
             except asyncio.CancelledError:
                 pass
+        if self.market_task:
+            self.market_task.cancel()
+            try:
+                await self.market_task
+            except asyncio.CancelledError:
+                pass
         self.publish("runtime", "RED Trader parado", {})
+
+    async def market_loop(self) -> None:
+        while self.running:
+            started = time.time()
+            config = self.config()
+            try:
+                await self.refresh_market(config, reason="market_loop")
+            except Exception as exc:
+                self.publish("market:error", "Falha ao atualizar mercado rapido", {"error": repr(exc)})
+            elapsed = time.time() - started
+            min_sleep = 0.6 if config.get("market_provider") == "iqoption_demo" else 3
+            await asyncio.sleep(max(min_sleep, float(config.get("market_poll_seconds", 20)) - elapsed))
 
     async def loop(self) -> None:
         while self.running:
@@ -83,7 +105,9 @@ class TraderRuntime:
             except Exception as exc:
                 self.publish("error", "Falha no ciclo principal", {"error": repr(exc)})
             elapsed = time.time() - started
-            await asyncio.sleep(max(3, float(self.config().get("market_poll_seconds", 20)) - elapsed))
+            config = self.config()
+            min_sleep = 0.6 if config.get("market_provider") == "iqoption_demo" else 3
+            await asyncio.sleep(max(min_sleep, float(config.get("market_poll_seconds", 20)) - elapsed))
 
     async def cycle(self, reason: str = "manual") -> None:
         async with self.cycle_lock:
@@ -100,6 +124,12 @@ class TraderRuntime:
             if now - self.last_platforms_at > 60:
                 await self.refresh_platforms(config)
 
+            await self.refresh_market(config, reason=reason)
+            await self.handle_exits(config)
+            await self.maybe_enter(config)
+
+    async def refresh_market(self, config: dict[str, Any], reason: str = "loop") -> dict[str, dict[str, Any]]:
+        async with self.market_lock:
             symbols = config.get("symbols") or DEFAULT_CONFIG["symbols"]
             if config.get("market_provider") == "iqoption_demo":
                 snapshots = await self.iqoption.fetch_symbols(symbols)
@@ -108,9 +138,11 @@ class TraderRuntime:
             self.latest_snapshots = snapshots
             for symbol, snapshot in snapshots.items():
                 self.db.save_snapshot(symbol, snapshot)
-            self.publish("market", "Mercado atualizado", {"symbols": list(snapshots.keys()), "reason": reason})
-            await self.handle_exits(config)
-            await self.maybe_enter(config)
+            if reason == "market_loop":
+                self.broadcast_status()
+            else:
+                self.publish("market", "Mercado atualizado", {"symbols": list(snapshots.keys()), "reason": reason})
+            return snapshots
 
     async def refresh_news(self) -> None:
         try:
@@ -201,6 +233,9 @@ class TraderRuntime:
             return
         if len(self.db.open_trades()) >= int(config.get("max_open_positions", 1)):
             return
+        decision_cooldown_seconds = max(1.0, float(config.get("cooldown_minutes", 30)) * 60)
+        if time.time() - self.last_decision_at < decision_cooldown_seconds:
+            return
         guard = self.risk_guard(config)
         if not guard["ok"]:
             self.publish("risk:blocked", guard["reason"], guard)
@@ -219,6 +254,7 @@ class TraderRuntime:
             f"Candidato tecnico encontrado em {candidate['symbol']}",
             {"symbol": candidate["symbol"], "technical_score": candidate["technical_score"], "checks": candidate["checks"]},
         )
+        self.last_decision_at = time.time()
         decision = await self.run_ai_committee(candidate, config)
         if not decision.get("approved"):
             self.publish("trade:skipped", "Comite vetou a entrada", decision)
@@ -541,6 +577,14 @@ class TraderRuntime:
         for queue in list(self.queues):
             try:
                 queue.put_nowait(event)
+            except asyncio.QueueFull:
+                pass
+
+    def broadcast_status(self) -> None:
+        item = {"_ws_type": "status", "data": self.status()}
+        for queue in list(self.queues):
+            try:
+                queue.put_nowait(item)
             except asyncio.QueueFull:
                 pass
 

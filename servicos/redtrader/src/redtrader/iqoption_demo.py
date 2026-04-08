@@ -19,6 +19,7 @@ class IQOptionDemoAdapter:
         self.lock = threading.RLock()
         self.api: Any | None = None
         self.connected_at = 0.0
+        self.frame_cache: dict[str, dict[str, Any]] = {}
 
     async def close(self) -> None:
         await asyncio.to_thread(self._close_sync)
@@ -88,8 +89,18 @@ class IQOptionDemoAdapter:
     def _fetch_symbol_sync(self, api: Any, symbol: str) -> dict[str, Any]:
         now = time.time()
         candles_1m = self._candles(api.get_candles(symbol, 60, 180, now))
-        candles_5m = self._candles(api.get_candles(symbol, 300, 120, now))
-        candles_15m = self._candles(api.get_candles(symbol, 900, 120, now))
+        cached_frames = self.frame_cache.get(symbol) or {}
+        if now - _float(cached_frames.get("ts")) > 20:
+            candles_5m = self._candles(api.get_candles(symbol, 300, 120, now))
+            candles_15m = self._candles(api.get_candles(symbol, 900, 120, now))
+            self.frame_cache[symbol] = {
+                "ts": now,
+                "5m": candles_5m,
+                "15m": candles_15m,
+            }
+        else:
+            candles_5m = cached_frames.get("5m") or []
+            candles_15m = cached_frames.get("15m") or []
         if not candles_1m:
             raise RuntimeError("empty_iqoption_candles")
         last = candles_1m[-1]["close"]
@@ -153,15 +164,13 @@ class IQOptionDemoAdapter:
             }
 
     def _check_result_sync(self, order_id: str | int) -> dict[str, Any]:
-        with self.lock:
-            api = self._ensure_connected()
-            if api.get_balance_mode() != "PRACTICE":
-                raise RuntimeError("practice_not_selected")
-            target = str(order_id)
-            deadline = time.time() + 25
-            status: str | None = None
-            profit = 0.0
-            while time.time() < deadline:
+        target = str(order_id)
+        deadline = time.time() + 25
+        while time.time() < deadline:
+            with self.lock:
+                api = self._ensure_connected()
+                if api.get_balance_mode() != "PRACTICE":
+                    raise RuntimeError("practice_not_selected")
                 payload = api.get_optioninfo_v2(100)
                 closed = ((payload or {}).get("msg") or {}).get("closed_options") or []
                 for item in closed:
@@ -178,8 +187,8 @@ class IQOptionDemoAdapter:
                         "profit": profit,
                         "balance_after_close": api.get_balance(),
                     }
-                time.sleep(1)
-            raise RuntimeError(f"iqoption_result_not_ready:{target}")
+            time.sleep(1)
+        raise RuntimeError(f"iqoption_result_not_ready:{target}")
 
     @staticmethod
     def _candles(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

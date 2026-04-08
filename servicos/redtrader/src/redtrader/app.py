@@ -184,7 +184,10 @@ async def websocket_events(websocket: WebSocket) -> None:
         await websocket.send_json({"type": "status", "data": runtime.status()})
         while True:
             event = await queue.get()
-            await websocket.send_json({"type": "event", "data": event})
+            if event.get("_ws_type") == "status":
+                await websocket.send_json({"type": "status", "data": event["data"]})
+            else:
+                await websocket.send_json({"type": "event", "data": event})
     except WebSocketDisconnect:
         pass
     except RuntimeError:

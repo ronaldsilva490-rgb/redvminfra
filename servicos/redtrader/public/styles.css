@@ -314,6 +314,7 @@ h2 {
   left: 22px;
   right: 22px;
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
   pointer-events: none;
@@ -339,6 +340,43 @@ h2 {
 .terminal-sentiment strong {
   color: white;
   display: inline;
+}
+
+.terminal-zoom {
+  pointer-events: auto;
+  min-width: 220px;
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 34px minmax(110px, 1fr) 34px;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid rgba(242, 122, 26, 0.34);
+  border-radius: 8px;
+  background: rgba(5, 7, 10, 0.86);
+  box-shadow: 0 0 24px rgba(242, 122, 26, 0.12);
+}
+
+.terminal-zoom button {
+  min-height: 30px;
+  padding: 0;
+  border-radius: 6px;
+  background: #14191f;
+  color: #ffbf8c;
+}
+
+.terminal-zoom input {
+  width: 100%;
+  accent-color: #f27a1a;
+}
+
+.terminal-zoom span {
+  grid-column: 1 / -1;
+  color: #a4adb8;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
 }
 
 #terminalChart {
@@ -394,6 +432,41 @@ h2 {
 .terminal-tradebar select {
   background: #101318;
   border-color: #252c35;
+}
+
+.stake-presets,
+.quick-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.quick-presets {
+  align-self: end;
+}
+
+.quick-presets span {
+  grid-column: 1 / -1;
+  color: #8f98a5;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.stake-presets button,
+.quick-presets button {
+  min-height: 38px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border-color: rgba(242, 122, 26, 0.38);
+  background: #11161d;
+  color: #ffd0a8;
+  font-weight: 900;
+}
+
+.stake-presets button.active,
+.quick-presets button.active {
+  background: #f27a1a;
+  color: #170600;
 }
 
 .terminal-profit {
@@ -1030,6 +1103,7 @@ input:focus, select:focus {
   .terminal-account { align-items: stretch; flex-direction: column; width: 100%; }
   .terminal-tab { min-width: 0; width: 100%; }
   .terminal-asset-head { position: static; padding: 14px; }
+  .terminal-zoom { width: 100%; min-width: 0; }
   #terminalChart { min-height: 420px; }
   .terminal-tradebar { grid-template-columns: 1fr; }
   .terminal-decision,
