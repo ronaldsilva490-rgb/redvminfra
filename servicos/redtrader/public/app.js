@@ -144,6 +144,7 @@ function renderStatus() {
   renderHeader(data);
   renderSymbols(data);
   renderForms(data.config || {});
+  renderConsensusBanner(data);
   renderModelCards(data);
   renderTrades(data);
   renderEvents(data);
@@ -261,6 +262,43 @@ function learningSummary(role, data) {
   if (lessons.length) return lessons.slice(-3).join(" · ");
   if (avoids.length) return avoids.slice(0, 3).map((item) => `${item.symbol} ${item.direction}: ${item.reason}`).join(" · ");
   return "Memória operacional aguardando perdas/fechamentos suficientes para refletir.";
+}
+
+function latestCommitteeEvent(data) {
+  const events = data.events || [];
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (event.type === "trade:skipped" || event.type === "trade:opened") return event;
+  }
+  return null;
+}
+
+function renderConsensusBanner(data) {
+  const el = $("#consensusBanner");
+  if (!el) return;
+  const event = latestCommitteeEvent(data);
+  if (!event) {
+    el.innerHTML = `<span>Aguardando o próximo consenso do comitê.</span>`;
+    return;
+  }
+  const payload = event.data || {};
+  const consensus = payload.consensus || {};
+  const votes = consensus.votes || [];
+  const validVotes = votes.filter((vote) => vote.valid && (vote.direction === "CALL" || vote.direction === "PUT"));
+  const direction = consensus.direction || "-";
+  const tier = Number(consensus.tier || validVotes.length || 0);
+  const minVotes = Number(consensus.required_recovery_votes || data.config?.iqoption_consensus_stakes?.min_votes || 3);
+  const invalidCount = Number(consensus.invalid_vote_count ?? Math.max(0, votes.length - validVotes.length));
+  const css = event.type === "trade:opened" ? "ok" : "blocked";
+  const validText = validVotes.length
+    ? validVotes.map((vote) => `${vote.role}:${vote.direction}`).join(" · ")
+    : "nenhum voto CALL/PUT válido";
+  el.className = `consensus-banner ${css}`;
+  el.innerHTML = `
+    <strong>${event.type === "trade:opened" ? "Entrada liberada" : "Entrada bloqueada"}</strong>
+    <span>${escapeHtml(direction)} · ${tier}/${votes.length || 5} votos válidos · mínimo ${minVotes} · nulos/WAIT ${invalidCount}</span>
+    <small>${escapeHtml(payload.reason || event.message || "-")} · ${escapeHtml(validText)}</small>
+  `;
 }
 
 function renderModelCards(data) {

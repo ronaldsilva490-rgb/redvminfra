@@ -434,6 +434,40 @@ label {
   background: rgba(9, 15, 22, 0.8);
 }
 
+.consensus-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid #263342;
+  border-radius: 8px;
+  background: rgba(2, 4, 7, 0.68);
+}
+
+.consensus-banner strong {
+  color: white;
+}
+
+.consensus-banner span {
+  color: #ffbf8c;
+  font-weight: 900;
+}
+
+.consensus-banner small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.consensus-banner.ok {
+  border-color: rgba(53, 255, 147, 0.38);
+}
+
+.consensus-banner.blocked {
+  border-color: rgba(255, 105, 114, 0.38);
+}
+
 .section-title {
   display: grid;
   gap: 4px;
