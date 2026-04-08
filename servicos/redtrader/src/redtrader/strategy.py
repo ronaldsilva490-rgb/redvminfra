@@ -82,11 +82,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_drawdown_pct": 8,
     },
     "models": {
-        "fast_filter": "nemotron-3-super",
-        "decision": "gemma3:4b",
-        "critic": "ministral-3:3b",
+        "fast_filter": "meta/llama-4-maverick-17b-128e-instruct (NVIDIA)",
+        "decision": "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)",
+        "critic": "mistralai/mistral-small-4-119b-2603 (NVIDIA)",
         "premium_4": "ministral-3:8b",
-        "premium_5": "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)",
+        "premium_5": "ministral-3:3b",
         "report": "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)",
     },
     "platforms": {

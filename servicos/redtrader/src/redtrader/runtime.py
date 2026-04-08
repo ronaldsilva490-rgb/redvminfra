@@ -48,6 +48,8 @@ IQ_GATE_PROFILES: dict[str, dict[str, Any]] = {
         "invalid_block_tier": 5,
         "learned_mid_min": 5,
         "learned_high_min": 5,
+        "recovery_specialist_guard_min": 1,
+        "gale2_guardless_invalid_max": 1,
     },
     "balanced": {
         "min_votes": 3,
@@ -64,6 +66,8 @@ IQ_GATE_PROFILES: dict[str, dict[str, Any]] = {
         "invalid_block_tier": 4,
         "learned_mid_min": 4,
         "learned_high_min": 5,
+        "recovery_specialist_guard_min": 1,
+        "gale2_guardless_invalid_max": 1,
     },
     "aggressive": {
         "min_votes": 2,
@@ -80,6 +84,8 @@ IQ_GATE_PROFILES: dict[str, dict[str, Any]] = {
         "invalid_block_tier": 3,
         "learned_mid_min": 3,
         "learned_high_min": 4,
+        "recovery_specialist_guard_min": 1,
+        "gale2_guardless_invalid_max": 1,
     },
     "full_aggressive": {
         "min_votes": 2,
@@ -96,6 +102,8 @@ IQ_GATE_PROFILES: dict[str, dict[str, Any]] = {
         "invalid_block_tier": 2,
         "learned_mid_min": 2,
         "learned_high_min": 3,
+        "recovery_specialist_guard_min": 1,
+        "gale2_guardless_invalid_max": 1,
     },
 }
 
@@ -1859,6 +1867,15 @@ class TraderRuntime:
             "PUT": sum(1 for item in valid_votes if item.get("direction") == "PUT"),
         }
         invalid_vote_count = max(0, len(votes) - len(valid_votes))
+        vote_by_role = {str(item.get("role") or ""): item for item in votes}
+        role_direction_map = {
+            role: _binary_direction((vote_by_role.get(role) or {}).get("direction"))
+            for role in roles
+        }
+        role_valid_map = {
+            role: bool((vote_by_role.get(role) or {}).get("valid"))
+            for role in roles
+        }
         if counts["CALL"] == counts["PUT"]:
             final_direction = None
         else:
@@ -1875,12 +1892,36 @@ class TraderRuntime:
         learning_adjustment = candidate.get("learning_adjustment") or {}
         same_symbol_recovery = recovery_stage > 0 and str(recovery.get("last_symbol") or "") == str(candidate["symbol"])
         same_side_recovery = same_symbol_recovery and _binary_direction(recovery.get("last_side")) == final_direction
+        repeated_side_recovery = recovery_stage > 0 and _binary_direction(recovery.get("last_side")) == final_direction
         same_side_loss_streak = _same_side_loss_streak(
             candidate.get("recent_trade_feedback") or [],
             candidate["symbol"],
             final_direction,
         )
         direction_exhausted = _direction_exhausted(final_direction, code_context)
+        core_roles = ("fast_filter", "decision")
+        guard_roles = ("critic", "premium_4")
+        specialist_role = "premium_5"
+        core_confirm_count = sum(
+            1 for role in core_roles
+            if role_valid_map.get(role) and role_direction_map.get(role) == final_direction
+        )
+        guard_confirm_count = sum(
+            1 for role in guard_roles
+            if role_valid_map.get(role) and role_direction_map.get(role) == final_direction
+        )
+        guard_wait_count = sum(
+            1 for role in guard_roles
+            if not role_valid_map.get(role) or role_direction_map.get(role) not in {"CALL", "PUT"}
+        )
+        lead_guard_direction = role_direction_map.get("critic")
+        lead_guard_confirm = bool(role_valid_map.get("critic")) and lead_guard_direction == final_direction
+        specialist_direction = role_direction_map.get(specialist_role)
+        specialist_opposes = (
+            bool(role_valid_map.get(specialist_role))
+            and specialist_direction in {"CALL", "PUT"}
+            and specialist_direction != final_direction
+        )
         consensus = {
             "enabled": bool(consensus_config.get("enabled", True)),
             "direction": final_direction,
@@ -1896,9 +1937,18 @@ class TraderRuntime:
             "stake_source": "base",
             "same_symbol_recovery": same_symbol_recovery,
             "same_side_recovery": same_side_recovery,
+            "repeated_side_recovery": repeated_side_recovery,
             "same_side_loss_streak": same_side_loss_streak,
             "code_context": code_context,
             "learning_adjustment": learning_adjustment,
+            "role_directions": role_direction_map,
+            "role_valid_map": role_valid_map,
+            "core_confirm_count": core_confirm_count,
+            "guard_confirm_count": guard_confirm_count,
+            "guard_wait_count": guard_wait_count,
+            "lead_guard_confirm": lead_guard_confirm,
+            "specialist_direction": specialist_direction,
+            "specialist_opposes": specialist_opposes,
         }
         if not final_direction:
             reason = "Comite empatou ou nao confirmou direcao"
@@ -1969,6 +2019,38 @@ class TraderRuntime:
                 "critic": {},
                 "fast": {},
             }
+        specialist_guard_min = int(gate_profile.get("recovery_specialist_guard_min", 1))
+        if (
+            recovery_stage > 0
+            and core_confirm_count >= 2
+            and specialist_opposes
+            and guard_confirm_count < specialist_guard_min
+        ):
+            reason = (
+                "Especialista de reversao contrariou o nucleo sem confirmacao dos guardioes"
+            )
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
+            return {
+                "approved": False,
+                "reason": reason,
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
+        if recovery_stage > 0 and repeated_side_recovery and specialist_opposes and not lead_guard_confirm:
+            reason = (
+                "Recuperacao repetindo a mesma direcao foi bloqueada: especialista divergiu e o critico nao confirmou"
+            )
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
+            return {
+                "approved": False,
+                "reason": reason,
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
         same_side_recovery_min = int(gate_profile["same_side_recovery_min"])
         if recovery_stage > 0 and same_side_recovery and tier < same_side_recovery_min:
             reason = f"Gale repetindo direcao do loss exige {same_side_recovery_min}/5 no perfil {gate_profile['key']}"
@@ -1996,6 +2078,24 @@ class TraderRuntime:
         gale2_same_min = int(gate_profile["gale2_same_min"])
         if recovery_stage >= 2 and same_side_recovery and tier < gale2_same_min:
             reason = f"Gale 2 na mesma direcao exige {gale2_same_min}/5 no perfil {gate_profile['key']}"
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
+            return {
+                "approved": False,
+                "reason": reason,
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
+        gale2_guardless_invalid_max = int(gate_profile.get("gale2_guardless_invalid_max", 1))
+        if (
+            recovery_stage >= 2
+            and guard_confirm_count <= 0
+            and invalid_vote_count > gale2_guardless_invalid_max
+        ):
+            reason = (
+                "Gale 2 sem guardiao confirmado e com votos nulos demais foi bloqueado"
+            )
             self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
                 "approved": False,
@@ -2149,11 +2249,17 @@ class TraderRuntime:
         chain = [primary]
         if role == "fast_filter" and primary == "nemotron-3-super":
             chain.append("gemma3:4b")
+        if role == "fast_filter" and primary == "meta/llama-4-maverick-17b-128e-instruct (NVIDIA)":
+            chain.append("gemma3:4b")
         if role == "decision" and primary == "gemma3:4b":
             chain.append("qwen/qwen3-next-80b-a3b-instruct (NVIDIA)")
         if role == "critic" and primary == "ministral-3:3b":
             chain.append("gemma3:4b")
+        if role == "critic" and primary == "mistralai/mistral-small-4-119b-2603 (NVIDIA)":
+            chain.append("ministral-3:8b")
         if role == "premium_4" and primary == "ministral-3:8b":
+            chain.append("qwen3-coder-next")
+        if role == "premium_5" and primary == "ministral-3:3b":
             chain.append("qwen3-coder-next")
         if primary == "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)":
             chain.append("qwen3-coder-next")
