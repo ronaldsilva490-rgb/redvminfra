@@ -358,6 +358,16 @@ def iq_direction_context(features: dict[str, Any]) -> dict[str, Any]:
         wait_score += 8
         traps.append("put_exhaustion_risk")
         notes.append("microtempo sobrevendido: PUT precisa de mais votos")
+    if down_count >= 3 and 0 < rsi_1s <= 40 and change_1s_5 > 0:
+        put_score -= 14
+        wait_score += 12
+        traps.append("put_exhaustion_risk")
+        notes.append("repique curto apos queda forte: evitar PUT tardio no fundo")
+    if up_count >= 3 and rsi_1s >= 60 and change_1s_5 < 0:
+        call_score -= 14
+        wait_score += 12
+        traps.append("call_exhaustion_risk")
+        notes.append("respiro curto apos alta forte: evitar CALL tardio no topo")
     if trend_15m == "up" and down_count >= 3 and 0 < rsi_1s <= 28:
         put_score -= 10
         wait_score += 12

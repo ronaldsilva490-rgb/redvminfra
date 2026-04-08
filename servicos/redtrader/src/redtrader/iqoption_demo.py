@@ -235,12 +235,17 @@ class IQOptionDemoAdapter:
                     row[f"{market}_expiration_times"] = expirations
         for row in output.values():
             row["open"] = bool(row.get("turbo_open") or row.get("binary_open"))
-            start_times = [
-                _float(row.get("turbo_start_time")),
-                _float(row.get("binary_start_time")),
-            ]
-            future_times = [item for item in start_times if item > now]
+            future_times: list[float] = []
+            next_cycle_times: list[float] = []
+            for market in ("turbo", "binary"):
+                start_time = _float(row.get(f"{market}_start_time"))
+                if start_time > now:
+                    next_cycle_times.append(start_time)
+                    if bool(row.get(f"{market}_enabled")) and not bool(row.get(f"{market}_suspended")):
+                        future_times.append(start_time)
+            row["next_cycle_ts"] = min(next_cycle_times) if next_cycle_times else 0.0
             row["next_open_ts"] = min(future_times) if future_times else 0.0
+            row["next_open_reliable"] = bool(future_times)
         self.binary_status_cache = output
         self.binary_status_ts = now
         return output

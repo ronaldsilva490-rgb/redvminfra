@@ -422,10 +422,15 @@ class TraderRuntime:
         source = snapshot or self.latest_snapshots.get(str(symbol or "")) or {}
         availability = source.get("binary_availability") or {}
         next_open_ts = _num(availability.get("next_open_ts"))
+        next_cycle_ts = _num(availability.get("next_cycle_ts"))
+        reliable = bool(availability.get("next_open_reliable")) and next_open_ts > 0
         return {
             "open": bool(availability.get("open", True)),
             "next_open_ts": next_open_ts,
-            "next_open_at": self._timestamp_from_epoch(next_open_ts) if next_open_ts > 0 else "-",
+            "next_open_at": self._timestamp_from_epoch(next_open_ts) if reliable else "-",
+            "next_open_reliable": reliable,
+            "next_cycle_ts": next_cycle_ts,
+            "next_cycle_at": self._timestamp_from_epoch(next_cycle_ts) if next_cycle_ts > 0 else "-",
             "turbo_open": bool(availability.get("turbo_open")),
             "binary_open": bool(availability.get("binary_open")),
         }
@@ -1249,7 +1254,7 @@ class TraderRuntime:
             "amount": self._money(amount),
             "consensus_tier": (decision.get("consensus") or {}).get("tier", "-"),
             "error": clean_error,
-            "next_open_at": open_info.get("next_open_at") if next_open_ts > 0 else "",
+            "next_open_at": open_info.get("next_open_at") if open_info.get("next_open_reliable") else "",
             "next_open_ts": next_open_ts,
         }
         lines = [
@@ -1261,6 +1266,8 @@ class TraderRuntime:
         ]
         if payload["next_open_at"]:
             lines.append(f"⏰ Próxima abertura informada pela IQ: *{payload['next_open_at']}*")
+        elif "suspended" in clean_error.lower() or "ativo suspenso" in clean_error.lower():
+            lines.append("⏰ A IQ não informou um horário confiável de abertura para este par neste momento.")
         fallback = "\n".join(lines)
         text = await self.polish_trade_notification(config, "trade_rejected", payload, fallback)
         await self.send_whatsapp_notification(text, {"event": "trade_rejected", "symbol": symbol, "market_type": payload["market_type"], "next_open_ts": next_open_ts})
