@@ -4,7 +4,9 @@ const state = {
   riskProfiles: {},
   selectedSymbol: "BTCUSDT",
   selectedPlatformConfig: null,
-  terminalZoom: 3,
+  terminalZoom: 20,
+  terminalPan: 0,
+  terminalDrag: null,
   stakeSaveTimer: null,
   stakeSaving: false,
   socket: null,
@@ -388,7 +390,8 @@ function renderTerminal(data) {
   if (!canvas) return;
 
   const snapshot = data.snapshots?.[state.selectedSymbol] || {};
-  const candles = snapshot.candles?.["1m"] || [];
+  const candles = snapshot.candles?.["1s"]?.length ? snapshot.candles["1s"] : snapshot.candles?.["1m"] || [];
+  const frameLabel = snapshot.candles?.["1s"]?.length ? "1s" : "1m";
   const features = snapshot.features || {};
   const wallet = data.wallet || {};
   const recovery = data.iq_recovery || {};
@@ -410,7 +413,7 @@ function renderTerminal(data) {
 
   $("#terminalAssetTab").textContent = state.selectedSymbol || "mercado";
   $("#terminalAsset").textContent = state.selectedSymbol || "mercado";
-  $("#terminalSub").textContent = `${iq?.connected ? "IQ Option PRACTICE" : "Paper interno"} · ${features.trend_1m || "sem tendência"} · 1m`;
+  $("#terminalSub").textContent = `${iq?.connected ? "IQ Option PRACTICE" : "Paper interno"} · ${features.trend_1m || "sem tendência"} · feed ${frameLabel}`;
   $("#terminalMode").textContent = iq?.connected ? "IQ PRACTICE" : "PAPER";
   $("#terminalBalance").textContent = balanceFormatter(practiceBalance || wallet.equity_brl);
   $("#terminalAbove").textContent = `${above.toFixed(0)}%`;
@@ -423,10 +426,11 @@ function renderTerminal(data) {
   $("#terminalDecisionReason").textContent = reason;
   $("#terminalAiBadge").textContent = latestAnalysis.model ? `${latestAnalysis.model} · ${decision}` : "IA aguardando setup";
   $("#terminalPriceTag").textContent = formatPrice(features.last_price || last.close);
-  $("#terminalZoomLabel").textContent = `zoom ${Number(state.terminalZoom || 1).toFixed(1)}x`;
+  $("#terminalZoomLabel").textContent = `zoom ${Number(state.terminalZoom || 1).toFixed(0)}x ${Number(state.terminalPan || 0) ? "· replay" : "· ao vivo"}`;
   const zoomRange = $("#terminalZoomRange");
-  if (zoomRange && zoomRange !== document.activeElement) zoomRange.value = String(state.terminalZoom || 3);
+  if (zoomRange && zoomRange !== document.activeElement) zoomRange.value = String(state.terminalZoom || 20);
   renderTerminalEntries(data);
+  renderTerminalModelVotes(data);
 
   renderTerminalChart(data, above);
 }
@@ -436,6 +440,61 @@ function formatTerminalDecision(value) {
   if (["ENTER_LONG", "LONG", "CALL", "BUY", "ACIMA"].includes(text)) return "ACIMA";
   if (["ENTER_SHORT", "SHORT", "PUT", "SELL", "ABAIXO"].includes(text)) return "ABAIXO";
   return "NO_TRADE";
+}
+
+function renderTerminalModelVotes(data) {
+  const analyses = data.analyses || [];
+  const byRole = (role) => analyses.find((item) => item.symbol === state.selectedSymbol && item.role === role) || {};
+  const cards = [
+    ["terminalFastVote", "terminalFastReason", "fast_filter", "Scout"],
+    ["terminalDecisionVote", "terminalDecisionVoteReason", "decision", "Decisor"],
+    ["terminalCriticVote", "terminalCriticVoteReason", "critic", "Critico"],
+    ["terminalPremium4Vote", "terminalPremium4Reason", "premium_4", "Premium 4"],
+    ["terminalPremium5Vote", "terminalPremium5Reason", "premium_5", "Premium 5"],
+  ];
+  cards.forEach(([voteId, reasonId, role, fallback]) => {
+    const item = byRole(role);
+    const response = item.response || {};
+    const vote = role === "critic"
+      ? (response.preferred_decision || response.decision || item.decision)
+      : (response.decision || item.decision);
+    const summary = response.reasoning_summary || response.reason || item.summary || fallback;
+    const latency = item.latency_ms ? `${item.latency_ms}ms` : "aguardando";
+    const model = item.model ? shortModelName(item.model) : fallback;
+    const voteEl = $(`#${voteId}`);
+    const reasonEl = $(`#${reasonId}`);
+    if (voteEl) voteEl.textContent = formatTerminalDecision(vote || "WAIT");
+    if (reasonEl) reasonEl.textContent = `${model} - ${latency} - ${summary}`.slice(0, 150);
+  });
+}
+
+function shortModelName(model) {
+  return String(model || "")
+    .replace(" (NVIDIA)", "")
+    .replace(" (GROQ)", "")
+    .replace("meta/", "")
+    .replace("qwen/", "")
+    .replace("mistralai/", "")
+    .replace("openai/", "");
+}
+
+function getTerminalCandles() {
+  const snapshot = state.status?.snapshots?.[state.selectedSymbol] || {};
+  return snapshot.candles?.["1s"]?.length ? snapshot.candles["1s"] : snapshot.candles?.["1m"] || [];
+}
+
+function setTerminalZoom(value) {
+  state.terminalZoom = Math.max(1, Math.min(40, Math.round(Number(value || 1))));
+  const zoomRange = $("#terminalZoomRange");
+  if (zoomRange) zoomRange.value = String(state.terminalZoom);
+  renderTerminal(state.status || {});
+}
+
+function clampTerminalPan(value) {
+  const candles = getTerminalCandles();
+  const zoom = Math.max(1, Number(state.terminalZoom || 1));
+  const visibleCount = Math.max(12, Math.min(candles.length, Math.round(candles.length / zoom)));
+  return Math.max(0, Math.min(Math.max(0, candles.length - visibleCount), Math.round(Number(value || 0))));
 }
 
 function renderTerminalEntries(data) {
@@ -463,7 +522,9 @@ function renderTerminalChart(data, aboveBias = 50) {
   const container = canvas.parentElement;
   const ratio = window.devicePixelRatio || 1;
   const width = Math.max(620, container.clientWidth);
-  const height = Math.max(600, Math.min(820, container.clientHeight || Math.round(width * 0.56)));
+  const fullscreen = $("#terminal")?.classList.contains("fullscreen");
+  const naturalHeight = container.clientHeight || Math.round(width * 0.56);
+  const height = fullscreen ? Math.max(600, naturalHeight) : Math.max(600, Math.min(820, naturalHeight));
   canvas.width = Math.floor(width * ratio);
   canvas.height = Math.floor(height * ratio);
   canvas.style.height = `${height}px`;
@@ -474,10 +535,15 @@ function renderTerminalChart(data, aboveBias = 50) {
   ctx.fillStyle = "#020304";
   ctx.fillRect(0, 0, width, height);
 
-  const allCandles = data.snapshots?.[state.selectedSymbol]?.candles?.["1m"] || [];
+  const snapshot = data.snapshots?.[state.selectedSymbol] || {};
+  const allCandles = snapshot.candles?.["1s"]?.length ? snapshot.candles["1s"] : snapshot.candles?.["1m"] || [];
+  const frameLabel = snapshot.candles?.["1s"]?.length ? "1s" : "1m";
   const zoom = Math.max(1, Number(state.terminalZoom || 1));
-  const visibleCount = Math.max(16, Math.min(allCandles.length, Math.round(allCandles.length / zoom)));
-  const candles = allCandles.slice(-visibleCount);
+  const visibleCount = Math.max(12, Math.min(allCandles.length, Math.round(allCandles.length / zoom)));
+  const pan = Math.max(0, Math.min(Math.max(0, allCandles.length - visibleCount), Math.round(Number(state.terminalPan || 0))));
+  if (pan !== state.terminalPan) state.terminalPan = pan;
+  const end = allCandles.length - pan;
+  const candles = allCandles.slice(Math.max(0, end - visibleCount), end);
   if (!candles.length) {
     ctx.fillStyle = "#88929c";
     ctx.font = "700 14px Inter, sans-serif";
@@ -485,32 +551,38 @@ function renderTerminalChart(data, aboveBias = 50) {
     return;
   }
 
-  const pad = { l: 48, r: 82, t: 58, b: 44 };
+  const pad = { l: 56, r: 92, t: 58, b: 44 };
   const values = candles.flatMap((candle) => [Number(candle.high), Number(candle.low)]).filter(Number.isFinite);
   const max = Math.max(...values);
   const min = Math.min(...values);
   const span = max - min || 1;
   const plotW = width - pad.l - pad.r;
   const plotH = height - pad.t - pad.b;
-  const liveOffset = (Date.now() % 1000) / 1000;
-  const xStep = plotW / Math.max(1, candles.length - 1);
+  const openTrades = (data.trades || []).filter((trade) => trade.symbol === state.selectedSymbol && trade.status === "OPEN");
+  const firstTime = Number(candles[0]?.time || 0);
+  const lastCandleTime = Number(candles[candles.length - 1]?.time || firstTime + 1);
+  const maxExpiryTime = Math.max(lastCandleTime, ...openTrades.map((trade) => Number(trade.opened_at || 0) + Number((trade.metadata || {}).expiry_seconds || 60)));
+  const rightSpace = pan === 0 ? Math.min(70, Math.max(14, maxExpiryTime - lastCandleTime + 8)) : 2;
+  const domainStart = firstTime;
+  const domainEnd = Math.max(lastCandleTime + rightSpace, firstTime + 1);
+  const xStep = plotW / Math.max(1, domainEnd - domainStart);
   const y = (value) => pad.t + (max - Number(value)) / span * plotH;
-  const x = (index) => pad.l + index * xStep + liveOffset * Math.min(xStep, 8);
+  const xTime = (ts) => pad.l + ((Number(ts || domainEnd) - domainStart) / Math.max(1, domainEnd - domainStart)) * plotW;
   const last = candles[candles.length - 1];
   const lastY = y(last.close);
-  const nowX = Math.min(width - pad.r - 20, x(candles.length - 1));
+  const nowX = Math.min(width - pad.r - 20, xTime(lastCandleTime));
 
-  ctx.strokeStyle = "#1d232b";
+  ctx.strokeStyle = "#111820";
   ctx.lineWidth = 1;
-  for (let i = 0; i <= 6; i++) {
-    const gx = pad.l + (plotW / 6) * i;
+  for (let i = 0; i <= 10; i++) {
+    const gx = pad.l + (plotW / 10) * i;
     ctx.beginPath();
     ctx.moveTo(gx, pad.t);
     ctx.lineTo(gx, height - pad.b);
     ctx.stroke();
   }
-  for (let i = 0; i <= 4; i++) {
-    const gy = pad.t + (plotH / 4) * i;
+  for (let i = 0; i <= 6; i++) {
+    const gy = pad.t + (plotH / 6) * i;
     ctx.beginPath();
     ctx.moveTo(pad.l, gy);
     ctx.lineTo(width - pad.r, gy);
@@ -524,7 +596,7 @@ function renderTerminalChart(data, aboveBias = 50) {
 
   ctx.beginPath();
   candles.forEach((candle, index) => {
-    const px = x(index);
+    const px = xTime(candle.time);
     const py = y(candle.close);
     if (index === 0) ctx.moveTo(px, py);
     else ctx.lineTo(px, py);
@@ -537,7 +609,7 @@ function renderTerminalChart(data, aboveBias = 50) {
 
   ctx.beginPath();
   candles.forEach((candle, index) => {
-    const px = x(index);
+    const px = xTime(candle.time);
     const py = y(candle.close);
     if (index === 0) ctx.moveTo(px, py);
     else ctx.lineTo(px, py);
@@ -575,14 +647,17 @@ function renderTerminalChart(data, aboveBias = 50) {
   ctx.font = "800 12px Inter, sans-serif";
   ctx.fillText(formatPrice(last.close), width - pad.r + 14, lastY + 5);
 
-  drawTerminalTradeMarkers(ctx, data, candles, { pad, width, height, plotW, plotH, min, max, y, nowX });
+  drawTerminalTradeMarkers(ctx, data, candles, { pad, width, height, plotW, plotH, min, max, y, nowX, xFromTime: xTime, domainStart, domainEnd });
 
   ctx.fillStyle = "#7f8791";
   ctx.font = "12px Inter, sans-serif";
-  for (let i = 0; i <= 3; i++) {
-    const candle = candles[Math.min(candles.length - 1, Math.floor((candles.length - 1) * i / 3))];
-    ctx.fillText(new Date(candle.time * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }), pad.l + (plotW / 3) * i, height - 16);
+  for (let i = 0; i <= 5; i++) {
+    const ts = domainStart + ((domainEnd - domainStart) / 5) * i;
+    ctx.fillText(new Date(ts * 1000).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }), pad.l + (plotW / 5) * i, height - 16);
   }
+  ctx.fillStyle = "#7f8791";
+  ctx.font = "900 11px Inter, sans-serif";
+  ctx.fillText(`${state.selectedSymbol} · ${frameLabel} · ${visibleCount} velas ${pan ? `· replay -${pan}` : "· ao vivo"}`, pad.l, 22);
   ctx.fillStyle = aboveBias >= 50 ? "rgba(52, 210, 125, 0.24)" : "rgba(255, 105, 114, 0.24)";
   ctx.fillRect(pad.l, pad.t, 9, plotH * (aboveBias / 100));
   ctx.fillStyle = aboveBias >= 50 ? "#34d27d" : "#ff6972";
@@ -592,18 +667,16 @@ function renderTerminalChart(data, aboveBias = 50) {
 }
 
 function drawTerminalTradeMarkers(ctx, data, candles, scale) {
-  const firstTime = Number(candles[0]?.time || 0);
-  const lastTime = Number(candles[candles.length - 1]?.time || firstTime + 60);
   const trades = (data.trades || [])
     .filter((trade) => trade.symbol === state.selectedSymbol)
-    .filter((trade) => Number(trade.opened_at || 0) >= firstTime - 60 && Number(trade.opened_at || 0) <= lastTime + 120)
+    .filter((trade) => {
+      const opened = Number(trade.opened_at || 0);
+      const expires = opened + Number((trade.metadata || {}).expiry_seconds || 60);
+      return expires >= scale.domainStart - 5 && opened <= scale.domainEnd + 5;
+    })
     .slice(0, 12);
   if (!trades.length) return;
-  const timeSpan = Math.max(1, lastTime - firstTime);
-  const xFromTime = (ts) => {
-    const raw = scale.pad.l + ((Number(ts || lastTime) - firstTime) / timeSpan) * scale.plotW;
-    return Math.max(scale.pad.l + 8, Math.min(scale.nowX, raw));
-  };
+  const xFromTime = (ts) => Math.max(scale.pad.l + 8, Math.min(scale.width - scale.pad.r, scale.xFromTime(ts)));
 
   ctx.save();
   trades.forEach((trade) => {
@@ -611,10 +684,13 @@ function drawTerminalTradeMarkers(ctx, data, candles, scale) {
     const pnl = Number(trade.pnl_brl || 0);
     const color = isOpen ? "#35ff93" : pnl >= 0 ? "#35ff93" : "#ff6972";
     const px = xFromTime(trade.opened_at);
+    const expiryTs = Number(trade.opened_at || 0) + Number((trade.metadata || {}).expiry_seconds || 60);
+    const expiryX = xFromTime(expiryTs);
     const entry = Number(trade.entry_price || 0);
     const py = Number.isFinite(entry) && entry > 0 ? scale.y(entry) : scale.pad.t + scale.plotH / 2;
     const side = String(trade.side || "").toUpperCase();
-    const label = `#${trade.id} ${side}`;
+    const stage = (trade.metadata || {}).gale_stage;
+    const label = `#${trade.id} ${side}${stage ? ` G${stage}` : ""}`;
 
     ctx.setLineDash([3, 5]);
     ctx.strokeStyle = isOpen ? "rgba(53, 255, 147, 0.7)" : "rgba(255, 255, 255, 0.34)";
@@ -645,6 +721,20 @@ function drawTerminalTradeMarkers(ctx, data, candles, scale) {
     ctx.fillStyle = color;
     ctx.font = "900 11px Inter, sans-serif";
     ctx.fillText(label, px + 14, py);
+
+    if (isOpen) {
+      const remaining = Math.max(0, Math.round(expiryTs - Date.now() / 1000));
+      ctx.setLineDash([6, 5]);
+      ctx.strokeStyle = "rgba(255, 191, 140, 0.75)";
+      ctx.beginPath();
+      ctx.moveTo(expiryX, scale.pad.t);
+      ctx.lineTo(expiryX, scale.height - scale.pad.b);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(255, 191, 140, 0.95)";
+      ctx.font = "900 11px Inter, sans-serif";
+      ctx.fillText(`expira ${remaining}s`, Math.max(scale.pad.l + 8, expiryX - 56), scale.pad.t + 38);
+    }
   });
   ctx.restore();
 }
@@ -721,7 +811,7 @@ function renderQuickConfig(config) {
   const form = $("#quickConfigForm");
   if (!form || form.contains(document.activeElement)) return;
   if (state.stakeSaving) return;
-  const symbol = (config.symbols || ["EURUSD-OTC"])[0] || "EURUSD-OTC";
+  const symbol = (config.symbols || ["EURUSD-OTC"]).join(",") || "EURUSD-OTC";
   form.auto_enabled.value = String(Boolean(config.auto_enabled));
   form.risk_profile.value = config.risk_profile || "full_aggressive";
   form.symbol.value = symbol;
@@ -746,6 +836,8 @@ function setStakeValue(value, persist = false) {
 
 function scheduleStakeSave(stake) {
   window.clearTimeout(state.stakeSaveTimer);
+  state.stakeSaving = true;
+  $("#saveState").textContent = `valor ${stake} pendente`;
   state.stakeSaveTimer = window.setTimeout(() => saveStakeValue(stake), 180);
 }
 
@@ -754,14 +846,15 @@ async function saveStakeValue(stake) {
   $("#saveState").textContent = `valor ${stake} salvando`;
   try {
     const current = state.status?.config || {};
-    const symbol = String($("#quickConfigForm")?.elements.symbol?.value || (current.symbols || ["EURUSD-OTC"])[0] || "EURUSD-OTC").trim().toUpperCase();
+    const symbols = splitSymbols($("#quickConfigForm")?.elements.symbol?.value || (current.symbols || ["EURUSD-OTC"]).join(","));
+    const activeSymbols = symbols.length ? symbols : ["EURUSD-OTC"];
     const payload = {
       ...current,
       iqoption_amount: Number(stake),
       market_provider: "iqoption_demo",
       execution_provider: "iqoption_demo",
-      symbols: [symbol],
-      tradable_symbols: [symbol],
+      symbols: activeSymbols,
+      tradable_symbols: activeSymbols,
       max_open_positions: 1,
     };
     const saved = await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
@@ -818,15 +911,16 @@ function renderConfig(config) {
 function collectQuickConfig() {
   const form = $("#quickConfigForm");
   const current = state.status?.config || {};
-  const symbol = String(form.symbol.value || "EURUSD-OTC").trim().toUpperCase();
+  const symbols = splitSymbols(form.symbol.value || "EURUSD-OTC");
+  const activeSymbols = symbols.length ? symbols : ["EURUSD-OTC"];
   return {
     ...current,
     auto_enabled: form.auto_enabled.value === "true",
     risk_profile: form.risk_profile.value,
     market_provider: "iqoption_demo",
     execution_provider: "iqoption_demo",
-    symbols: [symbol],
-    tradable_symbols: [symbol],
+    symbols: activeSymbols,
+    tradable_symbols: activeSymbols,
     iqoption_amount: Number(form.iqoption_amount.value || 1),
     iqoption_expiration_minutes: Number(form.iqoption_expiration_minutes.value || 1),
     iqoption_gale_enabled: true,
@@ -835,8 +929,8 @@ function collectQuickConfig() {
     iqoption_gale_payout_pct: 85,
     iqoption_gale_max_amount: 100,
     cooldown_minutes: Number(form.cooldown_minutes.value || 0.5),
-    market_poll_seconds: 1,
-    decision_poll_seconds: 5,
+    market_poll_seconds: 0.35,
+    decision_poll_seconds: 3,
     max_open_positions: 1,
     max_trades_per_day: Math.max(Number(current.max_trades_per_day || 200), 200),
     daily_stop_loss_pct: Math.max(Number(current.daily_stop_loss_pct || 50), 50),
@@ -938,6 +1032,8 @@ function collectConfig() {
       fast_filter: form.elements["models.fast_filter"].value,
       decision: form.elements["models.decision"].value,
       critic: form.elements["models.critic"].value,
+      premium_4: form.elements["models.premium_4"].value,
+      premium_5: form.elements["models.premium_5"].value,
       report: form.elements["models.report"].value,
     },
   };
@@ -983,6 +1079,14 @@ function connectSocket() {
 }
 
 function bindActions() {
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && $("#terminal")?.classList.contains("fullscreen")) {
+      $("#terminal")?.classList.remove("fullscreen");
+      document.body.classList.remove("terminal-open");
+      renderTerminal(state.status || {});
+    }
+  });
+
   document.addEventListener("click", (event) => {
     const configButton = event.target.closest("[data-platform-config]");
     if (configButton) {
@@ -1062,18 +1166,55 @@ function bindActions() {
   });
 
   $("#terminalZoomRange")?.addEventListener("input", (event) => {
-    state.terminalZoom = Number(event.target.value || 1);
-    renderTerminal(state.status || {});
+    setTerminalZoom(event.target.value);
   });
 
   $("#terminalZoomInBtn")?.addEventListener("click", () => {
-    state.terminalZoom = Math.min(6, Number(state.terminalZoom || 1) + 0.5);
-    renderTerminal(state.status || {});
+    setTerminalZoom(Number(state.terminalZoom || 1) + 1);
   });
 
   $("#terminalZoomOutBtn")?.addEventListener("click", () => {
-    state.terminalZoom = Math.max(1, Number(state.terminalZoom || 1) - 0.5);
+    setTerminalZoom(Number(state.terminalZoom || 1) - 1);
+  });
+
+  $("#terminalLiveBtn")?.addEventListener("click", () => {
+    state.terminalPan = 0;
     renderTerminal(state.status || {});
+  });
+
+  $("#terminalFullscreenBtn")?.addEventListener("click", () => {
+    const shell = $("#terminal");
+    shell?.classList.toggle("fullscreen");
+    document.body.classList.toggle("terminal-open", Boolean(shell?.classList.contains("fullscreen")));
+    $("#terminalFullscreenBtn").textContent = shell?.classList.contains("fullscreen") ? "SAIR" : "TELA";
+    renderTerminal(state.status || {});
+  });
+
+  const terminalCanvas = $("#terminalChart");
+  terminalCanvas?.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    setTerminalZoom(Number(state.terminalZoom || 1) + (event.deltaY < 0 ? 1 : -1));
+  }, { passive: false });
+  terminalCanvas?.addEventListener("pointerdown", (event) => {
+    state.terminalDrag = { x: event.clientX, pan: Number(state.terminalPan || 0) };
+    terminalCanvas.classList.add("dragging");
+    try { terminalCanvas.setPointerCapture(event.pointerId); } catch (_err) {}
+  });
+  terminalCanvas?.addEventListener("pointermove", (event) => {
+    if (!state.terminalDrag) return;
+    const candles = getTerminalCandles();
+    const zoom = Math.max(1, Number(state.terminalZoom || 1));
+    const visibleCount = Math.max(12, Math.min(candles.length, Math.round(candles.length / zoom)));
+    const candlesPerPx = visibleCount / Math.max(1, terminalCanvas.clientWidth || 1);
+    const delta = (event.clientX - state.terminalDrag.x) * candlesPerPx;
+    state.terminalPan = clampTerminalPan(state.terminalDrag.pan + delta);
+    renderTerminal(state.status || {});
+  });
+  ["pointerup", "pointercancel", "pointerleave"].forEach((eventName) => {
+    terminalCanvas?.addEventListener(eventName, () => {
+      state.terminalDrag = null;
+      terminalCanvas.classList.remove("dragging");
+    });
   });
 
   $$("[data-stake-value]").forEach((button) => {

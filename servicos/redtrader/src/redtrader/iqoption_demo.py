@@ -20,6 +20,7 @@ class IQOptionDemoAdapter:
         self.api: Any | None = None
         self.connected_at = 0.0
         self.frame_cache: dict[str, dict[str, Any]] = {}
+        self.stream_cache: dict[str, dict[str, Any]] = {}
 
     async def close(self) -> None:
         await asyncio.to_thread(self._close_sync)
@@ -68,6 +69,13 @@ class IQOptionDemoAdapter:
         with self.lock:
             if self.api is None:
                 return
+            for key in list(self.stream_cache):
+                try:
+                    symbol, size = key.split(":", 1)
+                    self.api.stop_candles_stream(symbol, int(size))
+                except Exception:
+                    pass
+            self.stream_cache.clear()
             try:
                 self.api.api.close()
             except Exception:
@@ -88,22 +96,30 @@ class IQOptionDemoAdapter:
 
     def _fetch_symbol_sync(self, api: Any, symbol: str) -> dict[str, Any]:
         now = time.time()
-        candles_1m = self._candles(api.get_candles(symbol, 60, 180, now))
+        candles_1s = self._realtime_candles(api, symbol, 1, 600)
         cached_frames = self.frame_cache.get(symbol) or {}
-        if now - _float(cached_frames.get("ts")) > 20:
+        if now - _float(cached_frames.get("ts")) > 10:
+            candles_1m = self._candles(api.get_candles(symbol, 60, 180, now))
             candles_5m = self._candles(api.get_candles(symbol, 300, 120, now))
             candles_15m = self._candles(api.get_candles(symbol, 900, 120, now))
             self.frame_cache[symbol] = {
                 "ts": now,
+                "1m": candles_1m,
                 "5m": candles_5m,
                 "15m": candles_15m,
             }
         else:
+            candles_1m = cached_frames.get("1m") or []
             candles_5m = cached_frames.get("5m") or []
             candles_15m = cached_frames.get("15m") or []
         if not candles_1m:
+            candles_1m = self._candles(api.get_candles(symbol, 60, 180, now))
+        if not candles_1s:
+            candles_1s = self._candles(api.get_candles(symbol, 1, 240, now))
+        if not candles_1s and not candles_1m:
             raise RuntimeError("empty_iqoption_candles")
-        last = candles_1m[-1]["close"]
+        last_series = candles_1s or candles_1m
+        last = last_series[-1]["close"]
         snapshot = {
             "symbol": symbol,
             "provider": "iqoption_demo",
@@ -113,8 +129,8 @@ class IQOptionDemoAdapter:
                 "price_change_pct_24h": 0.0,
                 "volume": 0.0,
                 "quote_volume": 0.0,
-                "high_price": max(item["high"] for item in candles_1m),
-                "low_price": min(item["low"] for item in candles_1m),
+                "high_price": max(item["high"] for item in last_series),
+                "low_price": min(item["low"] for item in last_series),
             },
             "orderbook": {
                 "best_bid": last,
@@ -125,11 +141,13 @@ class IQOptionDemoAdapter:
                 "bid_ask_ratio": 1.0,
             },
             "frames": {
+                "1s": self._frame_summary(candles_1s),
                 "1m": self._frame_summary(candles_1m),
                 "5m": self._frame_summary(candles_5m),
                 "15m": self._frame_summary(candles_15m),
             },
             "candles": {
+                "1s": candles_1s[-600:],
                 "1m": candles_1m[-120:],
                 "5m": candles_5m[-80:],
                 "15m": candles_15m[-80:],
@@ -137,6 +155,21 @@ class IQOptionDemoAdapter:
         }
         snapshot["features"] = self._features(snapshot)
         return snapshot
+
+    def _realtime_candles(self, api: Any, symbol: str, size: int, maxdict: int) -> list[dict[str, Any]]:
+        key = f"{symbol}:{size}"
+        stream = self.stream_cache.get(key) or {}
+        if not stream:
+            try:
+                api.start_candles_stream(symbol, size, maxdict)
+            except Exception:
+                # Some versions need the one-stream subscription first.
+                api.start_candles_one_stream(symbol, size)
+            self.stream_cache[key] = {"started_at": time.time(), "size": size, "maxdict": maxdict}
+            time.sleep(0.25)
+        rows = api.get_realtime_candles(symbol, size) or {}
+        values = list(rows.values()) if isinstance(rows, dict) else list(rows or [])
+        return self._candles(values)
 
     def _buy_sync(self, active: str, action: str, amount: float, expiration_minutes: int) -> dict[str, Any]:
         action = str(action or "").lower()
@@ -165,7 +198,7 @@ class IQOptionDemoAdapter:
 
     def _check_result_sync(self, order_id: str | int) -> dict[str, Any]:
         target = str(order_id)
-        deadline = time.time() + 25
+        deadline = time.time() + 5
         while time.time() < deadline:
             with self.lock:
                 api = self._ensure_connected()
@@ -187,7 +220,7 @@ class IQOptionDemoAdapter:
                         "profit": profit,
                         "balance_after_close": api.get_balance(),
                     }
-            time.sleep(1)
+            time.sleep(0.4)
         raise RuntimeError(f"iqoption_result_not_ready:{target}")
 
     @staticmethod
@@ -228,23 +261,30 @@ class IQOptionDemoAdapter:
 
     @staticmethod
     def _features(snapshot: dict[str, Any]) -> dict[str, Any]:
+        f0 = snapshot["frames"].get("1s") or snapshot["frames"]["1m"]
         f1 = snapshot["frames"]["1m"]
         f5 = snapshot["frames"]["5m"]
         f15 = snapshot["frames"]["15m"]
         return {
             "last_price": snapshot["ticker"]["last_price"],
             "change_24h_pct": 0.0,
+            "trend_1s": "up" if (f0["ema9"] or 0) > (f0["ema21"] or 0) else "down",
             "trend_1m": "up" if (f1["ema9"] or 0) > (f1["ema21"] or 0) else "down",
             "trend_5m": "up" if (f5["ema9"] or 0) > (f5["ema21"] or 0) else "down",
             "trend_15m": "up" if (f15["ema9"] or 0) > (f15["ema21"] or 0) else "down",
+            "rsi_1s": f0["rsi14"],
             "rsi_1m": f1["rsi14"],
             "rsi_5m": f5["rsi14"],
             "rsi_15m": f15["rsi14"],
+            "change_1s_5": f0["change_5"],
+            "change_1s_15": f0["change_15"],
             "change_1m_15": f1["change_15"],
             "change_5m_15": f5["change_15"],
             "change_15m_15": f15["change_15"],
+            "ret_std_1s_30": f0["ret_std_30"],
             "ret_std_1m_30": f1["ret_std_30"],
             "ret_std_5m_30": f5["ret_std_30"],
+            "volume_1s_vs_avg30": f0["volume_last_vs_avg30"] or 1.0,
             "volume_1m_vs_avg30": f1["volume_last_vs_avg30"] or 1.0,
             "volume_5m_vs_avg30": f5["volume_last_vs_avg30"] or 1.0,
             "spread_pct": 0.0,

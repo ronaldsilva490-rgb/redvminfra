@@ -83,9 +83,11 @@
                 </div>
                 <div class="terminal-zoom">
                   <button id="terminalZoomOutBtn" type="button">-</button>
-                  <input id="terminalZoomRange" type="range" min="1" max="6" step="0.5" value="3" aria-label="Zoom do grafico" />
+                  <input id="terminalZoomRange" type="range" min="1" max="40" step="1" value="20" aria-label="Zoom do grafico" />
                   <button id="terminalZoomInBtn" type="button">+</button>
-                  <span id="terminalZoomLabel">zoom 3.0x</span>
+                  <button id="terminalLiveBtn" type="button">AO VIVO</button>
+                  <button id="terminalFullscreenBtn" type="button">TELA</button>
+                  <span id="terminalZoomLabel">zoom 20x</span>
                 </div>
               </div>
               <canvas id="terminalChart" width="1400" height="620"></canvas>
@@ -96,7 +98,7 @@
             <aside class="terminal-tradebar">
               <label>
                 Invest
-                <input id="terminalStake" type="number" min="1" step="1" value="1" />
+                <input id="terminalStake" type="number" min="1" step="1" value="10" />
               </label>
               <div class="stake-presets" aria-label="Valores rapidos de entrada">
                 <button type="button" data-stake-value="1">1</button>
@@ -135,6 +137,34 @@
               </div>
             </aside>
           </div>
+
+          <section class="terminal-model-strip" aria-label="Votos dos modelos da IA">
+            <article>
+              <span>Scout rapido</span>
+              <strong id="terminalFastVote">aguardando</strong>
+              <small id="terminalFastReason">llama-4-maverick</small>
+            </article>
+            <article>
+              <span>Decisor</span>
+              <strong id="terminalDecisionVote">aguardando</strong>
+              <small id="terminalDecisionVoteReason">qwen3-next</small>
+            </article>
+            <article>
+              <span>Critico</span>
+              <strong id="terminalCriticVote">aguardando</strong>
+              <small id="terminalCriticVoteReason">devstral-2</small>
+            </article>
+            <article>
+              <span>Premium 4</span>
+              <strong id="terminalPremium4Vote">standby</strong>
+              <small id="terminalPremium4Reason">ativa so no 3/3</small>
+            </article>
+            <article>
+              <span>Premium 5</span>
+              <strong id="terminalPremium5Vote">standby</strong>
+              <small id="terminalPremium5Reason">ativa so no 4/4</small>
+            </article>
+          </section>
         </section>
 
         <section class="stats">
@@ -440,6 +470,14 @@
             <label>
               Crítico
               <select name="models.critic" data-model-select></select>
+            </label>
+            <label>
+              Premium 4
+              <select name="models.premium_4" data-model-select></select>
+            </label>
+            <label>
+              Premium 5
+              <select name="models.premium_5" data-model-select></select>
             </label>
             <label>
               Relatório

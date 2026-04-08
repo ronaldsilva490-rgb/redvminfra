@@ -94,7 +94,7 @@ class TraderRuntime:
             except Exception as exc:
                 self.publish("market:error", "Falha ao atualizar mercado rapido", {"error": repr(exc)})
             elapsed = time.time() - started
-            min_sleep = 0.6 if config.get("market_provider") == "iqoption_demo" else 3
+            min_sleep = 0.35 if config.get("market_provider") == "iqoption_demo" else 3
             await asyncio.sleep(max(min_sleep, float(config.get("market_poll_seconds", 20)) - elapsed))
 
     async def loop(self) -> None:
@@ -106,7 +106,7 @@ class TraderRuntime:
                 self.publish("error", "Falha no ciclo principal", {"error": repr(exc)})
             elapsed = time.time() - started
             config = self.config()
-            min_sleep = 3 if config.get("market_provider") == "iqoption_demo" else 10
+            min_sleep = 1 if config.get("market_provider") == "iqoption_demo" else 10
             await asyncio.sleep(max(min_sleep, float(config.get("decision_poll_seconds", 5)) - elapsed))
 
     async def cycle(self, reason: str = "manual") -> None:
@@ -182,7 +182,7 @@ class TraderRuntime:
             if metadata.get("execution_provider") == "iqoption_demo":
                 expiry_seconds = float(metadata.get("expiry_seconds") or 60)
                 held = time.time() - float(trade["opened_at"])
-                if held < expiry_seconds + 5:
+                if held < expiry_seconds + 1:
                     continue
                 try:
                     result = await self.iqoption.check_result(metadata["iqoption_order_id"])
@@ -190,6 +190,7 @@ class TraderRuntime:
                     pnl_brl = float(result.get("profit") or 0)
                     pnl_pct = pnl_brl / max(float(trade["position_brl"]), 1) * 100
                     status = result.get("status") or "unknown"
+                    self.store_trade_snapshot(int(trade["id"]), trade["symbol"], "close")
                     self.db.close_trade(int(trade["id"]), float(price), pnl_brl, pnl_pct, f"iqoption_demo:{status}")
                     self.update_iq_recovery_after_close(config, trade, pnl_brl, status)
                     self.publish(
@@ -267,7 +268,7 @@ class TraderRuntime:
         position_brl = max(1.0, self.wallet_summary()["equity_brl"] * float(decision["position_pct"]) / 100)
         metadata = {"decision": decision, "candidate": candidate, "execution_provider": execution_provider}
         if execution_provider == "iqoption_demo":
-            amount, recovery_state = self.next_iq_amount(config)
+            amount, recovery_state = self.next_iq_amount(config, decision)
             expiration_minutes = max(1, int(config.get("iqoption_expiration_minutes", 1)))
             iq_action = "put" if side == "PUT" else "call"
             try:
@@ -289,6 +290,8 @@ class TraderRuntime:
                 "gale_stage": int(recovery_state.get("stage") or 0),
                 "recovery_loss_total": float(recovery_state.get("loss_total") or 0),
                 "base_amount": float(config.get("iqoption_amount", 1)),
+                "consensus": decision.get("consensus") or {},
+                "stake_source": decision.get("stake_source") or "base",
             })
         trade_id = self.db.open_trade(
             candidate["symbol"],
@@ -302,11 +305,30 @@ class TraderRuntime:
         )
         self.last_trade_at = time.time()
         self.db.set_kv("last_trade_at", self.last_trade_at)
+        self.store_trade_snapshot(trade_id, candidate["symbol"], "open")
         self.publish(
             "trade:opened",
             f"{'IQ Option demo' if execution_provider == 'iqoption_demo' else 'Paper'} trade aberto em {candidate['symbol']}",
             {"trade_id": trade_id, "symbol": candidate["symbol"], "side": side, "position_brl": position_brl, "entry_price": candidate["price"], "provider": execution_provider},
         )
+
+    def store_trade_snapshot(self, trade_id: int, symbol: str, phase: str) -> None:
+        history = self.db.get_kv("trade_market_history", {}) or {}
+        snapshot = self.latest_snapshots.get(symbol) or {}
+        item = history.get(str(trade_id), {"trade_id": trade_id, "symbol": symbol, "samples": []})
+        item["samples"].append({
+            "phase": phase,
+            "ts": time.time(),
+            "features": snapshot.get("features") or {},
+            "frames": snapshot.get("frames") or {},
+            "candles_1s": (snapshot.get("candles") or {}).get("1s", [])[-180:],
+            "candles_1m": (snapshot.get("candles") or {}).get("1m", [])[-60:],
+        })
+        item["samples"] = item["samples"][-8:]
+        history[str(trade_id)] = item
+        if len(history) > 120:
+            history = dict(list(history.items())[-120:])
+        self.db.set_kv("trade_market_history", history)
 
     def risk_guard(self, config: dict[str, Any]) -> dict[str, Any]:
         now = time.time()
@@ -395,14 +417,15 @@ class TraderRuntime:
             "note": "empate; sem recuperacao ativa",
         })
 
-    def next_iq_amount(self, config: dict[str, Any]) -> tuple[float, dict[str, Any]]:
+    def next_iq_amount(self, config: dict[str, Any], decision: dict[str, Any] | None = None) -> tuple[float, dict[str, Any]]:
         state = self.iq_recovery_state()
         base = max(1.0, float(config.get("iqoption_amount", 1)))
+        preferred_base = max(base, _num((decision or {}).get("stake_amount")) or base)
         if not config.get("iqoption_gale_enabled", True):
-            return base, state
+            return preferred_base, state
         stage = max(0, int(state.get("stage") or 0))
         if stage <= 0:
-            return base, state
+            return preferred_base, state
         payout = max(0.1, float(config.get("iqoption_gale_payout_pct", 85)) / 100)
         loss_total = max(0.0, float(state.get("loss_total") or 0))
         multiplier = max(1.0, float(config.get("iqoption_gale_multiplier", 2.35)))
@@ -436,13 +459,17 @@ class TraderRuntime:
 
     async def run_ai_committee(self, candidate: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
         system, prompt = build_decision_prompt(candidate, self.latest_news, config)
-        fast_model = config["models"].get("fast_filter")
-        decision_model = config["models"].get("decision")
-        critic_model = config["models"].get("critic")
-        fast = {}
-        if fast_model:
-            fast = await self.safe_ai_call("fast_filter", fast_model, candidate["symbol"], system, prompt, timeout=25)
-        final = await self.safe_ai_call("decision", decision_model, candidate["symbol"], system, prompt, timeout=70)
+        models = config.get("models") or {}
+        fast_model = models.get("fast_filter")
+        decision_model = models.get("decision")
+        critic_model = models.get("critic")
+        fast_task = (
+            asyncio.create_task(self.safe_ai_call("fast_filter", fast_model, candidate["symbol"], system, prompt, timeout=18))
+            if fast_model else None
+        )
+        final_task = asyncio.create_task(self.safe_ai_call("decision", decision_model, candidate["symbol"], system, prompt, timeout=42))
+        final = await final_task
+        fast = await fast_task if fast_task else {}
         if not final.get("ok"):
             return {"approved": False, "reason": "Modelo decisor falhou", "fast": fast, "final": final}
         response = final["response"]
@@ -469,10 +496,87 @@ class TraderRuntime:
                 "confidence": confidence,
             }
         critic_system, critic_prompt = build_critic_prompt(candidate, response, self.latest_news, config)
-        critic = await self.safe_ai_call("critic", critic_model, candidate["symbol"], critic_system, critic_prompt, timeout=70)
+        critic = await self.safe_ai_call("critic", critic_model, candidate["symbol"], critic_system, critic_prompt, timeout=42)
         critic_response = critic.get("response") or {}
         if critic.get("ok") and (critic_response.get("veto") is True or critic_response.get("risk_level") == "red"):
             return {"approved": False, "reason": "Critico vetou a entrada", "decision": response, "critic": critic_response, "fast": fast}
+        consensus = {
+            "enabled": False,
+            "tier": 1,
+            "stake_amount": max(1.0, float(config.get("iqoption_amount", 1))),
+            "stake_source": "base",
+            "votes": [],
+        }
+        if is_binary:
+            fast_response = fast.get("response") or {}
+            final_direction = _binary_direction(decision)
+            fast_direction = _binary_direction(fast_response.get("decision"))
+            critic_direction = _binary_direction(critic_response.get("preferred_decision") or critic_response.get("decision"))
+            recovery = candidate.get("recovery_context") or {}
+            recovery_stage = int(recovery.get("stage") or 0)
+            core_votes = [
+                _vote("fast_filter", fast_model, fast_direction, fast_response, fast),
+                _vote("decision", decision_model, final_direction, response, final),
+                _vote("critic", critic_model, critic_direction, critic_response, critic),
+            ]
+            core_agreement = sum(1 for item in core_votes if item.get("direction") == final_direction)
+            consensus_config = config.get("iqoption_consensus_stakes") or {}
+            min_votes = int(consensus_config.get("min_votes", 2))
+            recovery_min_votes = int(consensus_config.get("recovery_min_votes", 3))
+            consensus = {
+                "enabled": bool(consensus_config.get("enabled", True)),
+                "direction": final_direction,
+                "tier": core_agreement,
+                "core_agreement": core_agreement,
+                "recovery_stage": recovery_stage,
+                "votes": core_votes,
+                "stake_amount": max(1.0, float(config.get("iqoption_amount", 1))),
+                "stake_source": "base",
+            }
+            if core_agreement < min_votes:
+                return {
+                    "approved": False,
+                    "reason": "Consenso minimo nao confirmado",
+                    "decision": response,
+                    "critic": critic_response,
+                    "fast": fast_response,
+                    "consensus": consensus,
+                }
+            if recovery_stage > 0 and core_agreement < recovery_min_votes:
+                return {
+                    "approved": False,
+                    "reason": "Trio da morte nao confirmou gale",
+                    "decision": response,
+                    "critic": critic_response,
+                    "fast": fast_response,
+                    "consensus": consensus,
+                }
+            if fast_direction and fast_direction != final_direction and critic_direction and critic_direction != final_direction:
+                return {
+                    "approved": False,
+                    "reason": "Trio da morte divergente",
+                    "decision": response,
+                    "critic": critic_response,
+                    "fast": fast_response,
+                    "consensus": consensus,
+                }
+            extra_votes: list[dict[str, Any]] = []
+            if core_agreement >= 3:
+                extra_votes = await self.extra_premium_votes(models, candidate, system, prompt, final_direction)
+                consensus["votes"] = core_votes + extra_votes
+            tier = core_agreement
+            if core_agreement >= 3:
+                for item in extra_votes:
+                    if item.get("direction") == final_direction:
+                        tier += 1
+                    else:
+                        break
+            stake_amount = self.consensus_stake_amount(config, tier)
+            consensus.update({
+                "tier": tier,
+                "stake_amount": stake_amount,
+                "stake_source": f"consensus_{tier}_votes",
+            })
         return {
             "approved": True,
             "symbol": candidate["symbol"],
@@ -486,7 +590,57 @@ class TraderRuntime:
             "decision": response,
             "critic": critic_response,
             "fast": fast.get("response", {}),
+            "consensus": consensus,
+            "stake_amount": consensus.get("stake_amount") if is_binary else None,
+            "stake_source": consensus.get("stake_source") if is_binary else "position_pct",
+            "trio": {
+                "fast": _binary_direction((fast.get("response") or {}).get("decision")) if is_binary else None,
+                "final": _binary_direction(decision) if is_binary else None,
+                "critic": _binary_direction(critic_response.get("preferred_decision") or critic_response.get("decision")) if is_binary else None,
+            },
         }
+
+    async def extra_premium_votes(
+        self,
+        models: dict[str, Any],
+        candidate: dict[str, Any],
+        system: str,
+        prompt: str,
+        final_direction: str | None,
+    ) -> list[dict[str, Any]]:
+        votes: list[dict[str, Any]] = []
+        seen = {
+            str(models.get("fast_filter") or ""),
+            str(models.get("decision") or ""),
+            str(models.get("critic") or ""),
+        }
+        tasks: list[tuple[str, str, asyncio.Task]] = []
+        for role in ["premium_4", "premium_5"]:
+            model = str(models.get(role) or "").strip()
+            if not model or model in seen:
+                continue
+            seen.add(model)
+            tasks.append((role, model, asyncio.create_task(self.safe_ai_call(role, model, candidate["symbol"], system, prompt, timeout=32))))
+        for role, model, task in tasks:
+            result = await task
+            response = result.get("response") or {}
+            votes.append(_vote(role, model, _binary_direction(response.get("decision")), response, result))
+            if final_direction and votes[-1].get("direction") != final_direction:
+                # Premium tiers are chained: if the fourth voter fails, we do not wait
+                # for a higher tier to compensate the disagreement.
+                continue
+        return votes
+
+    def consensus_stake_amount(self, config: dict[str, Any], tier: int) -> float:
+        base = max(1.0, float(config.get("iqoption_amount", 1)))
+        consensus_config = config.get("iqoption_consensus_stakes") or {}
+        if not consensus_config.get("enabled", True):
+            return base
+        tiers = consensus_config.get("tiers") or {}
+        for key in [str(int(tier)), "2"]:
+            if key in tiers:
+                return max(1.0, float(tiers[key]))
+        return base
 
     async def safe_ai_call(
         self,
@@ -712,3 +866,26 @@ def _num(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _binary_direction(value: Any) -> str | None:
+    text = str(value or "").upper().strip()
+    if text in {"CALL", "BUY", "LONG", "ENTER_LONG", "ACIMA"}:
+        return "CALL"
+    if text in {"PUT", "SELL", "SHORT", "ENTER_SHORT", "ABAIXO"}:
+        return "PUT"
+    return None
+
+
+def _vote(role: str, model: Any, direction: str | None, response: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "role": role,
+        "model": str(model or ""),
+        "ok": bool(result.get("ok")),
+        "direction": direction,
+        "confidence": normalize_confidence(response.get("confidence")),
+        "risk_level": response.get("risk_level"),
+        "latency_ms": response.get("_latency_ms"),
+        "summary": str(response.get("reasoning_summary") or response.get("reason") or "")[:280],
+        "error": result.get("error"),
+    }

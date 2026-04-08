@@ -16,8 +16,20 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "iqoption_gale_multiplier": 2.35,
     "iqoption_gale_payout_pct": 85,
     "iqoption_gale_max_amount": 100,
-    "market_poll_seconds": 1,
-    "decision_poll_seconds": 5,
+    "iqoption_consensus_stakes": {
+        "enabled": True,
+        "min_votes": 2,
+        "recovery_min_votes": 3,
+        "require_core_unanimous_for_recovery": True,
+        "tiers": {
+            "2": 10,
+            "3": 25,
+            "4": 50,
+            "5": 100,
+        },
+    },
+    "market_poll_seconds": 0.35,
+    "decision_poll_seconds": 3,
     "news_poll_seconds": 300,
     "cooldown_minutes": 30,
     "max_trades_per_day": 3,
@@ -40,10 +52,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_drawdown_pct": 8,
     },
     "models": {
-        "fast_filter": "devstral-small-2:24b",
-        "decision": "gpt-oss:20b",
-        "critic": "qwen3-coder-next",
-        "report": "qwen3-coder-next",
+        "fast_filter": "meta/llama-4-maverick-17b-128e-instruct (NVIDIA)",
+        "decision": "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)",
+        "critic": "mistralai/devstral-2-123b-instruct-2512 (NVIDIA)",
+        "premium_4": "openai/gpt-oss-120b (NVIDIA)",
+        "premium_5": "qwen/qwen3-coder-480b-a35b-instruct (NVIDIA)",
+        "report": "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)",
     },
     "platforms": {
         "binance_spot": {
@@ -449,8 +463,9 @@ def build_critic_prompt(
     }
     user = (
         "Procure falhas, armadilhas, RSI esticado, volatilidade ruim, liquidez fraca, noticia de risco e RR falso. "
+        "Para operacoes binarias demo, tambem diga qual direcao voce preferiria agora: CALL, PUT ou WAIT. "
         f"{critic_rule} Retorne JSON exatamente assim: "
-        '{"veto":false,"risk_level":"green|yellow|red","reason":"curto","must_wait_minutes":0}'
+        '{"veto":false,"risk_level":"green|yellow|red","preferred_decision":"WAIT|CALL|PUT","reason":"curto","must_wait_minutes":0}'
         f"\n\nDADOS:\n{json.dumps(payload, ensure_ascii=False)}"
     )
     return system, user
