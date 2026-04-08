@@ -1342,7 +1342,7 @@ class TraderRuntime:
             return
         if len(self.db.open_trades()) >= int(config.get("max_open_positions", 1)):
             return
-        decision_cooldown_seconds = max(1.0, float(config.get("cooldown_minutes", 30)) * 60)
+        decision_cooldown_seconds = max(0.5, float(config.get("analysis_cooldown_seconds", 1.5)))
         if time.time() - self.last_decision_at < decision_cooldown_seconds:
             return
         guard = self.risk_guard(config)
@@ -2077,6 +2077,22 @@ class TraderRuntime:
             and tier < int(gate_profile["invalid_block_tier"])
         ):
             reason = f"Aprendizado bloqueou no perfil {gate_profile['key']}: muitos votos nulos exigem {gate_profile['invalid_block_tier']}/5"
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
+            return {
+                "approved": False,
+                "reason": reason,
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
+        if (
+            recovery_stage <= 0
+            and tier <= 3
+            and specialist_cautions
+            and guard_confirm_count == 0
+        ):
+            reason = "Especialista sinalizou cautela e os premiums nao confirmaram a entrada"
             self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
                 "approved": False,
