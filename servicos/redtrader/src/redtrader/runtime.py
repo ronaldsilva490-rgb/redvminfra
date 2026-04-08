@@ -40,6 +40,7 @@ class TraderRuntime:
         self.last_trade_at = float(self.db.get_kv("last_trade_at", 0) or 0)
         self.last_decision_at = 0.0
         self.last_wait_event_at = 0.0
+        self.asset_cooldowns: dict[str, float] = {}
         self.queues: set[asyncio.Queue] = set()
         self.cycle_lock = asyncio.Lock()
         self.market_lock = asyncio.Lock()
@@ -250,6 +251,7 @@ class TraderRuntime:
             item for item in candidates
             if item["technical_score"] >= min_score
             and now - float(((item.get("snapshot") or {}).get("ts") or now)) <= max_age
+            and float(self.asset_cooldowns.get(item["symbol"], 0) or 0) <= now
         ]
         if not candidates:
             if time.time() - self.last_wait_event_at > 300:
@@ -280,10 +282,18 @@ class TraderRuntime:
             try:
                 order = await self.iqoption.buy(candidate["symbol"], iq_action, amount, expiration_minutes)
             except Exception as exc:
+                error_text = repr(exc)
+                cooldown_seconds = 180 if "not available" in error_text or "Cannot purchase" in error_text else 25
+                self.asset_cooldowns[candidate["symbol"]] = time.time() + cooldown_seconds
                 self.publish(
                     "trade:error",
                     "IQ Option demo recusou a abertura agora",
-                    {"symbol": candidate["symbol"], "action": iq_action, "error": repr(exc)},
+                    {
+                        "symbol": candidate["symbol"],
+                        "action": iq_action,
+                        "error": error_text,
+                        "asset_cooldown_seconds": cooldown_seconds,
+                    },
                 )
                 return
             self.set_iqoption_balance(order.get("balance_after_open"))
@@ -368,12 +378,22 @@ class TraderRuntime:
 
     def iq_recovery_state(self) -> dict[str, Any]:
         state = self.db.get_kv("iqoption_recovery_state", {}) or {}
+        if not state.get("last_symbol") and state.get("last_trade_id"):
+            try:
+                last_trade_id = int(state.get("last_trade_id"))
+                for trade in self.db.list_trades(200):
+                    if int(trade.get("id") or 0) == last_trade_id:
+                        state = {**state, "last_symbol": trade.get("symbol")}
+                        break
+            except Exception:
+                pass
         return {
             "stage": int(state.get("stage") or 0),
             "loss_total": float(state.get("loss_total") or 0),
             "last_result": state.get("last_result") or "neutral",
             "last_trade_id": state.get("last_trade_id"),
             "last_side": state.get("last_side"),
+            "last_symbol": state.get("last_symbol"),
             "blocked_until": float(state.get("blocked_until") or 0),
             "blocked_symbol": state.get("blocked_symbol"),
             "blocked_side": state.get("blocked_side"),
@@ -388,7 +408,15 @@ class TraderRuntime:
 
     def update_iq_recovery_after_close(self, config: dict[str, Any], trade: dict[str, Any], pnl_brl: float, result_status: str) -> None:
         if not config.get("iqoption_gale_enabled", True):
-            self.set_iq_recovery_state({"stage": 0, "loss_total": 0.0, "last_result": result_status, "last_trade_id": trade["id"], "note": "gale desligado"})
+            self.set_iq_recovery_state({
+                "stage": 0,
+                "loss_total": 0.0,
+                "last_result": result_status,
+                "last_trade_id": trade["id"],
+                "last_side": trade.get("side"),
+                "last_symbol": trade.get("symbol"),
+                "note": "gale desligado",
+            })
             return
         metadata = trade.get("metadata") or {}
         stage = int(metadata.get("gale_stage") or 0)
@@ -400,6 +428,7 @@ class TraderRuntime:
                 "last_result": "win",
                 "last_trade_id": trade["id"],
                 "last_side": trade.get("side"),
+                "last_symbol": trade.get("symbol"),
                 "note": f"win no gale {stage}; mindset resetado",
             })
             return
@@ -413,6 +442,7 @@ class TraderRuntime:
                     "last_result": "loss_reset",
                     "last_trade_id": trade["id"],
                     "last_side": trade.get("side"),
+                    "last_symbol": trade.get("symbol"),
                     "last_loss_total": loss_total,
                     "blocked_until": time.time() + float(config.get("post_gale2_cooldown_minutes", 6)) * 60,
                     "blocked_symbol": trade.get("symbol"),
@@ -426,6 +456,7 @@ class TraderRuntime:
                 "last_result": "loss",
                 "last_trade_id": trade["id"],
                 "last_side": trade.get("side"),
+                "last_symbol": trade.get("symbol"),
                 "note": f"loss detectado; proxima operacao e gale {stage + 1} com reanalise completa",
             })
             return
@@ -435,6 +466,7 @@ class TraderRuntime:
             "last_result": "equal",
             "last_trade_id": trade["id"],
             "last_side": trade.get("side"),
+            "last_symbol": trade.get("symbol"),
             "note": "empate; sem recuperacao ativa",
         })
 
@@ -577,15 +609,6 @@ class TraderRuntime:
                     "fast": fast_response,
                     "consensus": consensus,
                 }
-            if recovery_stage > 0 and core_agreement < recovery_min_votes:
-                return {
-                    "approved": False,
-                    "reason": "Trio da morte nao confirmou gale",
-                    "decision": response,
-                    "critic": critic_response,
-                    "fast": fast_response,
-                    "consensus": consensus,
-                }
             if fast_direction and fast_direction != final_direction and critic_direction and critic_direction != final_direction:
                 return {
                     "approved": False,
@@ -608,7 +631,20 @@ class TraderRuntime:
                         break
             code_context = candidate.get("code_context") or {}
             last_side = _binary_direction(recovery.get("last_side"))
-            same_side_recovery = recovery_stage > 0 and last_side == final_direction
+            same_symbol_recovery = recovery_stage > 0 and str(recovery.get("last_symbol") or "") == str(candidate["symbol"])
+            same_side_recovery = same_symbol_recovery and last_side == final_direction
+            required_recovery_votes = recovery_min_votes if same_symbol_recovery else min(recovery_min_votes, min_votes)
+            if recovery_stage > 0 and core_agreement < required_recovery_votes:
+                consensus["required_recovery_votes"] = required_recovery_votes
+                consensus["same_symbol_recovery"] = same_symbol_recovery
+                return {
+                    "approved": False,
+                    "reason": f"Trio da morte exige {required_recovery_votes} votos no gale",
+                    "decision": response,
+                    "critic": critic_response,
+                    "fast": fast_response,
+                    "consensus": consensus,
+                }
             same_side_loss_streak = _same_side_loss_streak(
                 candidate.get("recent_trade_feedback") or [],
                 candidate["symbol"],
@@ -618,6 +654,7 @@ class TraderRuntime:
             if same_side_recovery and direction_exhausted and tier < 4:
                 consensus.update({
                     "tier": tier,
+                    "same_symbol_recovery": same_symbol_recovery,
                     "same_side_recovery": True,
                     "same_side_loss_streak": same_side_loss_streak,
                     "code_context": code_context,
@@ -634,6 +671,7 @@ class TraderRuntime:
             if same_side_loss_streak >= 2 and tier < 4:
                 consensus.update({
                     "tier": tier,
+                    "same_symbol_recovery": same_symbol_recovery,
                     "same_side_recovery": same_side_recovery,
                     "same_side_loss_streak": same_side_loss_streak,
                     "code_context": code_context,
@@ -652,6 +690,7 @@ class TraderRuntime:
                 "tier": tier,
                 "stake_amount": stake_amount,
                 "stake_source": f"consensus_{tier}_votes",
+                "same_symbol_recovery": same_symbol_recovery,
                 "same_side_recovery": same_side_recovery,
                 "same_side_loss_streak": same_side_loss_streak,
                 "code_context": code_context,
@@ -743,7 +782,8 @@ class TraderRuntime:
         recovery_min_votes = int(consensus_config.get("recovery_min_votes", 3))
         code_context = candidate.get("code_context") or {}
         code_preferred = code_context.get("preferred_direction")
-        same_side_recovery = recovery_stage > 0 and _binary_direction(recovery.get("last_side")) == final_direction
+        same_symbol_recovery = recovery_stage > 0 and str(recovery.get("last_symbol") or "") == str(candidate["symbol"])
+        same_side_recovery = same_symbol_recovery and _binary_direction(recovery.get("last_side")) == final_direction
         same_side_loss_streak = _same_side_loss_streak(
             candidate.get("recent_trade_feedback") or [],
             candidate["symbol"],
@@ -760,6 +800,7 @@ class TraderRuntime:
             "counts": counts,
             "stake_amount": max(1.0, float(config.get("iqoption_amount", 1))),
             "stake_source": "base",
+            "same_symbol_recovery": same_symbol_recovery,
             "same_side_recovery": same_side_recovery,
             "same_side_loss_streak": same_side_loss_streak,
             "code_context": code_context,
@@ -782,10 +823,12 @@ class TraderRuntime:
                 "critic": {},
                 "fast": {},
             }
-        if recovery_stage > 0 and tier < recovery_min_votes:
+        required_recovery_votes = recovery_min_votes if same_symbol_recovery else min(recovery_min_votes, min_votes)
+        consensus["required_recovery_votes"] = required_recovery_votes
+        if recovery_stage > 0 and tier < required_recovery_votes:
             return {
                 "approved": False,
-                "reason": "Recuperacao exige pelo menos 3 votos validos",
+                "reason": f"Recuperacao exige pelo menos {required_recovery_votes} votos validos",
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},

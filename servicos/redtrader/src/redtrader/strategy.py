@@ -517,6 +517,21 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
         "Seu trabalho e decidir com base nos dados, sem prometer lucro e sem inventar informacao. "
         "Responda SOMENTE JSON valido, sem markdown."
     )
+    recovery_context = candidate.get("recovery_context") or {}
+    recovery_stage = int(recovery_context.get("stage") or 0)
+    recovery_same_symbol = recovery_stage > 0 and str(recovery_context.get("last_symbol") or "") == str(candidate.get("symbol") or "")
+    recovery_guidance = {
+        "scope": "same_symbol" if recovery_same_symbol else ("cross_symbol" if recovery_stage > 0 else "none"),
+        "rule": (
+            "mesmo ativo do loss: repetir direcao exige evidencia muito mais forte"
+            if recovery_same_symbol
+            else (
+                "recuperacao em outro ativo: nao trate como repeticao do mesmo setup; aprove se o setup atual for claro"
+                if recovery_stage > 0
+                else "sem recuperacao ativa"
+            )
+        ),
+    }
     payload = {
         "mode": mode,
         "risk_profile": {
@@ -534,7 +549,8 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
             "allowed_decisions": allowed_decisions,
         },
         "candidate": candidate,
-        "recovery_context": candidate.get("recovery_context") or {},
+        "recovery_context": recovery_context,
+        "recovery_guidance": recovery_guidance,
         "recent_trade_feedback": candidate.get("recent_trade_feedback") or [],
         "news": (
             {
@@ -552,7 +568,8 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
         "Analise o candidato abaixo respeitando o perfil operacional informado. "
         "Se o modo for iqoption_demo_binary_only, ativos OTC como EURUSD-OTC sao permitidos e devem ser avaliados como CALL/PUT demo. "
         "Use code_context como pre-leitura quantitativa: se ele apontar exaustao/armadilha, trate como alerta forte. "
-        "Em gale/recuperacao, repetir a mesma direcao do loss anterior exige evidencia muito mais forte; se houver duvida, responda WAIT. "
+        "Em gale/recuperacao, repetir a mesma direcao do loss anterior exige evidencia muito mais forte SOMENTE se for o mesmo ativo do loss. "
+        "Se recovery_guidance.scope for cross_symbol, nao trate como repeticao do mesmo setup: decida pelo candidato atual com agressividade demo. "
         f"{news_rule} Se estiver ambiguo demais, responda WAIT.\n\n"
         "Retorne JSON exatamente neste formato:\n"
         "{"
@@ -599,6 +616,21 @@ def build_critic_prompt(
         f"Perfil operacional paper: {profile['label']}. {profile['critic_prompt']} "
         "Responda SOMENTE JSON valido."
     )
+    recovery_context = candidate.get("recovery_context") or {}
+    recovery_stage = int(recovery_context.get("stage") or 0)
+    recovery_same_symbol = recovery_stage > 0 and str(recovery_context.get("last_symbol") or "") == str(candidate.get("symbol") or "")
+    recovery_guidance = {
+        "scope": "same_symbol" if recovery_same_symbol else ("cross_symbol" if recovery_stage > 0 else "none"),
+        "rule": (
+            "vete repeticao se mesmo ativo + mesma direcao + exaustao"
+            if recovery_same_symbol
+            else (
+                "outro ativo: critique o setup atual, nao puna automaticamente por repetir CALL/PUT do ativo anterior"
+                if recovery_stage > 0
+                else "sem recuperacao ativa"
+            )
+        ),
+    }
     payload = {
         "risk_profile": {
             "key": profile["key"],
@@ -607,6 +639,8 @@ def build_critic_prompt(
         },
         "candidate": candidate,
         "decision": decision,
+        "recovery_context": recovery_context,
+        "recovery_guidance": recovery_guidance,
         "news": (
             {
                 "risk_hint": {
@@ -621,7 +655,8 @@ def build_critic_prompt(
     }
     user = (
         "Procure falhas, armadilhas, RSI esticado, volatilidade ruim, liquidez fraca, noticia de risco e RR falso. "
-        "Se recovery_context indicar gale e a decisao repetir a direcao do ultimo loss enquanto code_context apontar exaustao, prefira vetar ou WAIT. "
+        "Se recovery_guidance.scope for same_symbol e a decisao repetir a direcao do ultimo loss enquanto code_context apontar exaustao, prefira vetar ou WAIT. "
+        "Se recovery_guidance.scope for cross_symbol, nao vete apenas por repetir CALL/PUT do ativo anterior; critique o setup atual. "
         "Para operacoes binarias demo, tambem diga qual direcao voce preferiria agora: CALL, PUT ou WAIT. "
         f"{critic_rule} Retorne JSON exatamente assim: "
         '{"veto":false,"risk_level":"green|yellow|red","preferred_decision":"WAIT|CALL|PUT","reason":"curto","must_wait_minutes":0}'
