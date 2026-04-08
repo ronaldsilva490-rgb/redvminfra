@@ -629,6 +629,8 @@ function renderConfig(config) {
   const form = $("#configForm");
   renderRiskProfileSelect(config);
   form.auto_enabled.value = String(Boolean(config.auto_enabled));
+  form.market_provider.value = config.market_provider || "binance_spot";
+  form.execution_provider.value = config.execution_provider || "internal_paper";
   for (const name of [
     "initial_balance_brl",
     "position_pct",
@@ -641,6 +643,8 @@ function renderConfig(config) {
     "min_ai_confidence",
     "min_risk_reward",
     "max_hold_minutes",
+    "iqoption_amount",
+    "iqoption_expiration_minutes",
   ]) {
     form.elements[name].value = config[name] ?? "";
   }
@@ -717,6 +721,8 @@ function collectConfig() {
   return {
     auto_enabled: form.auto_enabled.value === "true",
     risk_profile: form.risk_profile.value,
+    market_provider: form.market_provider.value,
+    execution_provider: form.execution_provider.value,
     initial_balance_brl: Number(form.initial_balance_brl.value),
     position_pct: Number(form.position_pct.value),
     cooldown_minutes: Number(form.cooldown_minutes.value),
@@ -728,6 +734,8 @@ function collectConfig() {
     min_ai_confidence: Number(form.min_ai_confidence.value),
     min_risk_reward: Number(form.min_risk_reward.value),
     max_hold_minutes: Number(form.max_hold_minutes.value),
+    iqoption_amount: Number(form.iqoption_amount.value),
+    iqoption_expiration_minutes: Number(form.iqoption_expiration_minutes.value),
     symbols: splitSymbols(form.symbols.value),
     tradable_symbols: splitSymbols(form.tradable_symbols.value),
     models: {

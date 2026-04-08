@@ -35,6 +35,7 @@ async def lifespan(_app: FastAPI):
     finally:
         await runtime.stop()
         await runtime.platforms.close()
+        await runtime.iqoption.close()
         await runtime.market.close()
         await runtime.news_client.close()
         await runtime.ai.close()

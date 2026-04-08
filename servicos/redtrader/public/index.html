@@ -275,6 +275,20 @@
               Perfil de risco
               <select name="risk_profile" id="riskProfileSelect"></select>
             </label>
+            <label>
+              Mercado
+              <select name="market_provider">
+                <option value="binance_spot">Binance Spot</option>
+                <option value="iqoption_demo">IQ Option Demo</option>
+              </select>
+            </label>
+            <label>
+              Execução
+              <select name="execution_provider">
+                <option value="internal_paper">Paper interno</option>
+                <option value="iqoption_demo">IQ Option Demo</option>
+              </select>
+            </label>
             <div id="riskProfileInfo" class="profile-card wide"></div>
             <label>
               Saldo inicial BRL
@@ -318,11 +332,19 @@
             </label>
             <label>
               Tempo máx. em trade min
-              <input name="max_hold_minutes" type="number" min="1" step="1" />
+              <input name="max_hold_minutes" type="number" min="0.5" step="0.5" />
+            </label>
+            <label>
+              Valor IQ demo
+              <input name="iqoption_amount" type="number" min="1" step="1" />
+            </label>
+            <label>
+              Expiração IQ min
+              <input name="iqoption_expiration_minutes" type="number" min="1" step="1" />
             </label>
             <label>
               Pares observados
-              <input name="symbols" type="text" placeholder="BTCUSDT,ETHUSDT,SOLUSDT" />
+              <input name="symbols" type="text" placeholder="EURUSD-OTC,GBPUSD-OTC ou BTCUSDT,ETHUSDT" />
             </label>
             <label>
               Pares operáveis

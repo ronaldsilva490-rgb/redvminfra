@@ -4,6 +4,7 @@ from typing import Any
 
 from .ai import RedSystemsAI
 from .db import Database
+from .iqoption_demo import IQOptionDemoAdapter
 from .market import BinanceMarketClient
 from .news import NewsClient
 from .platforms import PlatformRegistry
@@ -25,6 +26,7 @@ class TraderRuntime:
         self.market = market
         self.news_client = news
         self.ai = ai
+        self.iqoption = IQOptionDemoAdapter()
         self.task: asyncio.Task | None = None
         self.running = False
         self.latest_snapshots: dict[str, dict[str, Any]] = {}
@@ -99,7 +101,10 @@ class TraderRuntime:
                 await self.refresh_platforms(config)
 
             symbols = config.get("symbols") or DEFAULT_CONFIG["symbols"]
-            snapshots = await self.market.fetch_symbols(symbols)
+            if config.get("market_provider") == "iqoption_demo":
+                snapshots = await self.iqoption.fetch_symbols(symbols)
+            else:
+                snapshots = await self.market.fetch_symbols(symbols)
             self.latest_snapshots = snapshots
             for symbol, snapshot in snapshots.items():
                 self.db.save_snapshot(symbol, snapshot)
@@ -137,12 +142,34 @@ class TraderRuntime:
         max_hold_seconds = float(config.get("max_hold_minutes", 60)) * 60
         fee_pct = float(config.get("paper_fee_pct_per_side", 0.1))
         for trade in open_trades:
+            metadata = trade.get("metadata") or {}
             snapshot = self.latest_snapshots.get(trade["symbol"]) or {}
             price = ((snapshot.get("features") or {}).get("last_price")) or ((snapshot.get("ticker") or {}).get("last_price"))
             if not price:
+                price = float(trade["entry_price"])
+            if metadata.get("execution_provider") == "iqoption_demo":
+                expiry_seconds = float(metadata.get("expiry_seconds") or 60)
+                held = time.time() - float(trade["opened_at"])
+                if held < expiry_seconds + 5:
+                    continue
+                try:
+                    result = await self.iqoption.check_result(metadata["iqoption_order_id"])
+                    self.set_iqoption_balance(result.get("balance_after_close"))
+                    pnl_brl = float(result.get("profit") or 0)
+                    pnl_pct = pnl_brl / max(float(trade["position_brl"]), 1) * 100
+                    status = result.get("status") or "unknown"
+                    self.db.close_trade(int(trade["id"]), float(price), pnl_brl, pnl_pct, f"iqoption_demo:{status}")
+                    self.publish(
+                        "trade:closed",
+                        f"IQ Option demo fechou {trade['symbol']}: {status}",
+                        {"trade_id": trade["id"], "provider": "iqoption_demo", "result": result, "pnl_brl": pnl_brl},
+                    )
+                except Exception as exc:
+                    self.publish("trade:error", "Falha ao checar resultado IQ Option demo", {"trade_id": trade["id"], "error": repr(exc)})
                 continue
             entry = float(trade["entry_price"])
-            change_pct = (float(price) / entry - 1) * 100
+            direction = -1 if str(trade.get("side") or "").upper() == "PUT" else 1
+            change_pct = ((float(price) / entry - 1) * 100) * direction
             held = time.time() - float(trade["opened_at"])
             reason = None
             if change_pct <= -float(trade["stop_loss_pct"]):
@@ -188,23 +215,47 @@ class TraderRuntime:
         if not decision.get("approved"):
             self.publish("trade:skipped", "Comite vetou a entrada", decision)
             return
+        execution_provider = config.get("execution_provider") or "internal_paper"
+        side = str(candidate.get("action") or "ENTER_LONG").upper()
         position_brl = max(1.0, self.wallet_summary()["equity_brl"] * float(decision["position_pct"]) / 100)
+        metadata = {"decision": decision, "candidate": candidate, "execution_provider": execution_provider}
+        if execution_provider == "iqoption_demo":
+            amount = max(1.0, float(config.get("iqoption_amount", 1)))
+            expiration_minutes = max(1, int(config.get("iqoption_expiration_minutes", 1)))
+            iq_action = "put" if side == "PUT" else "call"
+            try:
+                order = await self.iqoption.buy(candidate["symbol"], iq_action, amount, expiration_minutes)
+            except Exception as exc:
+                self.publish(
+                    "trade:error",
+                    "IQ Option demo recusou a abertura agora",
+                    {"symbol": candidate["symbol"], "action": iq_action, "error": repr(exc)},
+                )
+                return
+            self.set_iqoption_balance(order.get("balance_after_open"))
+            position_brl = amount
+            metadata.update({
+                "iqoption_order_id": order["order_id"],
+                "iqoption_action": iq_action,
+                "iqoption_order": order,
+                "expiry_seconds": expiration_minutes * 60,
+            })
         trade_id = self.db.open_trade(
             candidate["symbol"],
-            "LONG",
+            side,
             float(candidate["price"]),
             position_brl,
             float(decision["stop_loss_pct"]),
             float(decision["take_profit_pct"]),
             decision.get("reasoning_summary", ""),
-            metadata={"decision": decision, "candidate": candidate},
+            metadata=metadata,
         )
         self.last_trade_at = time.time()
         self.db.set_kv("last_trade_at", self.last_trade_at)
         self.publish(
             "trade:opened",
-            f"Paper trade aberto em {candidate['symbol']}",
-            {"trade_id": trade_id, "symbol": candidate["symbol"], "position_brl": position_brl, "entry_price": candidate["price"]},
+            f"{'IQ Option demo' if execution_provider == 'iqoption_demo' else 'Paper'} trade aberto em {candidate['symbol']}",
+            {"trade_id": trade_id, "symbol": candidate["symbol"], "side": side, "position_brl": position_brl, "entry_price": candidate["price"], "provider": execution_provider},
         )
 
     def risk_guard(self, config: dict[str, Any]) -> dict[str, Any]:
@@ -246,8 +297,9 @@ class TraderRuntime:
         position_pct = min(float(config.get("position_pct", 20)), _num(response.get("position_pct")) or float(config.get("position_pct", 20)))
         stop_loss_pct = _num(response.get("stop_loss_pct")) or candidate["stop_loss_pct"]
         take_profit_pct = _num(response.get("take_profit_pct")) or candidate["take_profit_pct"]
+        allowed_decision = str(candidate.get("action") or "ENTER_LONG").upper()
         final_ok = (
-            decision == "ENTER_LONG"
+            decision == allowed_decision
             and confidence >= float(config.get("min_ai_confidence", 72))
             and risk_reward >= float(config.get("min_risk_reward", 1.3))
         )
@@ -337,6 +389,20 @@ class TraderRuntime:
                 change_pct = (float(price) / float(item["entry_price"]) - 1) * 100
                 open_unrealized += float(item["position_brl"]) * change_pct / 100
         closed_count = wins + losses
+        iq_balance = self.iqoption_balance()
+        if config.get("execution_provider") == "iqoption_demo" and iq_balance is not None:
+            return {
+                "initial_balance_brl": initial,
+                "realized_pnl_brl": realized,
+                "unrealized_pnl_brl": 0.0,
+                "equity_brl": iq_balance,
+                "closed_trades": closed_count,
+                "wins": wins,
+                "losses": losses,
+                "win_rate_pct": (wins / closed_count * 100) if closed_count else 0,
+                "last_trade_at": self.last_trade_at,
+                "source": "iqoption_practice_balance",
+            }
         return {
             "initial_balance_brl": initial,
             "realized_pnl_brl": realized,
@@ -348,6 +414,28 @@ class TraderRuntime:
             "win_rate_pct": (wins / closed_count * 100) if closed_count else 0,
             "last_trade_at": self.last_trade_at,
         }
+
+    def iqoption_balance(self) -> float | None:
+        for row in self.platform_statuses:
+            if row.get("id") == "iqoption_experimental" and row.get("practice_balance") is not None:
+                try:
+                    return float(row["practice_balance"])
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    def set_iqoption_balance(self, balance: Any) -> None:
+        try:
+            value = float(balance)
+        except (TypeError, ValueError):
+            return
+        for row in self.platform_statuses:
+            if row.get("id") == "iqoption_experimental":
+                row["practice_balance"] = value
+                row["practice_selected"] = True
+                row["connected"] = True
+                row["status"] = "connected"
+                return
 
     def demo_audit_summary(self) -> dict[str, Any]:
         config = self.config()

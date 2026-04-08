@@ -7,6 +7,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "risk_profile": "balanced",
     "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
     "tradable_symbols": ["BTCUSDT", "ETHUSDT"],
+    "market_provider": "binance_spot",
+    "execution_provider": "internal_paper",
+    "iqoption_amount": 1.0,
+    "iqoption_expiration_minutes": 1,
     "market_poll_seconds": 5,
     "news_poll_seconds": 300,
     "cooldown_minutes": 30,
@@ -129,12 +133,12 @@ RISK_PROFILES: dict[str, dict[str, Any]] = {
         "description": "Experimental: busca mais entradas no paper e aceita setups mais arriscados.",
         "prompt": (
             "Perfil experimental. Procure oportunidades de curtissimo prazo com mais apetite a risco, "
-            "mas nunca aprove se os dados estiverem incoerentes, se houver noticia vermelha ou se a saida "
-            "nao estiver clara."
+            "sem tratar noticia vermelha como veto automatico em conta demo. Noticia vermelha vira risco alto: "
+            "so aprove se liquidez, stop, saida e momentum estiverem claros."
         ),
         "critic_prompt": (
-            "Vete apenas riscos graves: noticia vermelha, baixa liquidez, spread alto, dados incoerentes, "
-            "ausencia de stop ou risco/retorno absurdo."
+            "Vete apenas riscos graves: noticia diretamente destrutiva para o ativo, baixa liquidez, spread alto, "
+            "dados incoerentes, ausencia de stop ou risco/retorno absurdo."
         ),
         "settings": {
             "position_pct": 40.0,
@@ -146,7 +150,7 @@ RISK_PROFILES: dict[str, dict[str, Any]] = {
             "min_technical_score": 55,
             "min_ai_confidence": 55,
             "min_risk_reward": 1.0,
-            "max_hold_minutes": 30,
+            "max_hold_minutes": 0.5,
         },
     },
 }
@@ -234,11 +238,20 @@ def score_snapshot(snapshot: dict[str, Any], config: dict[str, Any], news_risk: 
     checks: dict[str, str] = {}
     score = 0
 
-    trend_count = sum(1 for key in ["trend_1m", "trend_5m", "trend_15m"] if features.get(key) == "up")
-    if trend_count >= 2:
+    is_binary = snapshot.get("provider") == "iqoption_demo"
+    up_count = sum(1 for key in ["trend_1m", "trend_5m", "trend_15m"] if features.get(key) == "up")
+    down_count = sum(1 for key in ["trend_1m", "trend_5m", "trend_15m"] if features.get(key) == "down")
+    action = "CALL" if is_binary else "ENTER_LONG"
+    if is_binary and down_count >= 2:
+        action = "PUT"
         checks["trend"] = "pass"
         score += 22
-    elif trend_count == 1:
+    elif up_count >= 2:
+        action = "CALL" if is_binary else "ENTER_LONG"
+        checks["trend"] = "pass"
+        score += 22
+    elif up_count == 1 or (is_binary and down_count == 1):
+        action = "PUT" if is_binary and down_count > up_count else action
         checks["trend"] = "neutral"
         score += 8
     else:
@@ -248,10 +261,17 @@ def score_snapshot(snapshot: dict[str, Any], config: dict[str, Any], news_risk: 
     change_5m_15 = _num(features.get("change_5m_15"))
     rsi_1m = _num(features.get("rsi_1m"))
     rsi_5m = _num(features.get("rsi_5m"))
-    if change_1m_15 > 0.04 and change_5m_15 > -0.05 and 45 <= rsi_1m <= 72 and 42 <= rsi_5m <= 74:
+    if action == "PUT":
+        momentum_pass = change_1m_15 < -0.04 and change_5m_15 < 0.05 and 28 <= rsi_1m <= 58 and 26 <= rsi_5m <= 62
+        momentum_neutral = change_1m_15 < 0 and rsi_1m > 20
+    else:
+        momentum_pass = change_1m_15 > 0.04 and change_5m_15 > -0.05 and 45 <= rsi_1m <= 72 and 42 <= rsi_5m <= 74
+        momentum_neutral = change_1m_15 > 0 and rsi_1m < 78
+
+    if momentum_pass:
         checks["momentum"] = "pass"
         score += 22
-    elif change_1m_15 > 0 and rsi_1m < 78:
+    elif momentum_neutral:
         checks["momentum"] = "neutral"
         score += 10
     else:
@@ -305,6 +325,9 @@ def score_snapshot(snapshot: dict[str, Any], config: dict[str, Any], news_risk: 
         "take_profit_pct": take_profit_pct,
         "risk_reward": risk_reward,
         "position_pct": float(config.get("position_pct", 20)),
+        "trade_type": "binary_options" if is_binary else "spot_long",
+        "action": action,
+        "expiration_minutes": int(config.get("iqoption_expiration_minutes", 1)) if is_binary else None,
         "features": features,
         "snapshot": compact_snapshot(snapshot),
     }
@@ -312,14 +335,34 @@ def score_snapshot(snapshot: dict[str, Any], config: dict[str, Any], news_risk: 
 
 def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None, config: dict[str, Any]) -> tuple[str, str]:
     profile = risk_profile_context(config)
+    is_binary = candidate.get("trade_type") == "binary_options"
+    allowed_decisions = ["WAIT", "AVOID", "CALL", "PUT"] if is_binary else ["WAIT", "AVOID", "ENTER_LONG"]
+    decision_schema = "|".join(allowed_decisions)
+    market_scope = (
+        "operacoes binarias DEMO/PRACTICE na IQ Option, com ativos OTC permitidos e expiracao curta"
+        if is_binary
+        else "paper trading cripto spot, sem alavancagem"
+    )
+    mode = "iqoption_demo_binary_only" if is_binary else "paper_trading_only"
+    if profile["key"] == "full_aggressive":
+        news_rule = (
+            "No perfil full agressivo, news_risk=fail significa risco alto, nao veto automatico. "
+            "Pode aprovar SOMENTE em demo se o setup tecnico, liquidez, stop, alvo e saida estiverem claros. "
+            "Se aprovar com noticia vermelha, reduza position_pct e explique a invalidacao."
+        )
+    else:
+        news_rule = (
+            "Nunca aprove entrada sem stop, sem plano de saida, com noticia vermelha "
+            "ou com dados contraditorios."
+        )
     system = (
-        "Voce e um comite de risco para paper trading cripto spot, sem alavancagem. "
+        f"Voce e um comite de risco para {market_scope}. "
         f"Perfil operacional paper: {profile['label']}. {profile['prompt']} "
         "Seu trabalho e decidir com base nos dados, sem prometer lucro e sem inventar informacao. "
         "Responda SOMENTE JSON valido, sem markdown."
     )
     payload = {
-        "mode": "paper_trading_only",
+        "mode": mode,
         "risk_profile": {
             "key": profile["key"],
             "label": profile["label"],
@@ -332,18 +375,18 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
             "max_position_pct": config.get("position_pct"),
             "daily_stop_loss_pct": config.get("daily_stop_loss_pct"),
             "cooldown_minutes": config.get("cooldown_minutes"),
-            "allowed_decisions": ["WAIT", "AVOID", "ENTER_LONG"],
+            "allowed_decisions": allowed_decisions,
         },
         "candidate": candidate,
         "news": news or {},
     }
     user = (
         "Analise o candidato abaixo respeitando o perfil operacional informado. "
-        "Mesmo no perfil agressivo, nunca aprove entrada sem stop, sem plano de saida, com noticia vermelha "
-        "ou com dados contraditorios. Se estiver ambiguo demais, responda WAIT.\n\n"
+        "Se o modo for iqoption_demo_binary_only, ativos OTC como EURUSD-OTC sao permitidos e devem ser avaliados como CALL/PUT demo. "
+        f"{news_rule} Se estiver ambiguo demais, responda WAIT.\n\n"
         "Retorne JSON exatamente neste formato:\n"
         "{"
-        '"decision":"WAIT|AVOID|ENTER_LONG",'
+        f'"decision":"{decision_schema}",'
         '"symbol":"BTCUSDT|ETHUSDT|SOLUSDT|NONE",'
         '"confidence":0,'
         '"position_pct":0,'
@@ -368,8 +411,21 @@ def build_critic_prompt(
     config: dict[str, Any],
 ) -> tuple[str, str]:
     profile = risk_profile_context(config)
+    is_binary = candidate.get("trade_type") == "binary_options"
+    market_scope = (
+        "operacoes binarias DEMO/PRACTICE na IQ Option, com ativos OTC permitidos"
+        if is_binary
+        else "paper trading cripto spot"
+    )
+    if profile["key"] == "full_aggressive":
+        critic_rule = (
+            "No full agressivo, noticia vermelha so deve vetar se for diretamente destrutiva para o ativo "
+            "ou se vier junto de liquidez/spread/volatilidade ruins."
+        )
+    else:
+        critic_rule = "Se houver risco relevante, vete."
     system = (
-        "Voce e o critico de risco. Tente vetar entradas ruins em paper trading cripto spot. "
+        f"Voce e o critico de risco. Tente vetar entradas ruins em {market_scope}. "
         f"Perfil operacional paper: {profile['label']}. {profile['critic_prompt']} "
         "Responda SOMENTE JSON valido."
     )
@@ -385,7 +441,7 @@ def build_critic_prompt(
     }
     user = (
         "Procure falhas, armadilhas, RSI esticado, volatilidade ruim, liquidez fraca, noticia de risco e RR falso. "
-        "Se houver risco relevante, vete. Retorne JSON exatamente assim: "
+        f"{critic_rule} Retorne JSON exatamente assim: "
         '{"veto":false,"risk_level":"green|yellow|red","reason":"curto","must_wait_minutes":0}'
         f"\n\nDADOS:\n{json.dumps(payload, ensure_ascii=False)}"
     )
