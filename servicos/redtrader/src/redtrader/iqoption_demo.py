@@ -34,8 +34,13 @@ class IQOptionDemoAdapter:
     async def buy(self, active: str, action: str, amount: float, expiration_minutes: int) -> dict[str, Any]:
         return await asyncio.to_thread(self._buy_sync, active, action, amount, expiration_minutes)
 
-    async def check_result(self, order_id: str | int) -> dict[str, Any]:
-        return await asyncio.to_thread(self._check_result_sync, order_id)
+    async def check_result(
+        self,
+        order_id: str | int,
+        max_wait_seconds: float = 2.5,
+        poll_interval: float = 0.2,
+    ) -> dict[str, Any]:
+        return await asyncio.to_thread(self._check_result_sync, order_id, max_wait_seconds, poll_interval)
 
     def _ensure_connected(self) -> Any:
         if not settings.iqoption_enabled:
@@ -293,9 +298,14 @@ class IQOptionDemoAdapter:
                 "balance_after_open": api.get_balance(),
             }
 
-    def _check_result_sync(self, order_id: str | int) -> dict[str, Any]:
+    def _check_result_sync(
+        self,
+        order_id: str | int,
+        max_wait_seconds: float = 2.5,
+        poll_interval: float = 0.2,
+    ) -> dict[str, Any]:
         target = str(order_id)
-        deadline = time.time() + 5
+        deadline = time.time() + max(0.6, float(max_wait_seconds or 0))
         while time.time() < deadline:
             with self.lock:
                 api = self._ensure_connected()
@@ -317,7 +327,7 @@ class IQOptionDemoAdapter:
                         "profit": profit,
                         "balance_after_close": api.get_balance(),
                     }
-            time.sleep(0.4)
+            time.sleep(max(0.05, float(poll_interval or 0.2)))
         raise RuntimeError(f"iqoption_result_not_ready:{target}")
 
     @staticmethod

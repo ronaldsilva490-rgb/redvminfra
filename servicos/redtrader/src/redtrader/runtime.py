@@ -117,6 +117,7 @@ class TraderRuntime:
         self.iqoption = IQOptionDemoAdapter()
         self.task: asyncio.Task | None = None
         self.market_task: asyncio.Task | None = None
+        self.exit_task: asyncio.Task | None = None
         self.running = False
         self.latest_snapshots: dict[str, dict[str, Any]] = {}
         self.latest_news: dict[str, Any] = {}
@@ -136,6 +137,7 @@ class TraderRuntime:
         self.queues: set[asyncio.Queue] = set()
         self.cycle_lock = asyncio.Lock()
         self.market_lock = asyncio.Lock()
+        self.exit_lock = asyncio.Lock()
         if self.db.get_kv("config") is None:
             self.db.set_kv("config", DEFAULT_CONFIG)
         if self.db.get_kv("wallet") is None:
@@ -164,6 +166,7 @@ class TraderRuntime:
         self.running = True
         self.task = asyncio.create_task(self.loop())
         self.market_task = asyncio.create_task(self.market_loop())
+        self.exit_task = asyncio.create_task(self.exit_loop())
         self.publish("runtime", "RED Trader iniciado", {})
 
     async def stop(self) -> None:
@@ -178,6 +181,12 @@ class TraderRuntime:
             self.market_task.cancel()
             try:
                 await self.market_task
+            except asyncio.CancelledError:
+                pass
+        if self.exit_task:
+            self.exit_task.cancel()
+            try:
+                await self.exit_task
             except asyncio.CancelledError:
                 pass
         self.publish("runtime", "RED Trader parado", {})
@@ -205,6 +214,18 @@ class TraderRuntime:
             config = self.config()
             min_sleep = 1 if config.get("market_provider") == "iqoption_demo" else 10
             await asyncio.sleep(max(min_sleep, float(config.get("decision_poll_seconds", 5)) - elapsed))
+
+    async def exit_loop(self) -> None:
+        while self.running:
+            started = time.time()
+            config = self.config()
+            try:
+                await self.handle_exits(config)
+            except Exception as exc:
+                self.publish("trade:error", "Falha no loop rapido de fechamento", {"error": repr(exc)})
+            elapsed = time.time() - started
+            min_sleep = 0.2 if config.get("market_provider") == "iqoption_demo" else 0.5
+            await asyncio.sleep(max(min_sleep, float(config.get("exit_poll_seconds", 0.25)) - elapsed))
 
     async def cycle(self, reason: str = "manual") -> None:
         async with self.cycle_lock:
@@ -1273,69 +1294,80 @@ class TraderRuntime:
         await self.send_whatsapp_notification(text, {"event": "trade_rejected", "symbol": symbol, "market_type": payload["market_type"], "next_open_ts": next_open_ts})
 
     async def handle_exits(self, config: dict[str, Any]) -> None:
-        open_trades = self.db.open_trades()
-        if not open_trades:
-            return
-        max_hold_seconds = float(config.get("max_hold_minutes", 60)) * 60
-        fee_pct = float(config.get("paper_fee_pct_per_side", 0.1))
-        for trade in open_trades:
-            metadata = trade.get("metadata") or {}
-            snapshot = self.latest_snapshots.get(trade["symbol"]) or {}
-            price = ((snapshot.get("features") or {}).get("last_price")) or ((snapshot.get("ticker") or {}).get("last_price"))
-            if not price:
-                price = float(trade["entry_price"])
-            if metadata.get("execution_provider") == "iqoption_demo":
-                expiry_seconds = float(metadata.get("expiry_seconds") or 60)
-                held = time.time() - float(trade["opened_at"])
-                if held < expiry_seconds + 1:
-                    continue
-                try:
-                    result = await self.iqoption.check_result(metadata["iqoption_order_id"])
-                    self.set_iqoption_balance(result.get("balance_after_close"))
-                    pnl_brl = float(result.get("profit") or 0)
-                    pnl_pct = pnl_brl / max(float(trade["position_brl"]), 1) * 100
-                    status = result.get("status") or "unknown"
-                    self.store_trade_snapshot(int(trade["id"]), trade["symbol"], "close")
-                    self.db.close_trade(int(trade["id"]), float(price), pnl_brl, pnl_pct, f"iqoption_demo:{status}")
-                    self.update_iq_recovery_after_close(config, trade, pnl_brl, status)
-                    self.publish(
-                        "trade:closed",
-                        f"IQ Option demo fechou {trade['symbol']}: {status}",
-                        {"trade_id": trade["id"], "provider": "iqoption_demo", "result": result, "pnl_brl": pnl_brl},
-                    )
-                    asyncio.create_task(self.notify_whatsapp_trade_closed(config, trade, status, pnl_brl, result))
-                except Exception as exc:
-                    if "iqoption_result_not_ready" in repr(exc) and held > expiry_seconds + 240:
-                        self.db.close_trade(int(trade["id"]), float(price), 0.0, 0.0, "iqoption_demo:unknown_timeout")
+        async with self.exit_lock:
+            open_trades = self.db.open_trades()
+            if not open_trades:
+                return
+            max_hold_seconds = float(config.get("max_hold_minutes", 60)) * 60
+            fee_pct = float(config.get("paper_fee_pct_per_side", 0.1))
+            for trade in open_trades:
+                metadata = trade.get("metadata") or {}
+                snapshot = self.latest_snapshots.get(trade["symbol"]) or {}
+                price = ((snapshot.get("features") or {}).get("last_price")) or ((snapshot.get("ticker") or {}).get("last_price"))
+                if not price:
+                    price = float(trade["entry_price"])
+                if metadata.get("execution_provider") == "iqoption_demo":
+                    expiry_seconds = float(metadata.get("expiry_seconds") or 60)
+                    held = time.time() - float(trade["opened_at"])
+                    settle_grace = min(0.35, max(0.1, expiry_seconds * 0.01))
+                    if held < expiry_seconds + settle_grace:
+                        continue
+                    try:
+                        quick_wait = 1.6 if expiry_seconds <= 60 else 2.5
+                        poll_interval = 0.15 if expiry_seconds <= 60 else 0.25
+                        result = await self.iqoption.check_result(
+                            metadata["iqoption_order_id"],
+                            max_wait_seconds=quick_wait,
+                            poll_interval=poll_interval,
+                        )
+                        self.set_iqoption_balance(result.get("balance_after_close"))
+                        pnl_brl = float(result.get("profit") or 0)
+                        pnl_pct = pnl_brl / max(float(trade["position_brl"]), 1) * 100
+                        status = result.get("status") or "unknown"
+                        self.store_trade_snapshot(int(trade["id"]), trade["symbol"], "close")
+                        self.db.close_trade(int(trade["id"]), float(price), pnl_brl, pnl_pct, f"iqoption_demo:{status}")
+                        self.update_iq_recovery_after_close(config, trade, pnl_brl, status)
                         self.publish(
                             "trade:closed",
-                            f"IQ Option demo expirou sem retorno auditavel em {trade['symbol']}",
-                            {"trade_id": trade["id"], "provider": "iqoption_demo", "error": repr(exc)},
+                            f"IQ Option demo fechou {trade['symbol']}: {status}",
+                            {"trade_id": trade["id"], "provider": "iqoption_demo", "result": result, "pnl_brl": pnl_brl},
                         )
-                        asyncio.create_task(self.notify_whatsapp_trade_closed(config, trade, "unknown_timeout", 0.0, {"error": repr(exc)}))
-                        continue
-                    self.publish("trade:error", "Falha ao checar resultado IQ Option demo", {"trade_id": trade["id"], "error": repr(exc)})
-                continue
-            entry = float(trade["entry_price"])
-            direction = -1 if str(trade.get("side") or "").upper() == "PUT" else 1
-            change_pct = ((float(price) / entry - 1) * 100) * direction
-            held = time.time() - float(trade["opened_at"])
-            reason = None
-            if change_pct <= -float(trade["stop_loss_pct"]):
-                reason = "stop_loss"
-            elif change_pct >= float(trade["take_profit_pct"]):
-                reason = "take_profit"
-            elif held >= max_hold_seconds:
-                reason = "max_hold"
-            if reason:
-                pnl_pct = change_pct - (fee_pct * 2)
-                pnl_brl = float(trade["position_brl"]) * pnl_pct / 100
-                self.db.close_trade(int(trade["id"]), float(price), pnl_brl, pnl_pct, reason)
-                self.publish(
-                    "trade:closed",
-                    f"Trade {trade['symbol']} encerrado por {reason}",
-                    {"trade_id": trade["id"], "exit_price": price, "pnl_brl": pnl_brl, "pnl_pct": pnl_pct},
-                )
+                        self.broadcast_status()
+                        asyncio.create_task(self.notify_whatsapp_trade_closed(config, trade, status, pnl_brl, result))
+                    except Exception as exc:
+                        if "iqoption_result_not_ready" in repr(exc) and held > expiry_seconds + 240:
+                            self.db.close_trade(int(trade["id"]), float(price), 0.0, 0.0, "iqoption_demo:unknown_timeout")
+                            self.publish(
+                                "trade:closed",
+                                f"IQ Option demo expirou sem retorno auditavel em {trade['symbol']}",
+                                {"trade_id": trade["id"], "provider": "iqoption_demo", "error": repr(exc)},
+                            )
+                            self.broadcast_status()
+                            asyncio.create_task(self.notify_whatsapp_trade_closed(config, trade, "unknown_timeout", 0.0, {"error": repr(exc)}))
+                            continue
+                        self.publish("trade:error", "Falha ao checar resultado IQ Option demo", {"trade_id": trade["id"], "error": repr(exc)})
+                    continue
+                entry = float(trade["entry_price"])
+                direction = -1 if str(trade.get("side") or "").upper() == "PUT" else 1
+                change_pct = ((float(price) / entry - 1) * 100) * direction
+                held = time.time() - float(trade["opened_at"])
+                reason = None
+                if change_pct <= -float(trade["stop_loss_pct"]):
+                    reason = "stop_loss"
+                elif change_pct >= float(trade["take_profit_pct"]):
+                    reason = "take_profit"
+                elif held >= max_hold_seconds:
+                    reason = "max_hold"
+                if reason:
+                    pnl_pct = change_pct - (fee_pct * 2)
+                    pnl_brl = float(trade["position_brl"]) * pnl_pct / 100
+                    self.db.close_trade(int(trade["id"]), float(price), pnl_brl, pnl_pct, reason)
+                    self.publish(
+                        "trade:closed",
+                        f"Trade {trade['symbol']} encerrado por {reason}",
+                        {"trade_id": trade["id"], "exit_price": price, "pnl_brl": pnl_brl, "pnl_pct": pnl_pct},
+                    )
+                    self.broadcast_status()
 
     async def maybe_enter(self, config: dict[str, Any]) -> None:
         if not config.get("auto_enabled", True):
