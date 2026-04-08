@@ -468,6 +468,41 @@ label {
   border-color: rgba(255, 105, 114, 0.38);
 }
 
+.consensus-banner.active {
+  border-color: rgba(242, 122, 26, 0.42);
+}
+
+.committee-progress {
+  position: relative;
+  overflow: hidden;
+  min-height: 18px;
+  border: 1px solid #263342;
+  border-radius: 999px;
+  background: rgba(2, 4, 7, 0.68);
+}
+
+.committee-progress-fill {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 16px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(227, 27, 35, 0.92), rgba(242, 122, 26, 0.9));
+  color: white;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  transition: width 0.18s ease;
+}
+
+.committee-progress.idle .committee-progress-fill {
+  width: 0;
+  padding: 0;
+  color: transparent;
+}
+
 .section-title {
   display: grid;
   gap: 4px;
@@ -523,6 +558,22 @@ label {
 
 .model-card.wait header strong {
   color: var(--yellow);
+}
+
+.model-card.running {
+  border-color: rgba(242, 122, 26, 0.45);
+}
+
+.model-card.running header strong {
+  color: #ffbf8c;
+}
+
+.model-card.error {
+  border-color: rgba(255, 105, 114, 0.42);
+}
+
+.model-card.error header strong {
+  color: var(--bad);
 }
 
 .model-card p {

@@ -11,6 +11,8 @@ const roles = [
   ["learning", "Aprendizado"],
 ];
 
+const committeeRoles = roles.filter(([role]) => role !== "learning");
+
 const state = {
   status: null,
   models: [],
@@ -144,6 +146,7 @@ function renderStatus() {
   renderHeader(data);
   renderSymbols(data);
   renderForms(data.config || {});
+  renderCommitteeProgress(data);
   renderConsensusBanner(data);
   renderModelCards(data);
   renderTrades(data);
@@ -264,6 +267,34 @@ function learningSummary(role, data) {
   return "Memória operacional aguardando perdas/fechamentos suficientes para refletir.";
 }
 
+function currentCommittee(data) {
+  return data.committee || {};
+}
+
+function renderCommitteeProgress(data) {
+  const wrap = $("#committeeProgress");
+  const fill = $("#committeeProgressFill");
+  if (!wrap || !fill) return;
+  const committee = currentCommittee(data);
+  const progress = committee.progress || {};
+  const total = Number(progress.total || 0);
+  const completed = Number(progress.completed || 0);
+  const running = Number(progress.running || 0);
+  const percent = Number(progress.percent || 0);
+  const symbol = committee.symbol || "-";
+  if (!total) {
+    wrap.className = "committee-progress idle";
+    fill.style.width = "0%";
+    fill.textContent = "Aguardando o proximo comite";
+    return;
+  }
+  wrap.className = `committee-progress ${committee.active ? "active" : "done"}`;
+  fill.style.width = `${Math.max(4, Math.min(100, percent))}%`;
+  fill.textContent = committee.active
+    ? `${symbol} · ${completed}/${total} concluidos · ${running} em andamento`
+    : `${symbol} · ${completed}/${total} concluidos`;
+}
+
 function latestCommitteeEvent(data) {
   const events = data.events || [];
   for (let i = events.length - 1; i >= 0; i -= 1) {
@@ -357,6 +388,101 @@ function renderEvents(data) {
       <small>${timeLabel(event.ts)}</small>
     </article>
   `).join("");
+}
+
+function renderConsensusBanner(data) {
+  const el = $("#consensusBanner");
+  if (!el) return;
+  const committee = currentCommittee(data);
+  const progress = committee.progress || {};
+  const result = committee.result || {};
+  if (committee.symbol) {
+    const css = committee.active ? "active" : result.approved ? "ok" : result.reason ? "blocked" : "";
+    const direction = result.direction || committee.candidate?.direction || "-";
+    const profile = committee.profile || data.config?.risk_profile || "-";
+    const minVotes = Number(result.min_votes || 0);
+    const validVotes = Number(result.valid_votes || progress.completed || 0);
+    const invalidVotes = Number(result.invalid_votes || 0);
+    const statusLine = committee.active
+      ? `Analisando ${committee.symbol}`
+      : result.approved
+        ? "Entrada liberada"
+        : result.reason
+          ? "Entrada bloqueada"
+          : "Ultimo comite concluido";
+    const reasonLine = committee.active
+      ? "Todos os cards abaixo pertencem ao mesmo ciclo e ao mesmo par."
+      : result.reason || "Aguardando o proximo consenso.";
+    el.className = `consensus-banner ${css}`.trim();
+    el.innerHTML = `
+      <strong>${statusLine}</strong>
+      <span>${escapeHtml(profile)} · ${escapeHtml(direction)} · validos ${validVotes} · minimo ${minVotes || "-"} · nulos/WAIT ${invalidVotes}</span>
+      <small>${escapeHtml(reasonLine)}</small>
+    `;
+    return;
+  }
+  const event = latestCommitteeEvent(data);
+  if (!event) {
+    el.className = "consensus-banner";
+    el.innerHTML = `<span>Aguardando o proximo consenso do comite.</span>`;
+    return;
+  }
+  const payload = event.data || {};
+  el.className = `consensus-banner ${event.type === "trade:opened" ? "ok" : "blocked"}`;
+  el.innerHTML = `
+    <strong>${event.type === "trade:opened" ? "Entrada liberada" : "Entrada bloqueada"}</strong>
+    <span>${escapeHtml(payload.reason || event.message || "-")}</span>
+  `;
+}
+
+function renderModelCards(data) {
+  const committee = currentCommittee(data);
+  const roleMap = committee.roles || {};
+  $("#modelCards").innerHTML = roles.map(([role, label]) => {
+    if (role === "learning") {
+      const learning = data.iq_learning || {};
+      const learningModel = data.config?.iqoption_learning?.model || learning.model || role;
+      return `
+        <article class="model-card wait">
+          <header>
+            <span>${escapeHtml(label)}</span>
+            <strong>MEMORIA</strong>
+          </header>
+          <p>${escapeHtml(shortModel(learningModel))}</p>
+          <small>${escapeHtml(committee.symbol || state.selectedSymbol || "-")} · regras ${Number((learning.lessons || []).length || 0)} · bloqueios ${Number((learning.avoid_patterns || []).length || 0)}</small>
+          <em>${escapeHtml(learningSummary(role, data)).slice(0, 230)}</em>
+        </article>
+      `;
+    }
+    const item = roleMap[role] || {};
+    const vote = directionLabel(item.decision || "WAIT");
+    const valid = vote === "CALL" || vote === "PUT";
+    const status = String(item.status || (item.model ? "queued" : "missing")).toLowerCase();
+    const stateLabel = {
+      queued: "NA FILA",
+      running: "ANALISANDO",
+      done: vote,
+      timeout: "TIMEOUT",
+      error: "ERRO",
+      missing: "SEM MODELO",
+      reused: "REAPROVEITADO",
+    }[status] || vote;
+    const summary = item.summary || "Aguardando o proximo ciclo.";
+    const latency = item.latency_ms ? `${item.latency_ms}ms` : "--";
+    const configuredModel = data.config?.models?.[role];
+    const css = valid ? vote.toLowerCase() : status === "running" ? "running" : status === "error" || status === "timeout" ? "error" : "wait";
+    return `
+      <article class="model-card ${css}">
+        <header>
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(stateLabel)}</strong>
+        </header>
+        <p>${escapeHtml(shortModel(item.model || configuredModel || role))}</p>
+        <small>${escapeHtml(item.symbol || committee.symbol || "-")} · conf ${Number(item.confidence || 0).toFixed(0)} · ${latency}</small>
+        <em>${escapeHtml(summary).slice(0, 230)}</em>
+      </article>
+    `;
+  }).join("");
 }
 
 function collectBasicConfig() {

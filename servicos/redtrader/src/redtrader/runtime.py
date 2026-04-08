@@ -115,6 +115,8 @@ class TraderRuntime:
         self.platforms = PlatformRegistry()
         self.platform_statuses: list[dict[str, Any]] = []
         self.last_platforms_at = 0.0
+        self.committee_state: dict[str, Any] = {}
+        self.committee_cycle_seq = 0
         self.models: list[str] = []
         self.last_news_at = 0.0
         self.last_trade_at = float(self.db.get_kv("last_trade_at", 0) or 0)
@@ -255,6 +257,132 @@ class TraderRuntime:
         except Exception as exc:
             self.publish("platforms:error", "Falha ao sincronizar plataformas", {"error": repr(exc)})
         return self.platform_statuses
+
+    @staticmethod
+    def _committee_roles() -> list[str]:
+        return ["fast_filter", "decision", "critic", "premium_4", "premium_5"]
+
+    def _committee_progress(self) -> dict[str, Any]:
+        roles = self.committee_state.get("roles") or {}
+        total = sum(1 for item in roles.values() if item.get("counts_for_progress", True))
+        completed = sum(
+            1
+            for item in roles.values()
+            if item.get("counts_for_progress", True) and item.get("status") in {"done", "error", "timeout", "reused", "missing"}
+        )
+        running = sum(
+            1
+            for item in roles.values()
+            if item.get("counts_for_progress", True) and item.get("status") == "running"
+        )
+        queued = max(0, total - completed - running)
+        percent = round((completed / total) * 100, 1) if total else 100.0
+        return {
+            "total": total,
+            "completed": completed,
+            "running": running,
+            "queued": queued,
+            "percent": percent,
+        }
+
+    def begin_committee_cycle(self, candidate: dict[str, Any], models: dict[str, Any], gate_profile: dict[str, Any]) -> int:
+        self.committee_cycle_seq += 1
+        cycle_id = self.committee_cycle_seq
+        symbol = str(candidate.get("symbol") or "-")
+        seen: set[str] = set()
+        roles: dict[str, Any] = {}
+        for role in self._committee_roles():
+            model = str(models.get(role) or "").strip()
+            status = "queued"
+            summary = "Na fila para analisar este par."
+            counts_for_progress = True
+            if not model:
+                status = "missing"
+                summary = "Modelo nao configurado para este papel."
+            elif model in seen:
+                status = "reused"
+                summary = "Mesmo modelo ja esta cobrindo outro papel deste ciclo."
+                counts_for_progress = False
+            else:
+                seen.add(model)
+            roles[role] = {
+                "role": role,
+                "model": model,
+                "symbol": symbol,
+                "status": status,
+                "decision": "WAIT",
+                "confidence": 0.0,
+                "latency_ms": None,
+                "summary": summary,
+                "error": None,
+                "updated_at": time.time(),
+                "counts_for_progress": counts_for_progress,
+            }
+        self.committee_state = {
+            "id": cycle_id,
+            "active": True,
+            "symbol": symbol,
+            "started_at": time.time(),
+            "finished_at": None,
+            "profile": str(gate_profile.get("key") or ""),
+            "candidate": {
+                "symbol": symbol,
+                "direction": candidate.get("action"),
+                "technical_score": candidate.get("score"),
+                "risk_reward": candidate.get("risk_reward"),
+                "recovery_stage": ((candidate.get("recovery_context") or {}).get("stage") or 0),
+            },
+            "roles": roles,
+            "progress": {},
+            "result": None,
+        }
+        self.committee_state["progress"] = self._committee_progress()
+        self.broadcast_status()
+        return cycle_id
+
+    def update_committee_role(self, cycle_id: int, role: str, status: str, **extra: Any) -> None:
+        if not self.committee_state or self.committee_state.get("id") != cycle_id:
+            return
+        role_state = (self.committee_state.get("roles") or {}).get(role)
+        if not role_state:
+            return
+        role_state.update(extra)
+        role_state["status"] = status
+        role_state["updated_at"] = time.time()
+        self.committee_state["progress"] = self._committee_progress()
+        self.broadcast_status()
+
+    def finalize_committee_cycle(
+        self,
+        cycle_id: int,
+        *,
+        approved: bool,
+        reason: str,
+        consensus: dict[str, Any] | None = None,
+        action: str | None = None,
+    ) -> None:
+        if not self.committee_state or self.committee_state.get("id") != cycle_id:
+            return
+        self.committee_state["active"] = False
+        self.committee_state["finished_at"] = time.time()
+        votes = (consensus or {}).get("votes") or []
+        valid_votes = [vote for vote in votes if vote.get("valid") and vote.get("direction") in {"CALL", "PUT"}]
+        self.committee_state["result"] = {
+            "approved": approved,
+            "reason": reason,
+            "direction": action or (consensus or {}).get("direction"),
+            "tier": int((consensus or {}).get("tier") or len(valid_votes)),
+            "valid_votes": len(valid_votes),
+            "invalid_votes": int((consensus or {}).get("invalid_vote_count") or max(0, len(votes) - len(valid_votes))),
+            "min_votes": int(
+                (consensus or {}).get("required_recovery_votes")
+                or (consensus or {}).get("min_votes")
+                or 0
+            ),
+            "votes": votes,
+        }
+        self.committee_state["progress"] = self._committee_progress()
+        self.broadcast_status()
 
     def _notify_enabled(self) -> bool:
         return bool(settings.redia_notify_url and settings.redia_notify_token and settings.redia_notify_to)
@@ -1620,6 +1748,8 @@ class TraderRuntime:
         max_decision_latency = int(config.get("max_decision_latency_ms", 8000) or 8000)
         call_timeout = max(3.0, min(8.0, max_decision_latency / 1000))
         roles = ["fast_filter", "decision", "critic", "premium_4", "premium_5"]
+        gate_profile = _iq_gate_profile(config)
+        cycle_id = self.begin_committee_cycle(candidate, models, gate_profile)
         tasks: list[tuple[str, str, asyncio.Task]] = []
         seen: set[str] = set()
         for role in roles:
@@ -1628,10 +1758,20 @@ class TraderRuntime:
                 continue
             seen.add(model)
             tasks.append((role, model, asyncio.create_task(
-                self.bounded_ai_call(role, model, candidate["symbol"], system, prompt, timeout=call_timeout)
+                self.bounded_ai_call(
+                    role,
+                    model,
+                    candidate["symbol"],
+                    system,
+                    prompt,
+                    timeout=call_timeout,
+                    committee_id=cycle_id,
+                )
             )))
         if not tasks:
-            return {"approved": False, "reason": "Nenhum modelo configurado para IQ demo"}
+            reason = "Nenhum modelo configurado para IQ demo"
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason)
+            return {"approved": False, "reason": reason}
 
         results: list[tuple[str, str, dict[str, Any]]] = []
         for role, model, task in tasks:
@@ -1670,7 +1810,6 @@ class TraderRuntime:
         recovery = candidate.get("recovery_context") or {}
         recovery_stage = int(recovery.get("stage") or 0)
         consensus_config = config.get("iqoption_consensus_stakes") or {}
-        gate_profile = _iq_gate_profile(config)
         min_votes = int(gate_profile["min_votes"])
         code_context = candidate.get("code_context") or {}
         code_preferred = code_context.get("preferred_direction")
@@ -1705,18 +1844,22 @@ class TraderRuntime:
             "learning_adjustment": learning_adjustment,
         }
         if not final_direction:
+            reason = "Comite empatou ou nao confirmou direcao"
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
                 "approved": False,
-                "reason": "Comite empatou ou nao confirmou direcao",
+                "reason": reason,
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
                 "fast": {},
             }
         if tier < min_votes:
+            reason = "Consenso minimo nao confirmado"
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
                 "approved": False,
-                "reason": "Consenso minimo nao confirmado",
+                "reason": reason,
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
@@ -1727,9 +1870,11 @@ class TraderRuntime:
             and invalid_vote_count >= int(gate_profile["invalid_block_count"])
             and tier < int(gate_profile["invalid_block_tier"])
         ):
+            reason = f"Aprendizado bloqueou no perfil {gate_profile['key']}: muitos votos nulos exigem {gate_profile['invalid_block_tier']}/5"
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
                 "approved": False,
-                "reason": f"Aprendizado bloqueou no perfil {gate_profile['key']}: muitos votos nulos exigem {gate_profile['invalid_block_tier']}/5",
+                "reason": reason,
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
@@ -1757,9 +1902,11 @@ class TraderRuntime:
                 required_recovery_votes = max(required_recovery_votes, int(gate_profile["learned_mid_min"]))
         consensus["required_recovery_votes"] = required_recovery_votes
         if recovery_stage > 0 and tier < required_recovery_votes:
+            reason = f"Recuperacao exige pelo menos {required_recovery_votes} votos validos"
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
                 "approved": False,
-                "reason": f"Recuperacao exige pelo menos {required_recovery_votes} votos validos",
+                "reason": reason,
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
@@ -1767,9 +1914,11 @@ class TraderRuntime:
             }
         same_side_recovery_min = int(gate_profile["same_side_recovery_min"])
         if recovery_stage > 0 and same_side_recovery and tier < same_side_recovery_min:
+            reason = f"Gale repetindo direcao do loss exige {same_side_recovery_min}/5 no perfil {gate_profile['key']}"
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
                 "approved": False,
-                "reason": f"Gale repetindo direcao do loss exige {same_side_recovery_min}/5 no perfil {gate_profile['key']}",
+                "reason": reason,
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
@@ -1777,9 +1926,11 @@ class TraderRuntime:
             }
         exhaustion_min = int(gate_profile["exhaustion_min"])
         if direction_exhausted and tier < exhaustion_min:
+            reason = f"Zona de exaustao exige pelo menos {exhaustion_min}/5 no perfil {gate_profile['key']}"
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
                 "approved": False,
-                "reason": f"Zona de exaustao exige pelo menos {exhaustion_min}/5 no perfil {gate_profile['key']}",
+                "reason": reason,
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
@@ -1787,9 +1938,11 @@ class TraderRuntime:
             }
         gale2_same_min = int(gate_profile["gale2_same_min"])
         if recovery_stage >= 2 and same_side_recovery and tier < gale2_same_min:
+            reason = f"Gale 2 na mesma direcao exige {gale2_same_min}/5 no perfil {gate_profile['key']}"
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
                 "approved": False,
-                "reason": f"Gale 2 na mesma direcao exige {gale2_same_min}/5 no perfil {gate_profile['key']}",
+                "reason": reason,
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
@@ -1797,9 +1950,11 @@ class TraderRuntime:
             }
         same_side_exhausted_min = int(gate_profile["same_side_exhausted_min"])
         if same_side_recovery and direction_exhausted and tier < same_side_exhausted_min:
+            reason = f"Gale na mesma direcao em zona de exaustao exige {same_side_exhausted_min}/5"
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
                 "approved": False,
-                "reason": f"Gale na mesma direcao em zona de exaustao exige {same_side_exhausted_min}/5",
+                "reason": reason,
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
@@ -1807,9 +1962,11 @@ class TraderRuntime:
             }
         same_side_loss_min = int(gate_profile["same_side_loss_min"])
         if same_side_loss_streak >= 2 and tier < same_side_loss_min:
+            reason = f"Sequencia recente perdeu na mesma direcao; exige {same_side_loss_min}/5"
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
                 "approved": False,
-                "reason": f"Sequencia recente perdeu na mesma direcao; exige {same_side_loss_min}/5",
+                "reason": reason,
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
@@ -1817,9 +1974,11 @@ class TraderRuntime:
             }
         code_wait_min = int(gate_profile["code_wait_min"])
         if code_preferred == "WAIT" and tier < code_wait_min:
+            reason = f"Codigo quantitativo pediu WAIT; perfil {gate_profile['key']} exige {code_wait_min}/5 para contrariar"
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
                 "approved": False,
-                "reason": f"Codigo quantitativo pediu WAIT; perfil {gate_profile['key']} exige {code_wait_min}/5 para contrariar",
+                "reason": reason,
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
@@ -1827,9 +1986,11 @@ class TraderRuntime:
             }
         code_conflict_min = int(gate_profile["code_conflict_min"])
         if code_preferred in {"CALL", "PUT"} and code_preferred != final_direction and tier < code_conflict_min:
+            reason = f"Modelos contrariaram o codigo; perfil {gate_profile['key']} exige {code_conflict_min}/5"
+            self.finalize_committee_cycle(cycle_id, approved=False, reason=reason, consensus=consensus)
             return {
                 "approved": False,
-                "reason": f"Modelos contrariaram o codigo; perfil {gate_profile['key']} exige {code_conflict_min}/5",
+                "reason": reason,
                 "consensus": consensus,
                 "decision": {},
                 "critic": {},
@@ -1848,6 +2009,13 @@ class TraderRuntime:
         })
         role_map = {role: result.get("response") or {} for role, _model, result in results}
         confidence = normalize_confidence(response.get("confidence"))
+        self.finalize_committee_cycle(
+            cycle_id,
+            approved=True,
+            reason=response.get("reasoning_summary", "") or "Consenso aprovado",
+            consensus=consensus,
+            action=final_direction,
+        )
         return {
             "approved": True,
             "symbol": candidate["symbol"],
@@ -1879,13 +2047,33 @@ class TraderRuntime:
         system: str,
         prompt: str,
         timeout: float,
+        committee_id: int | None = None,
     ) -> dict[str, Any]:
         try:
             return await asyncio.wait_for(
-                self.safe_ai_call(role, model, symbol, system, prompt, timeout=max(3, int(timeout))),
+                self.safe_ai_call(
+                    role,
+                    model,
+                    symbol,
+                    system,
+                    prompt,
+                    timeout=max(3, int(timeout)),
+                    committee_id=committee_id,
+                ),
                 timeout=timeout + 0.75,
             )
         except asyncio.TimeoutError:
+            if committee_id is not None:
+                self.update_committee_role(
+                    committee_id,
+                    role,
+                    "timeout",
+                    symbol=symbol,
+                    decision="WAIT",
+                    summary=f"Sem resposta util em {timeout:.2f}s.",
+                    error=f"timeout>{timeout:.2f}s",
+                    latency_ms=int(timeout * 1000),
+                )
             self.publish(
                 "ai:error",
                 f"{role} excedeu limite de latencia",
@@ -1955,10 +2143,20 @@ class TraderRuntime:
         system: str,
         prompt: str,
         timeout: int,
+        committee_id: int | None = None,
     ) -> dict[str, Any]:
         if not model:
             return {"ok": False, "error": "modelo nao configurado"}
         try:
+            if committee_id is not None:
+                self.update_committee_role(
+                    committee_id,
+                    role,
+                    "running",
+                    model=model,
+                    symbol=symbol,
+                    summary="Analisando o par agora.",
+                )
             self.publish("ai:start", f"{role} analisando {symbol}", {"role": role, "model": model, "symbol": symbol})
             response = await self.ai.chat_json(model, system, prompt, timeout=timeout)
             decision = str(response.get("decision") or response.get("risk_level") or "unknown")
@@ -1980,8 +2178,32 @@ class TraderRuntime:
                 f"{role} terminou: {decision}",
                 {"role": role, "model": model, "symbol": symbol, "latency_ms": response.get("_latency_ms"), "response": response},
             )
+            if committee_id is not None:
+                self.update_committee_role(
+                    committee_id,
+                    role,
+                    "done",
+                    model=model,
+                    symbol=symbol,
+                    decision=_binary_direction(response.get("decision") or response.get("preferred_decision")) or "WAIT",
+                    confidence=confidence,
+                    latency_ms=response.get("_latency_ms"),
+                    summary=str(summary)[:280] or "Resposta recebida.",
+                    error=None,
+                )
             return {"ok": True, "response": response}
         except Exception as exc:
+            if committee_id is not None:
+                self.update_committee_role(
+                    committee_id,
+                    role,
+                    "error",
+                    model=model,
+                    symbol=symbol,
+                    decision="WAIT",
+                    summary="Falhou neste ciclo.",
+                    error=repr(exc),
+                )
             self.publish("ai:error", f"{role} falhou", {"role": role, "model": model, "symbol": symbol, "error": repr(exc)})
             return {"ok": False, "error": repr(exc)}
 
@@ -2135,6 +2357,7 @@ class TraderRuntime:
             "iq_recovery": recovery_state,
             "platforms": self.platform_statuses,
             "iq_learning": self.iq_learning_state(),
+            "committee": self.committee_state,
             "models": self.models,
             "news": self.latest_news,
             "snapshots": self.latest_snapshots or self.db.list_snapshots(),
