@@ -263,7 +263,7 @@ class TraderRuntime:
             self.publish("trade:skipped", "Comite vetou a entrada", decision)
             return
         execution_provider = config.get("execution_provider") or "internal_paper"
-        side = str(candidate.get("action") or "ENTER_LONG").upper()
+        side = str(decision.get("action") or candidate.get("action") or "ENTER_LONG").upper()
         position_brl = max(1.0, self.wallet_summary()["equity_brl"] * float(decision["position_pct"]) / 100)
         metadata = {"decision": decision, "candidate": candidate, "execution_provider": execution_provider}
         if execution_provider == "iqoption_demo":
@@ -453,8 +453,10 @@ class TraderRuntime:
         stop_loss_pct = _num(response.get("stop_loss_pct")) or candidate["stop_loss_pct"]
         take_profit_pct = _num(response.get("take_profit_pct")) or candidate["take_profit_pct"]
         allowed_decision = str(candidate.get("action") or "ENTER_LONG").upper()
+        is_binary = candidate.get("trade_type") == "binary_options"
+        direction_ok = decision in {"CALL", "PUT"} if is_binary else decision == allowed_decision
         final_ok = (
-            decision == allowed_decision
+            direction_ok
             and confidence >= float(config.get("min_ai_confidence", 72))
             and risk_reward >= float(config.get("min_risk_reward", 1.3))
         )
@@ -474,6 +476,7 @@ class TraderRuntime:
         return {
             "approved": True,
             "symbol": candidate["symbol"],
+            "action": decision if is_binary else allowed_decision,
             "confidence": confidence,
             "position_pct": position_pct,
             "stop_loss_pct": stop_loss_pct,
