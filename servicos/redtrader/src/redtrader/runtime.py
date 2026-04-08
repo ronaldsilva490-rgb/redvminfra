@@ -244,7 +244,13 @@ class TraderRuntime:
             return
         candidates = build_candidates(self.latest_snapshots, config, self.latest_news)
         min_score = float(config.get("min_technical_score", 75))
-        candidates = [item for item in candidates if item["technical_score"] >= min_score]
+        now = time.time()
+        max_age = float(config.get("max_signal_age_seconds", 4))
+        candidates = [
+            item for item in candidates
+            if item["technical_score"] >= min_score
+            and now - float(((item.get("snapshot") or {}).get("ts") or now)) <= max_age
+        ]
         if not candidates:
             if time.time() - self.last_wait_event_at > 300:
                 self.last_wait_event_at = time.time()
@@ -332,6 +338,15 @@ class TraderRuntime:
 
     def risk_guard(self, config: dict[str, Any]) -> dict[str, Any]:
         now = time.time()
+        recovery = self.iq_recovery_state()
+        if recovery.get("last_result") == "loss_reset" and float(recovery.get("blocked_until") or 0) > now:
+            return {
+                "ok": False,
+                "reason": "Cooldown pos-gale 2 perdido",
+                "seconds_left": round(float(recovery.get("blocked_until") or 0) - now),
+                "blocked_symbol": recovery.get("blocked_symbol"),
+                "blocked_side": recovery.get("blocked_side"),
+            }
         cooldown_seconds = float(config.get("cooldown_minutes", 30)) * 60
         if now - self.last_trade_at < cooldown_seconds:
             return {
@@ -359,6 +374,9 @@ class TraderRuntime:
             "last_result": state.get("last_result") or "neutral",
             "last_trade_id": state.get("last_trade_id"),
             "last_side": state.get("last_side"),
+            "blocked_until": float(state.get("blocked_until") or 0),
+            "blocked_symbol": state.get("blocked_symbol"),
+            "blocked_side": state.get("blocked_side"),
             "updated_at": state.get("updated_at") or 0,
             "note": state.get("note") or "sem recuperacao ativa",
         }
@@ -396,6 +414,9 @@ class TraderRuntime:
                     "last_trade_id": trade["id"],
                     "last_side": trade.get("side"),
                     "last_loss_total": loss_total,
+                    "blocked_until": time.time() + float(config.get("post_gale2_cooldown_minutes", 6)) * 60,
+                    "blocked_symbol": trade.get("symbol"),
+                    "blocked_side": trade.get("side"),
                     "note": f"loss no gale {stage}; limite atingido, resetar mindset",
                 })
                 return
@@ -436,7 +457,7 @@ class TraderRuntime:
         amount = min(max(recovery_amount, multiplier_amount, base), max_amount)
         return round(amount, 2), state
 
-    def recent_iq_feedback(self, limit: int = 8) -> list[dict[str, Any]]:
+    def recent_iq_feedback(self, limit: int = 4) -> list[dict[str, Any]]:
         feedback = []
         for trade in self.db.list_trades(80):
             metadata = trade.get("metadata") or {}
@@ -445,6 +466,7 @@ class TraderRuntime:
             feedback.append({
                 "id": trade.get("id"),
                 "side": trade.get("side"),
+                "symbol": trade.get("symbol"),
                 "status": trade.get("status"),
                 "gale_stage": metadata.get("gale_stage", 0),
                 "amount": trade.get("position_brl"),
@@ -460,6 +482,8 @@ class TraderRuntime:
     async def run_ai_committee(self, candidate: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
         system, prompt = build_decision_prompt(candidate, self.latest_news, config)
         models = config.get("models") or {}
+        if candidate.get("trade_type") == "binary_options":
+            return await self.run_binary_committee(candidate, config, system, prompt, models)
         fast_model = models.get("fast_filter")
         decision_model = models.get("decision")
         critic_model = models.get("critic")
@@ -582,11 +606,55 @@ class TraderRuntime:
                         tier += 1
                     else:
                         break
+            code_context = candidate.get("code_context") or {}
+            last_side = _binary_direction(recovery.get("last_side"))
+            same_side_recovery = recovery_stage > 0 and last_side == final_direction
+            same_side_loss_streak = _same_side_loss_streak(
+                candidate.get("recent_trade_feedback") or [],
+                candidate["symbol"],
+                final_direction,
+            )
+            direction_exhausted = _direction_exhausted(final_direction, code_context)
+            if same_side_recovery and direction_exhausted and tier < 4:
+                consensus.update({
+                    "tier": tier,
+                    "same_side_recovery": True,
+                    "same_side_loss_streak": same_side_loss_streak,
+                    "code_context": code_context,
+                })
+                return {
+                    "approved": False,
+                    "reason": "Gale na mesma direcao em zona de exaustao; premium nao confirmou",
+                    "decision": response,
+                    "critic": critic_response,
+                    "fast": fast_response,
+                    "consensus": consensus,
+                    "code_context": code_context,
+                }
+            if same_side_loss_streak >= 2 and tier < 4:
+                consensus.update({
+                    "tier": tier,
+                    "same_side_recovery": same_side_recovery,
+                    "same_side_loss_streak": same_side_loss_streak,
+                    "code_context": code_context,
+                })
+                return {
+                    "approved": False,
+                    "reason": "Sequencia recente perdeu na mesma direcao; exige voto premium",
+                    "decision": response,
+                    "critic": critic_response,
+                    "fast": fast_response,
+                    "consensus": consensus,
+                    "code_context": code_context,
+                }
             stake_amount = self.consensus_stake_amount(config, tier)
             consensus.update({
                 "tier": tier,
                 "stake_amount": stake_amount,
                 "stake_source": f"consensus_{tier}_votes",
+                "same_side_recovery": same_side_recovery,
+                "same_side_loss_streak": same_side_loss_streak,
+                "code_context": code_context,
             })
         return {
             "approved": True,
@@ -610,6 +678,239 @@ class TraderRuntime:
                 "critic": _binary_direction(critic_response.get("preferred_decision") or critic_response.get("decision")) if is_binary else None,
             },
         }
+
+    async def run_binary_committee(
+        self,
+        candidate: dict[str, Any],
+        config: dict[str, Any],
+        system: str,
+        prompt: str,
+        models: dict[str, Any],
+    ) -> dict[str, Any]:
+        max_decision_latency = int(config.get("max_decision_latency_ms", 8000) or 8000)
+        call_timeout = max(3.0, min(8.0, max_decision_latency / 1000))
+        roles = ["fast_filter", "decision", "critic", "premium_4", "premium_5"]
+        tasks: list[tuple[str, str, asyncio.Task]] = []
+        seen: set[str] = set()
+        for role in roles:
+            model = str(models.get(role) or "").strip()
+            if not model or model in seen:
+                continue
+            seen.add(model)
+            tasks.append((role, model, asyncio.create_task(
+                self.bounded_ai_call(role, model, candidate["symbol"], system, prompt, timeout=call_timeout)
+            )))
+        if not tasks:
+            return {"approved": False, "reason": "Nenhum modelo configurado para IQ demo"}
+
+        results: list[tuple[str, str, dict[str, Any]]] = []
+        for role, model, task in tasks:
+            results.append((role, model, await task))
+
+        min_confidence = float(config.get("min_ai_confidence", 72))
+        min_rr = float(config.get("min_risk_reward", 1.3))
+        votes: list[dict[str, Any]] = []
+        valid_votes: list[dict[str, Any]] = []
+        for role, model, result in results:
+            response = result.get("response") or {}
+            direction = _binary_direction(response.get("decision") or response.get("preferred_decision"))
+            vote = _vote(role, model, direction, response, result)
+            rr = _num(response.get("risk_reward")) or float(candidate.get("risk_reward") or 0)
+            vote["risk_reward"] = rr
+            vote["valid"] = (
+                bool(result.get("ok"))
+                and direction in {"CALL", "PUT"}
+                and normalize_confidence(response.get("confidence")) >= min_confidence
+                and rr >= min_rr
+            )
+            votes.append(vote)
+            if vote["valid"]:
+                valid_votes.append({**vote, "response": response})
+
+        counts = {
+            "CALL": sum(1 for item in valid_votes if item.get("direction") == "CALL"),
+            "PUT": sum(1 for item in valid_votes if item.get("direction") == "PUT"),
+        }
+        if counts["CALL"] == counts["PUT"]:
+            final_direction = None
+        else:
+            final_direction = "CALL" if counts["CALL"] > counts["PUT"] else "PUT"
+        tier = counts.get(final_direction or "", 0)
+        recovery = candidate.get("recovery_context") or {}
+        recovery_stage = int(recovery.get("stage") or 0)
+        consensus_config = config.get("iqoption_consensus_stakes") or {}
+        min_votes = int(consensus_config.get("min_votes", 2))
+        recovery_min_votes = int(consensus_config.get("recovery_min_votes", 3))
+        code_context = candidate.get("code_context") or {}
+        code_preferred = code_context.get("preferred_direction")
+        same_side_recovery = recovery_stage > 0 and _binary_direction(recovery.get("last_side")) == final_direction
+        same_side_loss_streak = _same_side_loss_streak(
+            candidate.get("recent_trade_feedback") or [],
+            candidate["symbol"],
+            final_direction,
+        )
+        direction_exhausted = _direction_exhausted(final_direction, code_context)
+        consensus = {
+            "enabled": bool(consensus_config.get("enabled", True)),
+            "direction": final_direction,
+            "tier": tier,
+            "core_agreement": tier,
+            "recovery_stage": recovery_stage,
+            "votes": votes,
+            "counts": counts,
+            "stake_amount": max(1.0, float(config.get("iqoption_amount", 1))),
+            "stake_source": "base",
+            "same_side_recovery": same_side_recovery,
+            "same_side_loss_streak": same_side_loss_streak,
+            "code_context": code_context,
+        }
+        if not final_direction:
+            return {
+                "approved": False,
+                "reason": "Comite empatou ou nao confirmou direcao",
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
+        if tier < min_votes:
+            return {
+                "approved": False,
+                "reason": "Consenso minimo nao confirmado",
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
+        if recovery_stage > 0 and tier < recovery_min_votes:
+            return {
+                "approved": False,
+                "reason": "Recuperacao exige pelo menos 3 votos validos",
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
+        if recovery_stage > 0 and same_side_recovery and tier < 4:
+            return {
+                "approved": False,
+                "reason": "Gale repetindo direcao do loss exige voto premium",
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
+        if direction_exhausted and tier < 4:
+            return {
+                "approved": False,
+                "reason": "Zona de exaustao exige pelo menos 4/5",
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
+        if recovery_stage >= 2 and same_side_recovery and tier < 5:
+            return {
+                "approved": False,
+                "reason": "Gale 2 na mesma direcao exige pentagrama 5/5",
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
+        if same_side_recovery and direction_exhausted and tier < 5:
+            return {
+                "approved": False,
+                "reason": "Gale na mesma direcao em zona de exaustao exige 5/5",
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
+        if same_side_loss_streak >= 2 and tier < 5:
+            return {
+                "approved": False,
+                "reason": "Sequencia recente perdeu na mesma direcao; exige 5/5",
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
+        if code_preferred == "WAIT" and tier < 4:
+            return {
+                "approved": False,
+                "reason": "Codigo quantitativo pediu WAIT; exige 4/5 para contrariar",
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
+        if code_preferred in {"CALL", "PUT"} and code_preferred != final_direction and tier < 5:
+            return {
+                "approved": False,
+                "reason": "Modelos contrariaram o codigo sem unanimidade",
+                "consensus": consensus,
+                "decision": {},
+                "critic": {},
+                "fast": {},
+            }
+
+        selected = max(
+            [item for item in valid_votes if item.get("direction") == final_direction],
+            key=lambda item: (item.get("confidence") or 0, -(item.get("latency_ms") or 999999)),
+        )
+        response = selected.get("response") or {}
+        stake_amount = self.consensus_stake_amount(config, tier)
+        consensus.update({
+            "stake_amount": stake_amount,
+            "stake_source": f"consensus_{tier}_votes",
+        })
+        role_map = {role: result.get("response") or {} for role, _model, result in results}
+        confidence = normalize_confidence(response.get("confidence"))
+        return {
+            "approved": True,
+            "symbol": candidate["symbol"],
+            "action": final_direction,
+            "confidence": confidence,
+            "position_pct": min(float(config.get("position_pct", 20)), _num(response.get("position_pct")) or float(config.get("position_pct", 20))),
+            "stop_loss_pct": _num(response.get("stop_loss_pct")) or candidate["stop_loss_pct"],
+            "take_profit_pct": _num(response.get("take_profit_pct")) or candidate["take_profit_pct"],
+            "risk_reward": _num(response.get("risk_reward")) or candidate["risk_reward"],
+            "reasoning_summary": response.get("reasoning_summary", ""),
+            "decision": response,
+            "critic": role_map.get("critic", {}),
+            "fast": role_map.get("fast_filter", {}),
+            "consensus": consensus,
+            "stake_amount": stake_amount,
+            "stake_source": consensus.get("stake_source"),
+            "trio": {
+                "fast": _binary_direction(role_map.get("fast_filter", {}).get("decision")),
+                "final": _binary_direction(role_map.get("decision", {}).get("decision")),
+                "critic": _binary_direction(role_map.get("critic", {}).get("decision") or role_map.get("critic", {}).get("preferred_decision")),
+            },
+        }
+
+    async def bounded_ai_call(
+        self,
+        role: str,
+        model: str,
+        symbol: str,
+        system: str,
+        prompt: str,
+        timeout: float,
+    ) -> dict[str, Any]:
+        try:
+            return await asyncio.wait_for(
+                self.safe_ai_call(role, model, symbol, system, prompt, timeout=max(3, int(timeout))),
+                timeout=timeout + 0.75,
+            )
+        except asyncio.TimeoutError:
+            self.publish(
+                "ai:error",
+                f"{role} excedeu limite de latencia",
+                {"role": role, "model": model, "symbol": symbol, "timeout_seconds": timeout},
+            )
+            return {"ok": False, "error": f"timeout>{timeout:.2f}s"}
 
     async def extra_premium_votes(
         self,
@@ -900,3 +1201,27 @@ def _vote(role: str, model: Any, direction: str | None, response: dict[str, Any]
         "summary": str(response.get("reasoning_summary") or response.get("reason") or "")[:280],
         "error": result.get("error"),
     }
+
+
+def _direction_exhausted(direction: str | None, code_context: dict[str, Any]) -> bool:
+    if direction == "PUT":
+        return bool(code_context.get("put_exhaustion_risk") or code_context.get("put_overextended"))
+    if direction == "CALL":
+        return bool(code_context.get("call_exhaustion_risk") or code_context.get("call_overextended"))
+    return False
+
+
+def _same_side_loss_streak(feedback: list[dict[str, Any]], symbol: str, direction: str | None) -> int:
+    if not direction:
+        return 0
+    streak = 0
+    for item in feedback:
+        if item.get("status") != "CLOSED":
+            continue
+        if item.get("symbol") != symbol or _binary_direction(item.get("side")) != direction:
+            break
+        if float(item.get("pnl") or 0) < 0:
+            streak += 1
+            continue
+        break
+    return streak

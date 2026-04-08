@@ -41,6 +41,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "min_technical_score": 75,
     "min_ai_confidence": 72,
     "min_risk_reward": 1.3,
+    "max_decision_latency_ms": 8000,
+    "max_signal_age_seconds": 4,
+    "post_gale2_cooldown_minutes": 6,
     "max_hold_minutes": 60,
     "paper_fee_pct_per_side": 0.1,
     "real_unlock_policy": {
@@ -52,11 +55,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_drawdown_pct": 8,
     },
     "models": {
-        "fast_filter": "meta/llama-4-maverick-17b-128e-instruct (NVIDIA)",
-        "decision": "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)",
-        "critic": "mistralai/devstral-2-123b-instruct-2512 (NVIDIA)",
-        "premium_4": "openai/gpt-oss-120b (NVIDIA)",
-        "premium_5": "qwen/qwen3-coder-480b-a35b-instruct (NVIDIA)",
+        "fast_filter": "nemotron-3-super",
+        "decision": "gemma3:4b",
+        "critic": "ministral-3:3b",
+        "premium_4": "ministral-3:8b",
+        "premium_5": "qwen3-coder-next",
         "report": "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)",
     },
     "platforms": {
@@ -162,15 +165,17 @@ RISK_PROFILES: dict[str, dict[str, Any]] = {
         ),
         "settings": {
             "position_pct": 40.0,
-            "cooldown_minutes": 5,
-            "max_trades_per_day": 12,
-            "max_open_positions": 3,
-            "daily_stop_loss_pct": 12.0,
-            "daily_target_pct": 8.0,
+            "cooldown_minutes": 0.5,
+            "max_trades_per_day": 500,
+            "max_open_positions": 1,
+            "daily_stop_loss_pct": 80.0,
+            "daily_target_pct": 80.0,
             "min_technical_score": 55,
-    "min_ai_confidence": 55,
-    "min_risk_reward": 1.0,
-    "max_decision_latency_ms": 8000,
+            "min_ai_confidence": 55,
+            "min_risk_reward": 1.0,
+            "max_decision_latency_ms": 8000,
+            "max_signal_age_seconds": 4,
+            "post_gale2_cooldown_minutes": 6,
             "max_hold_minutes": 0.5,
         },
     },
@@ -243,10 +248,124 @@ def build_candidates(
     for symbol, snapshot in snapshots.items():
         if snapshot.get("error") or symbol not in tradable:
             continue
-        candidate = score_snapshot(snapshot, config, news_risk)
+        effective_news_risk = "neutral" if snapshot.get("provider") == "iqoption_demo" else news_risk
+        candidate = score_snapshot(snapshot, config, effective_news_risk)
         if candidate:
             candidates.append(candidate)
     return sorted(candidates, key=lambda item: item["technical_score"], reverse=True)
+
+
+def iq_direction_context(features: dict[str, Any]) -> dict[str, Any]:
+    rsi_1s = _num(features.get("rsi_1s"))
+    rsi_1m = _num(features.get("rsi_1m"))
+    rsi_5m = _num(features.get("rsi_5m"))
+    rsi_15m = _num(features.get("rsi_15m"))
+    change_1s_5 = _num(features.get("change_1s_5"))
+    change_1s_15 = _num(features.get("change_1s_15"))
+    change_1m_15 = _num(features.get("change_1m_15"))
+    change_5m_15 = _num(features.get("change_5m_15"))
+    trend_1s = features.get("trend_1s")
+    trend_1m = features.get("trend_1m")
+    trend_5m = features.get("trend_5m")
+    trend_15m = features.get("trend_15m")
+    up_count = sum(1 for item in [trend_1s, trend_1m, trend_5m, trend_15m] if item == "up")
+    down_count = sum(1 for item in [trend_1s, trend_1m, trend_5m, trend_15m] if item == "down")
+
+    call_score = 0.0
+    put_score = 0.0
+    wait_score = 0.0
+    notes: list[str] = []
+    traps: list[str] = []
+
+    if up_count >= 3:
+        call_score += 20
+    if down_count >= 3:
+        put_score += 20
+    if change_1m_15 > 0.04:
+        call_score += 10
+    if change_1m_15 < -0.04:
+        put_score += 10
+    if change_5m_15 > 0.12:
+        call_score += 8
+    if change_5m_15 < -0.12:
+        put_score += 8
+
+    # RSI extremo de 15m foi o padrao dos gales perdidos: ele favorece
+    # reversao, mas so quando o microtempo nao esta gritando o contrario.
+    if rsi_15m >= 86:
+        put_score += 26
+        call_score -= 12
+        notes.append("15m sobrecomprado: procurar PUT/reversao ou WAIT")
+        traps.append("call_overextended")
+    elif rsi_15m <= 18 and rsi_15m > 0:
+        call_score += 26
+        put_score -= 12
+        notes.append("15m sobrevendido: procurar CALL/reversao ou WAIT")
+        traps.append("put_overextended")
+
+    if rsi_1m >= 70 and rsi_5m >= 64:
+        put_score += 16
+        call_score -= 18
+        traps.append("call_exhaustion_risk")
+    if 0 < rsi_1m <= 36 and 0 < rsi_5m <= 40:
+        call_score += 16
+        put_score -= 18
+        traps.append("put_exhaustion_risk")
+    if rsi_1s >= 76:
+        put_score += 8
+        call_score -= 12
+        wait_score += 8
+        traps.append("call_exhaustion_risk")
+        notes.append("microtempo sobrecomprado: CALL precisa de mais votos")
+    if 0 < rsi_1s <= 24:
+        call_score += 8
+        put_score -= 12
+        wait_score += 8
+        traps.append("put_exhaustion_risk")
+        notes.append("microtempo sobrevendido: PUT precisa de mais votos")
+    if trend_15m == "up" and down_count >= 3 and 0 < rsi_1s <= 28:
+        put_score -= 10
+        wait_score += 12
+        traps.append("put_exhaustion_risk")
+        notes.append("queda curta contra 15m de alta; risco de pullback acabar")
+    if trend_15m == "down" and up_count >= 3 and rsi_1s >= 72:
+        call_score -= 10
+        wait_score += 12
+        traps.append("call_exhaustion_risk")
+        notes.append("alta curta contra 15m de baixa; risco de pullback acabar")
+
+    if change_1s_5 > 0.015 and change_1s_15 > 0.02:
+        call_score += 7
+    if change_1s_5 < -0.015 and change_1s_15 < -0.02:
+        put_score += 7
+
+    if abs(call_score - put_score) < 8:
+        wait_score += 18
+        notes.append("placar direcional apertado")
+    if max(call_score, put_score) < 18:
+        wait_score += 18
+        notes.append("sem edge tecnico forte")
+
+    preferred = "CALL" if call_score > put_score else "PUT"
+    if wait_score >= max(call_score, put_score):
+        preferred = "WAIT"
+
+    return {
+        "preferred_direction": preferred,
+        "scores": {
+            "CALL": round(call_score, 2),
+            "PUT": round(put_score, 2),
+            "WAIT": round(wait_score, 2),
+        },
+        "up_count": up_count,
+        "down_count": down_count,
+        "traps": traps,
+        "notes": notes,
+        "put_exhaustion_risk": "put_exhaustion_risk" in traps,
+        "call_exhaustion_risk": "call_exhaustion_risk" in traps,
+        "call_overextended": "call_overextended" in traps,
+        "put_overextended": "put_overextended" in traps,
+    }
 
 
 def score_snapshot(snapshot: dict[str, Any], config: dict[str, Any], news_risk: str) -> dict[str, Any] | None:
@@ -260,15 +379,18 @@ def score_snapshot(snapshot: dict[str, Any], config: dict[str, Any], news_risk: 
     score = 0
 
     is_binary = snapshot.get("provider") == "iqoption_demo"
+    code_context = iq_direction_context(features) if is_binary else {}
     up_count = sum(1 for key in ["trend_1m", "trend_5m", "trend_15m"] if features.get(key) == "up")
     down_count = sum(1 for key in ["trend_1m", "trend_5m", "trend_15m"] if features.get(key) == "down")
     action = "CALL" if is_binary else "ENTER_LONG"
+    if is_binary and code_context.get("preferred_direction") in {"CALL", "PUT"}:
+        action = str(code_context["preferred_direction"])
     if is_binary and down_count >= 2:
-        action = "PUT"
+        action = str(code_context.get("preferred_direction") or "PUT") if code_context.get("preferred_direction") != "WAIT" else "PUT"
         checks["trend"] = "pass"
         score += 22
     elif up_count >= 2:
-        action = "CALL" if is_binary else "ENTER_LONG"
+        action = str(code_context.get("preferred_direction") or "CALL") if is_binary and code_context.get("preferred_direction") != "WAIT" else ("CALL" if is_binary else "ENTER_LONG")
         checks["trend"] = "pass"
         score += 22
     elif up_count == 1 or (is_binary and down_count == 1):
@@ -328,6 +450,18 @@ def score_snapshot(snapshot: dict[str, Any], config: dict[str, Any], news_risk: 
         checks["news_risk"] = "pass"
         score += 10
 
+    if is_binary:
+        scores = code_context.get("scores") or {}
+        edge = max(_num(scores.get("CALL")), _num(scores.get("PUT"))) - _num(scores.get("WAIT"))
+        if edge >= 16:
+            checks["code_edge"] = "pass"
+            score += 14
+        elif edge >= 5:
+            checks["code_edge"] = "neutral"
+            score += 6
+        else:
+            checks["code_edge"] = "fail"
+
     stop_loss_pct = round(max(0.25, min(0.9, vol_1m * 3.2)), 3)
     take_profit_pct = round(stop_loss_pct * 1.55, 3)
     risk_reward = round(take_profit_pct / stop_loss_pct, 2) if stop_loss_pct else 0
@@ -349,6 +483,7 @@ def score_snapshot(snapshot: dict[str, Any], config: dict[str, Any], news_risk: 
         "trade_type": "binary_options" if is_binary else "spot_long",
         "action": action,
         "expiration_minutes": int(config.get("iqoption_expiration_minutes", 1)) if is_binary else None,
+        "code_context": code_context,
         "features": features,
         "snapshot": compact_snapshot(snapshot),
     }
@@ -401,11 +536,23 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
         "candidate": candidate,
         "recovery_context": candidate.get("recovery_context") or {},
         "recent_trade_feedback": candidate.get("recent_trade_feedback") or [],
-        "news": news or {},
+        "news": (
+            {
+                "risk_hint": {
+                    "level": "neutral",
+                    "reason": "feed de noticias cripto ignorado para OTC demo da IQ",
+                },
+                "headlines": [],
+            }
+            if is_binary
+            else news or {}
+        ),
     }
     user = (
         "Analise o candidato abaixo respeitando o perfil operacional informado. "
         "Se o modo for iqoption_demo_binary_only, ativos OTC como EURUSD-OTC sao permitidos e devem ser avaliados como CALL/PUT demo. "
+        "Use code_context como pre-leitura quantitativa: se ele apontar exaustao/armadilha, trate como alerta forte. "
+        "Em gale/recuperacao, repetir a mesma direcao do loss anterior exige evidencia muito mais forte; se houver duvida, responda WAIT. "
         f"{news_rule} Se estiver ambiguo demais, responda WAIT.\n\n"
         "Retorne JSON exatamente neste formato:\n"
         "{"
@@ -460,10 +607,21 @@ def build_critic_prompt(
         },
         "candidate": candidate,
         "decision": decision,
-        "news": news or {},
+        "news": (
+            {
+                "risk_hint": {
+                    "level": "neutral",
+                    "reason": "feed de noticias cripto ignorado para OTC demo da IQ",
+                },
+                "headlines": [],
+            }
+            if is_binary
+            else news or {}
+        ),
     }
     user = (
         "Procure falhas, armadilhas, RSI esticado, volatilidade ruim, liquidez fraca, noticia de risco e RR falso. "
+        "Se recovery_context indicar gale e a decisao repetir a direcao do ultimo loss enquanto code_context apontar exaustao, prefira vetar ou WAIT. "
         "Para operacoes binarias demo, tambem diga qual direcao voce preferiria agora: CALL, PUT ou WAIT. "
         f"{critic_rule} Retorne JSON exatamente assim: "
         '{"veto":false,"risk_level":"green|yellow|red","preferred_decision":"WAIT|CALL|PUT","reason":"curto","must_wait_minutes":0}'

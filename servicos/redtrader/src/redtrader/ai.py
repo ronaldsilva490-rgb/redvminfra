@@ -49,7 +49,8 @@ class RedSystemsAI:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "options": {"temperature": temperature, "num_ctx": 4096},
+            "format": "json",
+            "options": {"temperature": temperature, "num_ctx": 4096, "num_predict": 512},
         }
         response = await self.client.post(f"{self.proxy_url}/api/chat", json=body, timeout=timeout)
         response.raise_for_status()

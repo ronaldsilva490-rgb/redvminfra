@@ -21,6 +21,7 @@ class IQOptionDemoAdapter:
         self.connected_at = 0.0
         self.frame_cache: dict[str, dict[str, Any]] = {}
         self.stream_cache: dict[str, dict[str, Any]] = {}
+        self.history_cursor = 0
 
     async def close(self) -> None:
         await asyncio.to_thread(self._close_sync)
@@ -81,41 +82,70 @@ class IQOptionDemoAdapter:
             except Exception:
                 pass
             self.api = None
+            self.frame_cache.clear()
 
     def _fetch_symbols_sync(self, symbols: list[str]) -> dict[str, dict[str, Any]]:
         output: dict[str, dict[str, Any]] = {}
         with self.lock:
             api = self._ensure_connected()
+            now = time.time()
+            stale_symbols = [
+                symbol for symbol in symbols
+                if now - _float((self.frame_cache.get(symbol) or {}).get("ts")) > 30
+            ]
+            refresh_target = None
+            if stale_symbols:
+                refresh_target = stale_symbols[self.history_cursor % len(stale_symbols)]
+                self.history_cursor += 1
             for symbol in symbols:
                 try:
-                    snapshot = self._fetch_symbol_sync(api, symbol)
+                    snapshot = self._fetch_symbol_with_retry(api, symbol, refresh_history=symbol == refresh_target)
                     output[symbol] = snapshot
                 except Exception as exc:
                     output[symbol] = {"symbol": symbol, "provider": "iqoption_demo", "ts": time.time(), "error": repr(exc)}
         return output
 
-    def _fetch_symbol_sync(self, api: Any, symbol: str) -> dict[str, Any]:
+    def _fetch_symbol_with_retry(self, api: Any, symbol: str, refresh_history: bool) -> dict[str, Any]:
+        try:
+            return self._fetch_symbol_sync(api, symbol, refresh_history=refresh_history)
+        except Exception as exc:
+            if "reconnect" not in repr(exc).lower() and "closed" not in repr(exc).lower():
+                raise
+            self._close_sync()
+            api = self._ensure_connected()
+            return self._fetch_symbol_sync(api, symbol, refresh_history=refresh_history)
+
+    def _fetch_symbol_sync(self, api: Any, symbol: str, refresh_history: bool) -> dict[str, Any]:
         now = time.time()
         candles_1s = self._realtime_candles(api, symbol, 1, 600)
         cached_frames = self.frame_cache.get(symbol) or {}
-        if now - _float(cached_frames.get("ts")) > 10:
-            candles_1m = self._candles(api.get_candles(symbol, 60, 180, now))
-            candles_5m = self._candles(api.get_candles(symbol, 300, 120, now))
-            candles_15m = self._candles(api.get_candles(symbol, 900, 120, now))
-            self.frame_cache[symbol] = {
-                "ts": now,
-                "1m": candles_1m,
-                "5m": candles_5m,
-                "15m": candles_15m,
-            }
-        else:
-            candles_1m = cached_frames.get("1m") or []
-            candles_5m = cached_frames.get("5m") or []
-            candles_15m = cached_frames.get("15m") or []
-        if not candles_1m:
-            candles_1m = self._candles(api.get_candles(symbol, 60, 180, now))
+        candles_1m = cached_frames.get("1m") or []
+        candles_5m = cached_frames.get("5m") or []
+        candles_15m = cached_frames.get("15m") or []
+        if refresh_history:
+            try:
+                candles_1m = self._candles(api.get_candles(symbol, 60, 180, now))
+                candles_5m = self._candles(api.get_candles(symbol, 300, 120, now))
+                candles_15m = self._candles(api.get_candles(symbol, 900, 120, now))
+                self.frame_cache[symbol] = {
+                    "ts": now,
+                    "1m": candles_1m,
+                    "5m": candles_5m,
+                    "15m": candles_15m,
+                }
+            except Exception:
+                # Historico multi-timeframe da IQ pode falhar com "need reconnect".
+                # O terminal nao deve congelar por isso; mantemos o stream 1s vivo
+                # e usamos cache/fallback ate o proximo refresh rotativo.
+                pass
         if not candles_1s:
             candles_1s = self._candles(api.get_candles(symbol, 1, 240, now))
+        if not candles_1m:
+            candles_1m = candles_1s[-180:]
+        if not candles_5m:
+            candles_5m = candles_1m[-120:] or candles_1s[-120:]
+        if not candles_15m:
+            candles_15m = candles_5m[-120:] or candles_1m[-120:] or candles_1s[-120:]
         if not candles_1s and not candles_1m:
             raise RuntimeError("empty_iqoption_candles")
         last_series = candles_1s or candles_1m
