@@ -729,7 +729,8 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
         "Use learning_adjustment para entender bonus/penalidades que o codigo aplicou ao score antes de chamar os modelos. "
         "Em gale/recuperacao, repetir a mesma direcao do loss anterior exige evidencia muito mais forte SOMENTE se for o mesmo ativo do loss. "
         "Se recovery_guidance.scope for cross_symbol, nao trate como repeticao do mesmo setup: decida pelo candidato atual com agressividade demo. "
-        f"{news_rule} Se estiver ambiguo demais, responda WAIT.\n\n"
+        f"{news_rule} Se estiver ambiguo demais, responda WAIT. "
+        "Responda JSON compacto em uma unica linha, sem markdown, sem comentarios e com reasoning_summary bem curto (maximo 180 caracteres).\n\n"
         "Retorne JSON exatamente neste formato:\n"
         "{"
         f'"decision":"{decision_schema}",'
@@ -742,7 +743,7 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
         '"risk_reward":0,'
         '"checks":{"trend":"pass|fail|neutral","momentum":"pass|fail|neutral","volatility":"pass|fail|neutral","liquidity":"pass|fail|neutral","news_risk":"pass|fail|neutral","risk_reward":"pass|fail|neutral"},'
         '"invalidation":"frase curta",'
-        '"reasoning_summary":"ate 700 caracteres",'
+        '"reasoning_summary":"ate 180 caracteres",'
         '"next_review_minutes":0'
         "}\n\n"
         f"DADOS:\n{json.dumps(payload, ensure_ascii=False)}"
@@ -826,7 +827,7 @@ def build_critic_prompt(
         "Se recovery_guidance.scope for same_symbol e a decisao repetir a direcao do ultimo loss enquanto code_context apontar exaustao, prefira vetar ou WAIT. "
         "Se recovery_guidance.scope for cross_symbol, nao vete apenas por repetir CALL/PUT do ativo anterior; critique o setup atual. "
         "Para operacoes binarias demo, tambem diga qual direcao voce preferiria agora: CALL, PUT ou WAIT. "
-        f"{critic_rule} Retorne JSON exatamente assim: "
+        f"{critic_rule} Responda JSON compacto em uma unica linha, sem markdown e sem texto extra. Retorne JSON exatamente assim: "
         '{"veto":false,"risk_level":"green|yellow|red","preferred_decision":"WAIT|CALL|PUT","reason":"curto","must_wait_minutes":0}'
         f"\n\nDADOS:\n{json.dumps(payload, ensure_ascii=False)}"
     )

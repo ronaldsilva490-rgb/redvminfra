@@ -1762,25 +1762,77 @@ class TraderRuntime:
             if not model or model in seen:
                 continue
             seen.add(model)
-            tasks.append((role, model, asyncio.create_task(
-                self.bounded_ai_call(
+            tasks.append(
+                (
                     role,
                     model,
-                    candidate["symbol"],
-                    system,
-                    prompt,
-                    timeout=call_timeout,
-                    committee_id=cycle_id,
+                    asyncio.create_task(
+                        self.bounded_ai_call(
+                            role,
+                            model,
+                            candidate["symbol"],
+                            system,
+                            prompt,
+                            timeout=call_timeout,
+                            committee_id=cycle_id,
+                        )
+                    ),
                 )
-            )))
+            )
         if not tasks:
             reason = "Nenhum modelo configurado para IQ demo"
             self.finalize_committee_cycle(cycle_id, approved=False, reason=reason)
             return {"approved": False, "reason": reason}
 
         results: list[tuple[str, str, dict[str, Any]]] = []
-        for role, model, task in tasks:
-            results.append((role, model, await task))
+        task_meta = {task: (role, model) for role, model, task in tasks}
+        pending = set(task_meta)
+
+        def _partial_valid_counts(items: list[tuple[str, str, dict[str, Any]]]) -> dict[str, int]:
+            counts = {"CALL": 0, "PUT": 0}
+            for _role, _model, result in items:
+                response = result.get("response") or {}
+                direction = _binary_direction(response.get("decision") or response.get("preferred_decision"))
+                rr = _num(response.get("risk_reward")) or float(candidate.get("risk_reward") or 0)
+                valid = (
+                    bool(result.get("ok"))
+                    and direction in {"CALL", "PUT"}
+                    and normalize_confidence(response.get("confidence")) >= float(config.get("min_ai_confidence", 72))
+                    and rr >= float(config.get("min_risk_reward", 1.3))
+                )
+                if valid and direction:
+                    counts[direction] += 1
+            return counts
+
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                role, model = task_meta[task]
+                try:
+                    result = task.result()
+                except asyncio.CancelledError:
+                    continue
+                results.append((role, model, result))
+
+            partial_counts = _partial_valid_counts(results)
+            remaining_slots = len(pending)
+            if max(partial_counts["CALL"] + remaining_slots, partial_counts["PUT"] + remaining_slots) < int(gate_profile["min_votes"]):
+                self.publish(
+                    "committee:abort",
+                    "Comite abortado cedo: consenso minimo ficou impossivel",
+                    {
+                        "symbol": candidate["symbol"],
+                        "partial_counts": partial_counts,
+                        "remaining_slots": remaining_slots,
+                        "min_votes": int(gate_profile["min_votes"]),
+                    },
+                )
+                for task in list(pending):
+                    task.cancel()
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
+                pending.clear()
+                break
 
         min_confidence = float(config.get("min_ai_confidence", 72))
         min_rr = float(config.get("min_risk_reward", 1.3))
@@ -2095,6 +2147,14 @@ class TraderRuntime:
         if not primary:
             return []
         chain = [primary]
+        if role == "fast_filter" and primary == "nemotron-3-super":
+            chain.append("gemma3:4b")
+        if role == "decision" and primary == "gemma3:4b":
+            chain.append("qwen/qwen3-next-80b-a3b-instruct (NVIDIA)")
+        if role == "critic" and primary == "ministral-3:3b":
+            chain.append("gemma3:4b")
+        if role == "premium_4" and primary == "ministral-3:8b":
+            chain.append("qwen3-coder-next")
         if primary == "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)":
             chain.append("qwen3-coder-next")
         elif primary == "qwen3-coder-next":
@@ -2104,6 +2164,28 @@ class TraderRuntime:
             if item and item not in deduped:
                 deduped.append(item)
         return deduped
+
+    @staticmethod
+    def model_chat_options(role: str, model: str) -> dict[str, Any]:
+        lowered = str(model or "").lower()
+        options: dict[str, Any] = {
+            "temperature": 0.03,
+            "num_ctx": 2560,
+            "num_predict": 260,
+        }
+        if role == "decision":
+            options["num_predict"] = 280
+        elif role == "premium_5":
+            options["num_predict"] = 300
+        elif role == "premium_4":
+            options["num_predict"] = 280
+        if "qwen" in lowered:
+            options["num_ctx"] = 3072
+            options["num_predict"] = max(int(options["num_predict"]), 300)
+        if "gemma3:4b" in lowered:
+            options["num_ctx"] = 2048
+            options["num_predict"] = min(int(options["num_predict"]), 240)
+        return options
 
     async def extra_premium_votes(
         self,
@@ -2179,6 +2261,7 @@ class TraderRuntime:
                 attempt_timeout = float(timeout)
                 if total > 1:
                     attempt_timeout = min(attempt_timeout, 6.0 if index == 1 else 6.5)
+                chat_options = self.model_chat_options(role, current_model)
                 if committee_id is not None:
                     self.update_committee_role(
                         committee_id,
@@ -2198,9 +2281,19 @@ class TraderRuntime:
                         "attempt": index,
                         "total_attempts": total,
                         "attempt_timeout": attempt_timeout,
+                        "num_predict": chat_options["num_predict"],
                     },
                 )
-                response = await self.ai.chat_json(current_model, system, prompt, timeout=attempt_timeout)
+                response = await self.ai.chat_json(
+                    current_model,
+                    system,
+                    prompt,
+                    timeout=attempt_timeout,
+                    temperature=float(chat_options["temperature"]),
+                    num_ctx=int(chat_options["num_ctx"]),
+                    num_predict=int(chat_options["num_predict"]),
+                    max_attempts=1,
+                )
                 effective_model = str(response.get("_model") or current_model)
                 decision = str(response.get("decision") or response.get("risk_level") or "unknown")
                 confidence = normalize_confidence(response.get("confidence"))
@@ -2246,6 +2339,24 @@ class TraderRuntime:
                         error=None,
                     )
                 return {"ok": True, "response": response, "model_used": effective_model, "attempt": index}
+            except asyncio.CancelledError:
+                if committee_id is not None:
+                    self.update_committee_role(
+                        committee_id,
+                        role,
+                        "error",
+                        model=current_model,
+                        symbol=symbol,
+                        decision="WAIT",
+                        summary="Cancelado porque o ciclo ficou invalido.",
+                        error="cancelled",
+                    )
+                self.publish(
+                    "ai:cancelled",
+                    f"{role} cancelado",
+                    {"role": role, "model": current_model, "symbol": symbol, "attempt": index},
+                )
+                raise
             except Exception as exc:
                 errors.append({"model": current_model, "error": repr(exc)})
                 if index < total:
