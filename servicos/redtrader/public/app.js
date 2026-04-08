@@ -5,6 +5,8 @@ const state = {
   selectedSymbol: "BTCUSDT",
   selectedPlatformConfig: null,
   terminalZoom: 3,
+  stakeSaveTimer: null,
+  stakeSaving: false,
   socket: null,
 };
 
@@ -389,6 +391,7 @@ function renderTerminal(data) {
   const candles = snapshot.candles?.["1m"] || [];
   const features = snapshot.features || {};
   const wallet = data.wallet || {};
+  const recovery = data.iq_recovery || {};
   const iq = (data.platforms || []).find((item) => item.id === "iqoption_experimental");
   const practiceBalance = Number(iq?.practice_balance || 0);
   const latestAnalysis = (data.analyses || []).find((item) => item.symbol === state.selectedSymbol) || {};
@@ -414,6 +417,8 @@ function renderTerminal(data) {
   $("#terminalBelow").textContent = `${below.toFixed(0)}%`;
   $("#terminalProfit").textContent = `+${payout}%`;
   $("#terminalProfitValue").textContent = `+${balanceFormatter(stake * payout / 100)}`;
+  $("#terminalGale").textContent = Number(recovery.stage || 0) > 0 ? `GALE ${recovery.stage}` : "BASE";
+  $("#terminalGaleDetail").textContent = `proxima entrada ${balanceFormatter(recovery.next_amount || stake)} · perda a recuperar ${balanceFormatter(recovery.loss_total || 0)}`;
   $("#terminalDecision").textContent = decision;
   $("#terminalDecisionReason").textContent = reason;
   $("#terminalAiBadge").textContent = latestAnalysis.model ? `${latestAnalysis.model} · ${decision}` : "IA aguardando setup";
@@ -458,7 +463,7 @@ function renderTerminalChart(data, aboveBias = 50) {
   const container = canvas.parentElement;
   const ratio = window.devicePixelRatio || 1;
   const width = Math.max(620, container.clientWidth);
-  const height = Math.max(520, Math.min(680, Math.round(width * 0.46)));
+  const height = Math.max(600, Math.min(820, container.clientHeight || Math.round(width * 0.56)));
   canvas.width = Math.floor(width * ratio);
   canvas.height = Math.floor(height * ratio);
   canvas.style.height = `${height}px`;
@@ -715,6 +720,7 @@ let configRendered = false;
 function renderQuickConfig(config) {
   const form = $("#quickConfigForm");
   if (!form || form.contains(document.activeElement)) return;
+  if (state.stakeSaving) return;
   const symbol = (config.symbols || ["EURUSD-OTC"])[0] || "EURUSD-OTC";
   form.auto_enabled.value = String(Boolean(config.auto_enabled));
   form.risk_profile.value = config.risk_profile || "full_aggressive";
@@ -727,7 +733,7 @@ function renderQuickConfig(config) {
   renderStakePresets(Number(config.iqoption_amount ?? 1));
 }
 
-function setStakeValue(value) {
+function setStakeValue(value, persist = false) {
   const stake = Math.max(1, Number(value || 1));
   const terminalStake = $("#terminalStake");
   const quickStake = $("#quickConfigForm")?.elements.iqoption_amount;
@@ -735,6 +741,40 @@ function setStakeValue(value) {
   if (quickStake) quickStake.value = String(stake);
   renderStakePresets(stake);
   renderTerminal(state.status || {});
+  if (persist) scheduleStakeSave(stake);
+}
+
+function scheduleStakeSave(stake) {
+  window.clearTimeout(state.stakeSaveTimer);
+  state.stakeSaveTimer = window.setTimeout(() => saveStakeValue(stake), 180);
+}
+
+async function saveStakeValue(stake) {
+  state.stakeSaving = true;
+  $("#saveState").textContent = `valor ${stake} salvando`;
+  try {
+    const current = state.status?.config || {};
+    const symbol = String($("#quickConfigForm")?.elements.symbol?.value || (current.symbols || ["EURUSD-OTC"])[0] || "EURUSD-OTC").trim().toUpperCase();
+    const payload = {
+      ...current,
+      iqoption_amount: Number(stake),
+      market_provider: "iqoption_demo",
+      execution_provider: "iqoption_demo",
+      symbols: [symbol],
+      tradable_symbols: [symbol],
+      max_open_positions: 1,
+    };
+    const saved = await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
+    if (state.status && saved?.config) state.status.config = saved.config;
+    $("#saveState").textContent = `valor ${stake} salvo`;
+    toast(`Proxima entrada base: $${stake}`);
+  } catch (err) {
+    $("#saveState").textContent = "erro";
+    toast(err.message || "Falha ao salvar valor");
+  } finally {
+    state.stakeSaving = false;
+    renderQuickConfig(state.status?.config || {});
+  }
 }
 
 function renderStakePresets(value) {
@@ -789,10 +829,17 @@ function collectQuickConfig() {
     tradable_symbols: [symbol],
     iqoption_amount: Number(form.iqoption_amount.value || 1),
     iqoption_expiration_minutes: Number(form.iqoption_expiration_minutes.value || 1),
+    iqoption_gale_enabled: true,
+    iqoption_gale_max_steps: 2,
+    iqoption_gale_multiplier: 2.35,
+    iqoption_gale_payout_pct: 85,
+    iqoption_gale_max_amount: 100,
     cooldown_minutes: Number(form.cooldown_minutes.value || 0.5),
     market_poll_seconds: 1,
-    max_open_positions: Math.max(Number(current.max_open_positions || 10), 10),
+    max_open_positions: 1,
     max_trades_per_day: Math.max(Number(current.max_trades_per_day || 200), 200),
+    daily_stop_loss_pct: Math.max(Number(current.daily_stop_loss_pct || 50), 50),
+    daily_target_pct: Math.max(Number(current.daily_target_pct || 50), 50),
     platforms: {
       ...(current.platforms || {}),
       binance_spot: { enabled: false, mode: "market_data_paper", label: "Binance Spot" },
@@ -1008,6 +1055,7 @@ function bindActions() {
     if (!button) return;
     button.addEventListener("click", async () => {
       toast("Pedido manual em modo demo: rodando auditoria da IA antes de qualquer ação.");
+      await saveStakeValue(Number($("#terminalStake")?.value || 1));
       $("#runOnceBtn").click();
     });
   });
@@ -1028,10 +1076,11 @@ function bindActions() {
   });
 
   $$("[data-stake-value]").forEach((button) => {
-    button.addEventListener("click", () => setStakeValue(button.dataset.stakeValue));
+    button.addEventListener("click", () => setStakeValue(button.dataset.stakeValue, true));
   });
 
   $("#quickConfigForm")?.elements.iqoption_amount?.addEventListener("input", (event) => setStakeValue(event.target.value));
+  $("#quickConfigForm")?.elements.iqoption_amount?.addEventListener("change", (event) => setStakeValue(event.target.value, true));
 
   $("#refreshPlatformsBtn").addEventListener("click", async () => {
     const button = $("#refreshPlatformsBtn");
@@ -1070,6 +1119,7 @@ function bindActions() {
     renderStakePresets(Number(event.target.value || 0));
     renderTerminal(state.status || {});
   });
+  $("#terminalStake")?.addEventListener("change", (event) => setStakeValue(event.target.value, true));
 
   $("#logoutBtn").addEventListener("click", async () => {
     await api("/api/logout", { method: "POST", body: "{}" });

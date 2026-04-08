@@ -191,6 +191,7 @@ class TraderRuntime:
                     pnl_pct = pnl_brl / max(float(trade["position_brl"]), 1) * 100
                     status = result.get("status") or "unknown"
                     self.db.close_trade(int(trade["id"]), float(price), pnl_brl, pnl_pct, f"iqoption_demo:{status}")
+                    self.update_iq_recovery_after_close(config, trade, pnl_brl, status)
                     self.publish(
                         "trade:closed",
                         f"IQ Option demo fechou {trade['symbol']}: {status}",
@@ -249,6 +250,8 @@ class TraderRuntime:
                 self.publish("strategy:wait", "Nenhum candidato passou nos gates tecnicos", {"min_score": min_score})
             return
         candidate = candidates[0]
+        candidate["recovery_context"] = self.iq_recovery_state()
+        candidate["recent_trade_feedback"] = self.recent_iq_feedback()
         self.publish(
             "strategy:candidate",
             f"Candidato tecnico encontrado em {candidate['symbol']}",
@@ -264,7 +267,7 @@ class TraderRuntime:
         position_brl = max(1.0, self.wallet_summary()["equity_brl"] * float(decision["position_pct"]) / 100)
         metadata = {"decision": decision, "candidate": candidate, "execution_provider": execution_provider}
         if execution_provider == "iqoption_demo":
-            amount = max(1.0, float(config.get("iqoption_amount", 1)))
+            amount, recovery_state = self.next_iq_amount(config)
             expiration_minutes = max(1, int(config.get("iqoption_expiration_minutes", 1)))
             iq_action = "put" if side == "PUT" else "call"
             try:
@@ -283,6 +286,9 @@ class TraderRuntime:
                 "iqoption_action": iq_action,
                 "iqoption_order": order,
                 "expiry_seconds": expiration_minutes * 60,
+                "gale_stage": int(recovery_state.get("stage") or 0),
+                "recovery_loss_total": float(recovery_state.get("loss_total") or 0),
+                "base_amount": float(config.get("iqoption_amount", 1)),
             })
         trade_id = self.db.open_trade(
             candidate["symbol"],
@@ -322,6 +328,111 @@ class TraderRuntime:
         if daily_pnl_pct >= float(config.get("daily_target_pct", 3)):
             return {"ok": False, "reason": "Meta diaria atingida", "daily_pnl_pct": daily_pnl_pct}
         return {"ok": True}
+
+    def iq_recovery_state(self) -> dict[str, Any]:
+        state = self.db.get_kv("iqoption_recovery_state", {}) or {}
+        return {
+            "stage": int(state.get("stage") or 0),
+            "loss_total": float(state.get("loss_total") or 0),
+            "last_result": state.get("last_result") or "neutral",
+            "last_trade_id": state.get("last_trade_id"),
+            "last_side": state.get("last_side"),
+            "updated_at": state.get("updated_at") or 0,
+            "note": state.get("note") or "sem recuperacao ativa",
+        }
+
+    def set_iq_recovery_state(self, state: dict[str, Any]) -> None:
+        state = {**state, "updated_at": time.time()}
+        self.db.set_kv("iqoption_recovery_state", state)
+        self.publish("gale:state", "Estado de recuperacao IQ atualizado", state)
+
+    def update_iq_recovery_after_close(self, config: dict[str, Any], trade: dict[str, Any], pnl_brl: float, result_status: str) -> None:
+        if not config.get("iqoption_gale_enabled", True):
+            self.set_iq_recovery_state({"stage": 0, "loss_total": 0.0, "last_result": result_status, "last_trade_id": trade["id"], "note": "gale desligado"})
+            return
+        metadata = trade.get("metadata") or {}
+        stage = int(metadata.get("gale_stage") or 0)
+        max_steps = int(config.get("iqoption_gale_max_steps", 2))
+        if pnl_brl > 0:
+            self.set_iq_recovery_state({
+                "stage": 0,
+                "loss_total": 0.0,
+                "last_result": "win",
+                "last_trade_id": trade["id"],
+                "last_side": trade.get("side"),
+                "note": f"win no gale {stage}; mindset resetado",
+            })
+            return
+        if pnl_brl < 0:
+            current = self.iq_recovery_state()
+            loss_total = float(current.get("loss_total") or 0) + abs(float(pnl_brl))
+            if stage >= max_steps:
+                self.set_iq_recovery_state({
+                    "stage": 0,
+                    "loss_total": 0.0,
+                    "last_result": "loss_reset",
+                    "last_trade_id": trade["id"],
+                    "last_side": trade.get("side"),
+                    "last_loss_total": loss_total,
+                    "note": f"loss no gale {stage}; limite atingido, resetar mindset",
+                })
+                return
+            self.set_iq_recovery_state({
+                "stage": stage + 1,
+                "loss_total": loss_total,
+                "last_result": "loss",
+                "last_trade_id": trade["id"],
+                "last_side": trade.get("side"),
+                "note": f"loss detectado; proxima operacao e gale {stage + 1} com reanalise completa",
+            })
+            return
+        self.set_iq_recovery_state({
+            "stage": 0,
+            "loss_total": 0.0,
+            "last_result": "equal",
+            "last_trade_id": trade["id"],
+            "last_side": trade.get("side"),
+            "note": "empate; sem recuperacao ativa",
+        })
+
+    def next_iq_amount(self, config: dict[str, Any]) -> tuple[float, dict[str, Any]]:
+        state = self.iq_recovery_state()
+        base = max(1.0, float(config.get("iqoption_amount", 1)))
+        if not config.get("iqoption_gale_enabled", True):
+            return base, state
+        stage = max(0, int(state.get("stage") or 0))
+        if stage <= 0:
+            return base, state
+        payout = max(0.1, float(config.get("iqoption_gale_payout_pct", 85)) / 100)
+        loss_total = max(0.0, float(state.get("loss_total") or 0))
+        multiplier = max(1.0, float(config.get("iqoption_gale_multiplier", 2.35)))
+        max_amount = max(base, float(config.get("iqoption_gale_max_amount", 100)))
+        target_profit = base
+        recovery_amount = (loss_total + target_profit) / payout
+        multiplier_amount = base * (multiplier ** stage)
+        amount = min(max(recovery_amount, multiplier_amount, base), max_amount)
+        return round(amount, 2), state
+
+    def recent_iq_feedback(self, limit: int = 8) -> list[dict[str, Any]]:
+        feedback = []
+        for trade in self.db.list_trades(80):
+            metadata = trade.get("metadata") or {}
+            if metadata.get("execution_provider") != "iqoption_demo":
+                continue
+            feedback.append({
+                "id": trade.get("id"),
+                "side": trade.get("side"),
+                "status": trade.get("status"),
+                "gale_stage": metadata.get("gale_stage", 0),
+                "amount": trade.get("position_brl"),
+                "pnl": trade.get("pnl_brl"),
+                "exit_reason": trade.get("exit_reason"),
+                "opened_at": trade.get("opened_at"),
+                "reasoning": str(trade.get("entry_reason") or "")[:240],
+            })
+            if len(feedback) >= limit:
+                break
+        return feedback
 
     async def run_ai_committee(self, candidate: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
         system, prompt = build_decision_prompt(candidate, self.latest_news, config)
@@ -549,12 +660,16 @@ class TraderRuntime:
         }
 
     def status(self) -> dict[str, Any]:
+        config = self.config()
+        next_iq_amount, recovery_state = self.next_iq_amount(config)
+        recovery_state = {**recovery_state, "next_amount": next_iq_amount}
         return {
             "running": self.running,
-            "config": self.config(),
+            "config": config,
             "risk_profiles": available_risk_profiles(),
             "wallet": self.wallet_summary(),
             "demo_audit": self.demo_audit_summary(),
+            "iq_recovery": recovery_state,
             "platforms": self.platform_statuses,
             "models": self.models,
             "news": self.latest_news,

@@ -11,6 +11,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "execution_provider": "internal_paper",
     "iqoption_amount": 1.0,
     "iqoption_expiration_minutes": 1,
+    "iqoption_gale_enabled": True,
+    "iqoption_gale_max_steps": 2,
+    "iqoption_gale_multiplier": 2.35,
+    "iqoption_gale_payout_pct": 85,
+    "iqoption_gale_max_amount": 100,
     "market_poll_seconds": 1,
     "news_poll_seconds": 300,
     "cooldown_minutes": 30,
@@ -378,6 +383,8 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
             "allowed_decisions": allowed_decisions,
         },
         "candidate": candidate,
+        "recovery_context": candidate.get("recovery_context") or {},
+        "recent_trade_feedback": candidate.get("recent_trade_feedback") or [],
         "news": news or {},
     }
     user = (
@@ -387,7 +394,7 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
         "Retorne JSON exatamente neste formato:\n"
         "{"
         f'"decision":"{decision_schema}",'
-        '"symbol":"BTCUSDT|ETHUSDT|SOLUSDT|NONE",'
+        '"symbol":"ATIVO_DO_CANDIDATO|NONE",'
         '"confidence":0,'
         '"position_pct":0,'
         '"time_horizon_min":0,'
