@@ -7,6 +7,8 @@ const state = {
     firewall: { enabled: false, raw: [] },
     proxy: null,
     whatsapp: null,
+    stack: [],
+    repoLayout: [],
     projects: [],
     selectedProjectId: "",
     selectedWhatsAppConversationId: "",
@@ -481,6 +483,67 @@ function sendOverviewAssistantPrompt(prefill = "") {
     }));
 }
 
+function renderStackOverview() {
+    const host = qs("#stackOverview");
+    if (!host) return;
+    const cards = (state.stack || [])
+        .map((item) => `
+            <article class="stack-card">
+                <div class="stack-head">
+                    <div>
+                        <strong>${escapeHtml(item.name)}</strong>
+                        <small>${escapeHtml(item.unit || "sem unit")}</small>
+                    </div>
+                    <span class="pill ${escapeHtml(item.active || "unknown")}">${escapeHtml(translateServiceState(item.active || "unknown"))}</span>
+                </div>
+                <div class="stack-copy">${escapeHtml(item.summary || "")}</div>
+                <div class="kv-grid">
+                    <div class="kv-item"><span>Rota publica</span><strong>${escapeHtml(item.route || "interno")}</strong></div>
+                    <div class="kv-item"><span>Repo</span><strong>${escapeHtml(item.repo_path || "fora do repo")}</strong></div>
+                    <div class="kv-item"><span>Runtime</span><strong>${escapeHtml(item.runtime_path || "n/d")}</strong></div>
+                    <div class="kv-item"><span>Dados</span><strong>${escapeHtml(item.data_path || "n/d")}</strong></div>
+                </div>
+                <div class="stack-meta">
+                    Publico: ${escapeHtml(item.public_url || "interno")}<br>
+                    Local: ${escapeHtml(item.local_url || "n/d")}
+                </div>
+            </article>
+        `)
+        .join("");
+    host.innerHTML = cards || `<div class="empty">Espelho da stack ainda nao carregado.</div>`;
+}
+
+function renderRepoOverview() {
+    const host = qs("#repoOverview");
+    if (!host) return;
+    const cards = (state.repoLayout || [])
+        .map((group) => `
+            <article class="stack-card">
+                <div class="stack-head">
+                    <div>
+                        <strong>${escapeHtml(group.title || group.group || "Grupo")}</strong>
+                        <small>${escapeHtml(group.group || "")}</small>
+                    </div>
+                    <span class="pill neutral">${(group.items || []).length} itens</span>
+                </div>
+                <div class="compact-list">
+                    ${(group.items || [])
+                        .map((item) => `
+                            <div class="list-row">
+                                <div>
+                                    <strong>${escapeHtml(item.path || "")}</strong>
+                                    <small>${escapeHtml(item.summary || "")}</small>
+                                </div>
+                            </div>
+                        `)
+                        .join("")}
+                </div>
+            </article>
+        `)
+        .join("");
+    host.innerHTML = cards || `<div class="empty">Espelho do repo ainda nao carregado.</div>`;
+}
+
 function renderOverview() {
     if (!state.telemetry || !state.system) return;
 
@@ -507,9 +570,12 @@ function renderOverview() {
 
     qs("#systemSummary").innerHTML = `
         <div class="kv-item"><span>Host</span><strong>${escapeHtml(state.system.hostname)}</strong></div>
+        <div class="kv-item"><span>Host publico</span><strong>${escapeHtml(state.system.public_host || "n/d")}</strong></div>
         <div class="kv-item"><span>Kernel</span><strong>${escapeHtml(state.system.release)}</strong></div>
         <div class="kv-item"><span>Arquitetura</span><strong>${escapeHtml(state.system.machine)}</strong></div>
         <div class="kv-item"><span>Uptime</span><strong>${formatUptime(state.telemetry.uptime_seconds)}</strong></div>
+        <div class="kv-item"><span>Repo runtime</span><strong>${escapeHtml(state.system.repo_root || "n/d")}</strong></div>
+        <div class="kv-item"><span>Runtime base</span><strong>${escapeHtml(state.system.runtime_root || "/opt")}</strong></div>
         <div class="kv-item"><span>Carga 1m</span><strong>${state.system.load_avg.one.toFixed(2)}</strong></div>
         <div class="kv-item"><span>Atualizado</span><strong>${formatDate(state.telemetry.timestamp)}</strong></div>
     `;
@@ -534,6 +600,8 @@ function renderOverview() {
         <div class="list-row"><div><strong>Imagens</strong><small>Disponíveis</small></div><span class="pill neutral">${state.docker.images.length}</span></div>
     `;
     qs("#dockerPreview").innerHTML = dockerPreview;
+    renderStackOverview();
+    renderRepoOverview();
     renderOverviewAssistant();
 }
 
@@ -2256,7 +2324,7 @@ function renderWhatsApp() {
         summary.innerHTML = `
             <div class="kv-item"><span>Webhook</span><strong>${escapeHtml(snapshot.webhook?.url || "n/d")}</strong></div>
             <div class="kv-item"><span>Secret</span><strong>${escapeHtml(config.webhook_secret_masked || "n/d")}</strong></div>
-            <div class="kv-item"><span>URL Evolution</span><strong>${escapeHtml(config.base_url || "n/d")}</strong></div>
+            <div class="kv-item"><span>URL runtime</span><strong>${escapeHtml(config.base_url || "n/d")}</strong></div>
             <div class="kv-item"><span>API key</span><strong>${escapeHtml(config.api_key_masked || "n/d")}</strong></div>
             <div class="kv-item"><span>Estado</span><strong>${escapeHtml(connection.state || "n/d")}</strong></div>
             <div class="kv-item"><span>Status HTTP</span><strong>${escapeHtml(connection.status_code ?? "n/d")}</strong></div>
@@ -2293,7 +2361,7 @@ function renderWhatsApp() {
             </div>
             <div class="chat-hint">${escapeHtml(syncMeta)}</div>
             ${runtime.last_targets_sync_error ? `<div class="chat-hint">${escapeHtml(runtime.last_targets_sync_error)}</div>` : ""}
-            ${qr ? `<div class="whatsapp-qr-shell"><img class="whatsapp-qr-image" src="${escapeHtml(qr)}" alt="QR Code do WhatsApp" /></div>` : `<div class="empty">Clique em "Conectar / QR". Se a Evolution emitir um QR por webhook, ele aparece aqui.</div>`}
+            ${qr ? `<div class="whatsapp-qr-shell"><img class="whatsapp-qr-image" src="${escapeHtml(qr)}" alt="QR Code do WhatsApp" /></div>` : `<div class="empty">Clique em "Conectar / QR". Se o runtime emitir um QR por webhook, ele aparece aqui.</div>`}
         `;
     }
 
@@ -2313,9 +2381,9 @@ function renderWhatsApp() {
         const webhookReady = Boolean(snapshot.webhook?.url && config.webhook_secret_masked);
         const hasModels = models.length > 0;
         checklist.innerHTML = [
-            whatsappChecklistItem("Configuracao base", snapshot.configured, snapshot.configured ? "Evolution e credenciais preenchidas." : "Preencha URL e API key da Evolution."),
+            whatsappChecklistItem("Configuracao base", snapshot.configured, snapshot.configured ? "Runtime e credenciais preenchidos." : "Preencha URL e API key do runtime."),
             whatsappChecklistItem("Instancia conectada", whatsappConnectionReady(connection.state), whatsappConnectionReady(connection.state) ? "Numero conectado e pronto para receber mensagens." : "Conecte o QR ou confira a sessao."),
-            whatsappChecklistItem("Webhook preparado", webhookReady && runtime.last_webhook_sync_status === "success", webhookReady && runtime.last_webhook_sync_status === "success" ? "Webhook sincronizado com sucesso na Evolution." : "A VM ja gerou a URL, mas a sincronizacao remota ainda precisa confirmar."),
+            whatsappChecklistItem("Webhook preparado", webhookReady && runtime.last_webhook_sync_status === "success", webhookReady && runtime.last_webhook_sync_status === "success" ? "Webhook sincronizado com sucesso no runtime." : "A VM ja gerou a URL, mas a sincronizacao remota ainda precisa confirmar."),
             whatsappChecklistItem("Chats sincronizados", Number(runtime.last_targets_sync_count || 0) > 0, Number(runtime.last_targets_sync_count || 0) > 0 ? `${Number(runtime.last_targets_sync_count || 0)} destinos importados.` : "Ainda nao ha contatos ou grupos carregados."),
             whatsappChecklistItem("Modelo disponivel", hasModels, hasModels ? `${models.length} modelos detectados no proxy IA.` : "Cadastre uma key valida no proxy para liberar a IA."),
             whatsappChecklistItem("Prompt operacional", Boolean((config.system_prompt || "").trim()), Boolean((config.system_prompt || "").trim()) ? "System prompt definido para o RED Whatsapp A.I." : "Defina um prompt-base para a IA."),
@@ -2633,7 +2701,7 @@ async function connectWhatsAppInstance() {
         setWhatsAppTab("targets");
         showToast("WhatsApp conectado. Os chats serão sincronizados automaticamente.", "success");
     } else {
-        showToast("Pedido de conexao enviado para a Evolution.", "success");
+        showToast("Pedido de conexao enviado para o runtime.", "success");
     }
     if (payload.payload) {
         qs("#whatsappLogStream").textContent = JSON.stringify(payload.payload, null, 2);
@@ -2643,7 +2711,7 @@ async function connectWhatsAppInstance() {
 
 async function syncWhatsAppWebhook() {
     const payload = await api("/api/whatsapp/webhook/sync", { method: "POST" });
-    showToast(payload.status_code === 200 ? "Webhook sincronizado na Evolution." : "Sync do webhook enviado. Confira os logs.", "success");
+    showToast(payload.status_code === 200 ? "Webhook sincronizado no runtime." : "Sync do webhook enviado. Confira os logs.", "success");
     if (payload.payload) {
         qs("#whatsappLogStream").textContent = JSON.stringify(payload.payload, null, 2);
     }
@@ -2784,6 +2852,8 @@ function connectSocket() {
             state.system = payload.system || state.system;
             state.telemetry = payload.telemetry || state.telemetry;
             state.services = payload.services || state.services;
+            state.stack = payload.stack || state.stack;
+            state.repoLayout = payload.repo_layout || state.repoLayout;
             state.docker = payload.docker || state.docker;
             state.processes = payload.processes || state.processes;
             state.firewall = payload.firewall || state.firewall;
@@ -2984,6 +3054,8 @@ async function loadBootstrap() {
     state.system = payload.system;
     state.telemetry = payload.telemetry;
     state.services = payload.services;
+    state.stack = payload.stack || [];
+    state.repoLayout = payload.repo_layout || [];
     state.docker = payload.docker;
     state.processes = payload.processes;
     state.firewall = payload.firewall;

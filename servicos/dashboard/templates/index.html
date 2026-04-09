@@ -12,7 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
     <link rel="icon" href="static/favicon.ico" sizes="any">
     <link rel="shortcut icon" href="static/favicon.ico">
-    <link rel="stylesheet" href="static/styles.css?v=20260407-images2">
+    <link rel="stylesheet" href="static/styles.css?v=20260409-singlevm">
 </head>
 <body>
     <script>
@@ -23,9 +23,9 @@
     <main class="login-shell">
         <section class="login-panel">
             <img class="login-logo" src="static/logo.png" alt="Logo RED">
-            <div class="eyebrow">PAINEL RED VM</div>
-            <h1>Controle total da VM</h1>
-            <p class="login-copy">Painel em tempo real com terminal, logs, serviços, Docker, proxy Ollama, firewall, processos e arquivos.</p>
+            <div class="eyebrow">PAINEL RED SYSTEMS</div>
+            <h1>Controle total da stack</h1>
+            <p class="login-copy">Painel da VM unica com servicos, runtime paths, repo, terminal, proxy IA, REDIA, Trader e bridge da extensao.</p>
             <form id="loginForm" class="login-form">
                 <label for="password">Senha do dashboard</label>
                 <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Digite a senha" />
@@ -123,13 +123,16 @@
                         </div>
                         <div class="quick-actions">
                             <button class="action-tile" data-service-shortcut="nginx">Nginx</button>
-                            <button class="action-tile" data-service-shortcut="docker">Docker</button>
+                            <button class="action-tile" data-service-shortcut="red-dashboard">Dashboard</button>
                             <button class="action-tile" data-service-shortcut="red-ollama-proxy">Proxy IA</button>
-                            <button class="action-tile" data-terminal-command="docker ps -a\n">docker ps -a</button>
+                            <button class="action-tile" data-service-shortcut="redia">REDIA</button>
+                            <button class="action-tile" data-service-shortcut="redtrader">RED Trader</button>
+                            <button class="action-tile" data-service-shortcut="red-proxy-lab">Proxy Lab</button>
+                            <button class="action-tile" data-service-shortcut="red-iq-vision-bridge">IQ Bridge</button>
+                            <button class="action-tile" data-file-shortcut="/etc/nginx/conf.d/redsystems.conf">nginx routes</button>
                             <button class="action-tile" data-terminal-command="systemctl --failed\n">systemctl --failed</button>
-                            <button class="action-tile" data-terminal-command="journalctl -xe --no-pager | tail -50\n">logs recentes</button>
-                            <button class="action-tile" data-file-shortcut="/etc/nginx/sites-available/default">nginx default</button>
-                            <button class="action-tile" data-view-shortcut="proxy">abrir proxy IA</button>
+                            <button class="action-tile" data-terminal-command="journalctl -u red-dashboard -u redia -u redtrader -u red-ollama-proxy -n 80 --no-pager\n">stack logs</button>
+                            <button class="action-tile" data-file-shortcut="/opt/redvm-repo">repo runtime</button>
                         </div>
                     </section>
                 </div>
@@ -147,6 +150,28 @@
                             <h2>Docker</h2>
                         </div>
                         <div class="compact-list" id="dockerPreview"></div>
+                    </section>
+                </div>
+
+                <div class="panel-grid panel-grid-two">
+                    <section class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <h2>Espelho da VM</h2>
+                                <div class="panel-subtitle">Runtimes, units, rotas publicas e caminhos operacionais da VM unica.</div>
+                            </div>
+                        </div>
+                        <div class="compact-list" id="stackOverview"></div>
+                    </section>
+
+                    <section class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <h2>Espelho do repo</h2>
+                                <div class="panel-subtitle">Como o repo local alimenta a VM consolidada sem misturar dados vivos no Git.</div>
+                            </div>
+                        </div>
+                        <div class="compact-list" id="repoOverview"></div>
                     </section>
                 </div>
 
@@ -663,7 +688,7 @@
                     <div class="whatsapp-hero-layout">
                         <div class="whatsapp-hero-meta">
                             <div class="kv-grid" id="whatsappSummary"></div>
-                            <div class="chat-hint" id="whatsappWebhookHint">Webhook da Evolution sera apontado para esta VM automaticamente quando voce sincronizar a configuracao.</div>
+                            <div class="chat-hint" id="whatsappWebhookHint">Webhook do runtime atual sera apontado para esta VM automaticamente quando voce sincronizar a configuracao.</div>
                         </div>
                         <div class="whatsapp-runtime-box" id="whatsappRuntimeBox"></div>
                     </div>
@@ -697,12 +722,12 @@
                                 <div class="panel-head slim">
                                     <div>
                                         <div class="eyebrow">CONEXAO</div>
-                                        <h3>Evolution e instancia</h3>
+                                        <h3>Runtime e instancia</h3>
                                     </div>
                                 </div>
                                 <div class="form-grid whatsapp-form-grid">
                                     <label class="wide">
-                                        <span>URL da Evolution API</span>
+                                        <span>URL do runtime WhatsApp</span>
                                         <input id="whatsappBaseUrlInput" type="text" placeholder="http://127.0.0.1:8088" />
                                     </label>
                                     <label>
@@ -1022,6 +1047,6 @@
     <div id="toastStack" class="toast-stack"></div>
     {% endif %}
 
-    <script src="static/app.js?v=20260407-images2"></script>
+    <script src="static/app.js?v=20260409-singlevm"></script>
 </body>
 </html>

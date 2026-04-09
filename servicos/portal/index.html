@@ -86,7 +86,8 @@
         text-transform: uppercase;
       }
 
-      .brand span, .status-pill {
+      .brand span,
+      .status-pill {
         color: var(--muted);
         font-size: 13px;
       }
@@ -165,21 +166,33 @@
 
       .terminal-card span { color: var(--red-2); }
 
-      .grid {
+      .grid,
+      .section-grid {
         margin-top: 20px;
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 16px;
+      }
+
+      .grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .section-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .card,
+      .section-card {
+        border: 1px solid var(--line-2);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: 0 16px 60px rgba(0, 0, 0, 0.24);
       }
 
       .card {
         min-height: 190px;
-        border: 1px solid var(--line-2);
-        border-radius: 8px;
         padding: 22px;
         text-decoration: none;
-        background: var(--panel);
-        box-shadow: 0 16px 60px rgba(0, 0, 0, 0.24);
         transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
       }
 
@@ -198,12 +211,17 @@
         text-transform: uppercase;
       }
 
-      .card h2 {
+      .card h2,
+      .section-card h2 {
         margin: 0 0 12px;
+      }
+
+      .card h2 {
         font-size: 25px;
       }
 
-      .card p {
+      .card p,
+      .section-card > p {
         color: var(--muted);
         margin: 0;
         line-height: 1.55;
@@ -212,6 +230,43 @@
       .card .path {
         display: inline-flex;
         margin-top: 18px;
+        color: var(--green);
+        font-family: "Cascadia Mono", Consolas, monospace;
+        font-size: 13px;
+      }
+
+      .section-card {
+        padding: 24px;
+      }
+
+      .line-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .line-item {
+        border: 1px solid var(--line-2);
+        border-radius: 8px;
+        padding: 14px 16px;
+        background: rgba(2, 4, 7, 0.62);
+      }
+
+      .line-item strong,
+      .line-item code {
+        display: block;
+      }
+
+      .line-item strong {
+        margin-bottom: 6px;
+      }
+
+      .line-item span {
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .line-item code {
+        margin-top: 8px;
         color: var(--green);
         font-family: "Cascadia Mono", Consolas, monospace;
         font-size: 13px;
@@ -231,14 +286,35 @@
           grid-template-columns: 1fr;
           padding: 28px;
         }
-        .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+        .grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .section-grid {
+          grid-template-columns: 1fr;
+        }
       }
 
       @media (max-width: 640px) {
-        .shell { width: min(100vw - 24px, 1180px); padding-top: 24px; }
-        .topbar, .footer { flex-direction: column; align-items: flex-start; }
-        .grid { grid-template-columns: 1fr; }
-        .brand img { width: 88px; }
+        .shell {
+          width: min(100vw - 24px, 1180px);
+          padding-top: 24px;
+        }
+
+        .topbar,
+        .footer {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .brand img {
+          width: 88px;
+        }
       }
     </style>
   </head>
@@ -249,70 +325,128 @@
           <img src="/portal-assets/logo.png" alt="RED" />
           <div>
             <strong>RED Systems</strong>
-            <span>painel central</span>
+            <span>vm unica consolidada</span>
           </div>
         </a>
-        <div class="status-pill">redsystems.ddns.net :: porta pública 80</div>
+        <div class="status-pill">redsystems.ddns.net :: nginx na frente :: localhost por tras</div>
       </header>
 
       <section class="hero">
         <div>
           <p class="eyebrow">Central de comando</p>
-          <h1>RED VM Infra</h1>
-          <p>Um portal único para os runtimes da RED: proxy de IA, WhatsApp AI, trading paper, Evolution API e dashboard operacional. Sem lembrar porta, sem caçar serviço no escuro.</p>
+          <h1>Uma VM, um repo, uma superficie publica.</h1>
+          <p>O espelho da RED Systems agora vive numa VM unica: nginx na frente, runtimes locais por tras e o repo organizando codigo, infra e deploy num lugar so. Sem cacar porta, sem pular entre maquinas.</p>
         </div>
         <aside class="terminal-card" aria-label="Status">
           <header>boot sequence</header>
-          <p><span>></span> nginx route table online</p>
-          <p><span>></span> nvidia/ollama proxy mapped</p>
-          <p><span>></span> redia and trader linked</p>
-          <p><span>></span> evolution bridge listening</p>
-          <p><span>></span> access mode: operator</p>
+          <p><span>&gt;</span> vm unica online em redsystems.ddns.net</p>
+          <p><span>&gt;</span> dashboard, redia e trader em localhost</p>
+          <p><span>&gt;</span> proxy principal e proxy-lab separados</p>
+          <p><span>&gt;</span> iq bridge limpo e pronto para novos snapshots</p>
+          <p><span>&gt;</span> repo centralizado em /opt/redvm-repo</p>
         </aside>
       </section>
 
-      <section class="grid" aria-label="Aplicações">
+      <section class="grid" aria-label="Aplicacoes">
         <a class="card" href="/dashboard/">
           <small>VM Ops</small>
           <h2>Dashboard</h2>
-          <p>Painel operacional da VM com serviços, Docker, terminal, arquivos, proxy, logs e deploy.</p>
+          <p>Painel operacional da VM unica com servicos, Docker, terminal, arquivos, projetos, proxy e observabilidade.</p>
           <span class="path">/dashboard/</span>
         </a>
         <a class="card" href="/redia/">
           <small>WhatsApp AI</small>
           <h2>REDIA</h2>
-          <p>Runtime da IA no WhatsApp com memória, mídia, STT, TTS, modelos e atividade ao vivo.</p>
+          <p>Runtime principal do WhatsApp com memoria, audio, imagem, tarefas internas e automacoes.</p>
           <span class="path">/redia/</span>
         </a>
         <a class="card" href="/trader/">
           <small>Paper Lab</small>
           <h2>RED Trader</h2>
-          <p>Painel de pesquisa e paper trading com dados reais, perfis de risco e comitê de IA.</p>
+          <p>Painel de paper trading e pesquisa operacional com comite, perfis de risco e integracao local.</p>
           <span class="path">/trader/</span>
         </a>
         <a class="card" href="/proxy/api/tags">
           <small>IA Gateway</small>
-          <h2>Proxy</h2>
-          <p>Endpoint compatível com Ollama/OpenAI/Anthropic, com roteamento para Ollama e NVIDIA.</p>
+          <h2>Proxy IA</h2>
+          <p>Gateway compativel com Ollama para o proxy principal da stack, com upstreams locais e NVIDIA.</p>
           <span class="path">/proxy/api/tags</span>
         </a>
-        <a class="card" href="/ollama/api/tags">
-          <small>Compat</small>
-          <h2>Ollama</h2>
-          <p>Alias do proxy para clientes que esperam uma base Ollama e listagem de modelos.</p>
-          <span class="path">/ollama/api/tags</span>
+        <a class="card" href="/proxy-lab/healthz">
+          <small>Lab pago</small>
+          <h2>Proxy Lab</h2>
+          <p>Laboratorio isolado para benchmark de modelos pagos, separado do proxy oficial que alimenta a stack.</p>
+          <span class="path">/proxy-lab/healthz</span>
         </a>
-        <a class="card" href="/evolution/">
-          <small>WhatsApp Bridge</small>
-          <h2>Evolution API</h2>
-          <p>API local de integração WhatsApp, exposta por rota amigável para diagnóstico e testes.</p>
-          <span class="path">/evolution/</span>
+        <a class="card" href="/iq-bridge/healthz">
+          <small>Vision bridge</small>
+          <h2>IQ Bridge</h2>
+          <p>Bridge da extensao Chrome da IQ demo com snapshots, logs e comandos remotos para observabilidade.</p>
+          <span class="path">/iq-bridge/healthz</span>
         </a>
       </section>
 
+      <section class="section-grid" aria-label="Espelho da VM e do repo">
+        <article class="section-card">
+          <p class="eyebrow">Espelho da VM</p>
+          <h2>Runtimes vivos na maquina nova</h2>
+          <p>O Nginx publica rotas limpas e tudo o que interessa vive em localhost, com runtime e dados bem separados.</p>
+          <div class="line-list">
+            <div class="line-item">
+              <strong>Dashboard</strong>
+              <span>Painel operacional, terminal, arquivos, Docker, projetos e WhatsApp.</span>
+              <code>/opt/redvm-dashboard</code>
+            </div>
+            <div class="line-item">
+              <strong>REDIA + RED Trader</strong>
+              <span>Apps principais da stack, cada um com seu runtime e seus dados.</span>
+              <code>/opt/redia :: /opt/redtrader</code>
+            </div>
+            <div class="line-item">
+              <strong>Proxy principal + Proxy Lab</strong>
+              <span>O runtime oficial e o laboratorio pago convivem sem misturar trafego nem segredos.</span>
+              <code>/opt/redvm-proxy :: /opt/red-proxy-lab</code>
+            </div>
+            <div class="line-item">
+              <strong>IQ Bridge limpo</strong>
+              <span>Bridge reiniciado do zero, so com a base, pronto para telemetria nova.</span>
+              <code>/opt/red-iq-vision-bridge</code>
+            </div>
+          </div>
+        </article>
+
+        <article class="section-card">
+          <p class="eyebrow">Espelho do repo</p>
+          <h2>Codigo e infra numa estrutura so</h2>
+          <p>O repo local virou o espelho do que realmente roda na VM: servicos em um lado, infraestrutura e deploy no outro.</p>
+          <div class="line-list">
+            <div class="line-item">
+              <strong>servicos/</strong>
+              <span>Portal, dashboard, proxy, proxy-lab, REDIA, RED Trader e extensao IQ demo.</span>
+              <code>servicos/*</code>
+            </div>
+            <div class="line-item">
+              <strong>infraestrutura/</strong>
+              <span>Nginx, systemd, scripts e legados auxiliares de Docker.</span>
+              <code>infraestrutura/*</code>
+            </div>
+            <div class="line-item">
+              <strong>ferramentas/vm</strong>
+              <span>Acesso remoto, Paramiko e utilitarios de migracao da VM unica.</span>
+              <code>ferramentas/vm</code>
+            </div>
+            <div class="line-item">
+              <strong>Estado vivo fora do Git</strong>
+              <span>Dados, bancos, logs e envs continuam separados do codigo.</span>
+              <code>/opt/*/data :: /etc/*.env</code>
+            </div>
+          </div>
+        </article>
+      </section>
+
       <footer class="footer">
-        <span>RED Systems :: infra lab</span>
-        <span>sem portas, só rotas</span>
+        <span>RED Systems :: VM unica consolidada</span>
+        <span>sem portas soltas, so rotas e runtimes locais</span>
       </footer>
     </main>
   </body>

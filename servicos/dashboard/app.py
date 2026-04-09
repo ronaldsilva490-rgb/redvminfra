@@ -72,7 +72,7 @@ PROJECT_SOURCES_ROOT = Path(os.getenv("RED_PROJECT_SOURCES_ROOT", "/opt/redvm-pr
 PROJECT_NGINX_ROUTES_DIR = Path(os.getenv("RED_PROJECT_NGINX_ROUTES_DIR", "/etc/nginx/redvm-routes"))
 PROJECT_NGINX_SERVERS_DIR = Path(os.getenv("RED_PROJECT_NGINX_SERVERS_DIR", "/etc/nginx/conf.d"))
 
-APP_TITLE = "Painel Red VM"
+APP_TITLE = "Painel RED Systems"
 COOKIE_NAME = "redvm_dashboard_auth"
 SECRET_KEY = os.getenv("REDVM_SECRET", "change-this-secret")
 DASHBOARD_PASSWORD = os.getenv("REDVM_DASH_PASSWORD", "change-me")
@@ -98,6 +98,124 @@ IMPORTANT_SYSTEMD_UNITS = {
     "red-iq-vision-bridge.service",
     "rapidleech.service",
 }
+RUNTIME_REPO_ROOT = Path(os.getenv("RED_REPO_RUNTIME_ROOT", "/opt/redvm-repo"))
+STACK_BLUEPRINT = [
+    {
+        "id": "portal",
+        "name": "Portal",
+        "summary": "Entrada publica da RED Systems com rotas amigaveis para os runtimes.",
+        "unit": "nginx.service",
+        "route": "/",
+        "runtime_path": "/var/www/red-portal",
+        "repo_path": "servicos/portal",
+        "data_path": "",
+        "local_url": "http://127.0.0.1/",
+    },
+    {
+        "id": "dashboard",
+        "name": "Dashboard",
+        "summary": "Painel operacional da VM unica com servicos, terminal, arquivos e observabilidade.",
+        "unit": "red-dashboard.service",
+        "route": "/dashboard/",
+        "runtime_path": "/opt/redvm-dashboard",
+        "repo_path": "servicos/dashboard",
+        "data_path": "/opt/redvm-dashboard/data",
+        "local_url": "http://127.0.0.1:9001/",
+    },
+    {
+        "id": "proxy",
+        "name": "Proxy IA",
+        "summary": "Gateway Ollama-compatible central para Ollama local e upstreams NVIDIA.",
+        "unit": "red-ollama-proxy.service",
+        "route": "/proxy/api/tags",
+        "runtime_path": "/opt/redvm-proxy",
+        "repo_path": "servicos/proxy",
+        "data_path": "/var/lib/redvm-proxy",
+        "local_url": "http://127.0.0.1:8080/api/tags",
+    },
+    {
+        "id": "redia",
+        "name": "REDIA",
+        "summary": "Runtime principal de WhatsApp com Baileys, memoria, audio, imagem e automacoes.",
+        "unit": "redia.service",
+        "route": "/redia/",
+        "runtime_path": "/opt/redia",
+        "repo_path": "servicos/redia",
+        "data_path": "/opt/redia/data",
+        "local_url": "http://127.0.0.1:3099/",
+    },
+    {
+        "id": "redtrader",
+        "name": "RED Trader",
+        "summary": "Painel paper/demo de trading com modelos, comite e automacao assistida.",
+        "unit": "redtrader.service",
+        "route": "/trader/",
+        "runtime_path": "/opt/redtrader",
+        "repo_path": "servicos/redtrader",
+        "data_path": "/opt/redtrader/data",
+        "local_url": "http://127.0.0.1:3100/healthz",
+    },
+    {
+        "id": "proxy_lab",
+        "name": "Proxy Lab",
+        "summary": "Laboratorio pago de benchmark para Groq e Mistral, separado do proxy oficial.",
+        "unit": "red-proxy-lab.service",
+        "route": "/proxy-lab/healthz",
+        "runtime_path": "/opt/red-proxy-lab",
+        "repo_path": "servicos/proxy-lab",
+        "data_path": "/opt/red-proxy-lab/data",
+        "local_url": "http://127.0.0.1:8090/healthz",
+    },
+    {
+        "id": "iq_bridge",
+        "name": "IQ Bridge",
+        "summary": "Bridge da extensao Chrome para snapshots, logs e comandos da IQ demo.",
+        "unit": "red-iq-vision-bridge.service",
+        "route": "/iq-bridge/healthz",
+        "runtime_path": "/opt/red-iq-vision-bridge",
+        "repo_path": "servicos/extensao-iq-demo/bridge",
+        "data_path": "/opt/red-iq-vision-bridge/data",
+        "local_url": "http://127.0.0.1:3115/healthz",
+    },
+    {
+        "id": "rapidleech",
+        "name": "Rapidleech",
+        "summary": "Servico legado mantido na VM unica enquanto o descomissionamento nao acontece.",
+        "unit": "rapidleech.service",
+        "route": "",
+        "runtime_path": "/opt/rapidleech",
+        "repo_path": "",
+        "data_path": "",
+        "local_url": "http://127.0.0.1:2581/",
+    },
+]
+REPO_BLUEPRINT = [
+    {
+        "group": "servicos",
+        "title": "Runtimes e apps",
+        "items": [
+            {"path": "servicos/portal", "summary": "Pagina inicial publica da RED Systems."},
+            {"path": "servicos/dashboard", "summary": "Painel operacional da VM unica."},
+            {"path": "servicos/proxy", "summary": "Proxy IA principal e compatibilidade Ollama."},
+            {"path": "servicos/proxy-lab", "summary": "Benchmark pago isolado do runtime principal."},
+            {"path": "servicos/redia", "summary": "WhatsApp AI principal da stack."},
+            {"path": "servicos/redtrader", "summary": "Paper trading e pesquisa operacional."},
+            {"path": "servicos/extensao-iq-demo", "summary": "Extensao e bridge da IQ demo."},
+            {"path": "servicos/deploy-agent", "summary": "Legado mantido apenas por compatibilidade."},
+        ],
+    },
+    {
+        "group": "infraestrutura",
+        "title": "Infra e deploy",
+        "items": [
+            {"path": "infraestrutura/nginx", "summary": "Rotas publicas e friendly paths da VM unica."},
+            {"path": "infraestrutura/systemd", "summary": "Units oficiais dos servicos consolidados."},
+            {"path": "infraestrutura/scripts", "summary": "Instalacao, sync e utilitarios operacionais."},
+            {"path": "infraestrutura/docker", "summary": "Artefatos auxiliares e legados em Docker."},
+            {"path": "ferramentas/vm", "summary": "Acesso remoto e migracao Paramiko/SSH."},
+        ],
+    },
+]
 PROJECT_PORT_BASE = int(os.getenv("RED_PROJECT_PORT_BASE", "3000") or 3000)
 PROJECT_PORT_STEP = int(os.getenv("RED_PROJECT_PORT_STEP", "20") or 20)
 PROJECT_WEBHOOK_BASE_PATH = os.getenv("RED_PROJECT_WEBHOOK_BASE_PATH", "/hooks/github").rstrip("/")
@@ -4288,15 +4406,72 @@ def system_summary() -> dict[str, Any]:
 
     return {
         "hostname": socket.gethostname(),
+        "public_host": PROJECT_PUBLIC_HOST,
         "platform": platform.platform(),
         "system": uname.system,
         "release": uname.release,
         "version": uname.version,
         "machine": uname.machine,
         "boot_time": boot_time,
+        "repo_root": str(RUNTIME_REPO_ROOT),
+        "runtime_root": "/opt",
         "timestamp": utc_now_iso(),
         "load_avg": {"one": load[0], "five": load[1], "fifteen": load[2]},
     }
+
+
+def stack_blueprint_snapshot(services: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    service_rows = services if services is not None else parse_service_rows()
+    service_map = {str(row.get("unit", "")): row for row in service_rows}
+    base_url = f"http://{PROJECT_PUBLIC_HOST}".rstrip("/") if PROJECT_PUBLIC_HOST else ""
+    payload: list[dict[str, Any]] = []
+    for item in STACK_BLUEPRINT:
+        service = service_map.get(item["unit"], {})
+        route = str(item.get("route", "") or "")
+        repo_path = str(item.get("repo_path", "") or "")
+        payload.append(
+            {
+                "id": item["id"],
+                "name": item["name"],
+                "summary": item["summary"],
+                "unit": item["unit"],
+                "route": route,
+                "public_url": f"{base_url}{route}" if base_url and route else "",
+                "local_url": item.get("local_url", ""),
+                "repo_path": repo_path,
+                "repo_runtime_path": str((RUNTIME_REPO_ROOT / repo_path).resolve(strict=False)) if repo_path else "",
+                "runtime_path": item.get("runtime_path", ""),
+                "data_path": item.get("data_path", ""),
+                "active": service.get("active", "unknown"),
+                "sub": service.get("sub", "unknown"),
+                "unit_file_state": service.get("unit_file_state", "unknown"),
+                "description": service.get("description", ""),
+            }
+        )
+    return payload
+
+
+def repo_blueprint_snapshot() -> list[dict[str, Any]]:
+    payload: list[dict[str, Any]] = []
+    for group in REPO_BLUEPRINT:
+        items = []
+        for item in group.get("items", []):
+            path_value = str(item.get("path", "") or "")
+            items.append(
+                {
+                    "path": path_value,
+                    "summary": item.get("summary", ""),
+                    "runtime_path": str((RUNTIME_REPO_ROOT / path_value).resolve(strict=False)) if path_value else "",
+                }
+            )
+        payload.append(
+            {
+                "group": group.get("group", ""),
+                "title": group.get("title", ""),
+                "items": items,
+            }
+        )
+    return payload
 
 
 def telemetry_snapshot() -> dict[str, Any]:
@@ -4845,9 +5020,12 @@ async def emit_snapshot(include_heavy: bool = False) -> None:
     payload: dict[str, Any] = {
         "system": system_summary(),
         "telemetry": telemetry_snapshot(),
+        "repo_layout": repo_blueprint_snapshot(),
     }
     if include_heavy:
-        payload["services"] = await asyncio.to_thread(parse_service_rows)
+        services = await asyncio.to_thread(parse_service_rows)
+        payload["services"] = services
+        payload["stack"] = stack_blueprint_snapshot(services)
         payload["docker"] = await asyncio.to_thread(docker_snapshot)
         payload["processes"] = await asyncio.to_thread(process_snapshot)
         payload["firewall"] = await asyncio.to_thread(firewall_snapshot)
@@ -4992,10 +5170,13 @@ async def logout(request: Request) -> RedirectResponse:
 async def api_bootstrap(request: Request) -> JSONResponse:
     ensure_authenticated(request)
     projects_payload = project_present_all(request)
+    services = await asyncio.to_thread(parse_service_rows)
     payload = {
         "system": system_summary(),
         "telemetry": telemetry_snapshot(),
-        "services": await asyncio.to_thread(parse_service_rows),
+        "services": services,
+        "stack": stack_blueprint_snapshot(services),
+        "repo_layout": repo_blueprint_snapshot(),
         "docker": await asyncio.to_thread(docker_snapshot),
         "processes": await asyncio.to_thread(process_snapshot),
         "firewall": await asyncio.to_thread(firewall_snapshot),
