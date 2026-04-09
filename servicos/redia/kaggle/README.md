@@ -16,7 +16,7 @@ Configure no notebook:
 
 ```python
 import os
-os.environ["REDIA_BASE_URL"] = "http://redsystems2.ddns.net:3099"
+os.environ["REDIA_BASE_URL"] = "http://redsystems.ddns.net:3099"
 os.environ["REDIA_WORKER_TOKEN"] = "COLE_O_MESMO_TOKEN_DO_REDIA_IMAGE_WORKER_TOKEN"
 os.environ["REDIA_MODEL_ID"] = "stabilityai/sdxl-turbo"
 ```

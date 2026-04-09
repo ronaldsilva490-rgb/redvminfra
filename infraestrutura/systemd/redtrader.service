@@ -1,0 +1,22 @@
+[Unit]
+Description=RED Trader Painel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/redtrader
+Environment=PYTHONPATH=/opt/redtrader/src
+Environment=REDTRADER_HOST=0.0.0.0
+Environment=REDTRADER_PORT=3100
+Environment=REDTRADER_DB_PATH=/opt/redtrader/data/redtrader.sqlite
+Environment=REDSYSTEMS_PROXY_URL=http://127.0.0.1:8080
+Environment=BINANCE_BASE_URL=https://api.binance.com
+EnvironmentFile=-/etc/redtrader.env
+ExecStart=/opt/redtrader/.venv/bin/python -m redtrader.app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

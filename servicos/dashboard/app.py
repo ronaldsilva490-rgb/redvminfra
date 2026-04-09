@@ -86,6 +86,18 @@ PROXY_LOG_FILE = PROXY_DATA_DIR / "proxy.log"
 PROXY_MODEL_CACHE_TTL = int(os.getenv("RED_PROXY_MODEL_CACHE_TTL", "300") or 300)
 PROXY_NVIDIA_SUFFIX = " (NVIDIA)"
 PROXY_IMAGE_MODEL_HINTS = ("flux", "stable-diffusion")
+IMPORTANT_SYSTEMD_UNITS = {
+    "nginx.service",
+    "docker.service",
+    "ssh.service",
+    "red-dashboard.service",
+    "red-ollama-proxy.service",
+    "redia.service",
+    "redtrader.service",
+    "red-proxy-lab.service",
+    "red-iq-vision-bridge.service",
+    "rapidleech.service",
+}
 PROJECT_PORT_BASE = int(os.getenv("RED_PROJECT_PORT_BASE", "3000") or 3000)
 PROJECT_PORT_STEP = int(os.getenv("RED_PROJECT_PORT_STEP", "20") or 20)
 PROJECT_WEBHOOK_BASE_PATH = os.getenv("RED_PROJECT_WEBHOOK_BASE_PATH", "/hooks/github").rstrip("/")
@@ -1859,7 +1871,7 @@ def whatsapp_vm_context_text() -> str:
     proxy = proxy_snapshot_safe()
     docker_info = docker_snapshot()
     running_containers = [item.get("name") for item in docker_info.get("containers", []) if item.get("status") == "running"][:10]
-    services = [row for row in parse_service_rows() if row.get("unit") in {"nginx.service", "docker.service", "ssh.service", "red-dashboard.service", PROXY_SERVICE}]
+    services = [row for row in parse_service_rows() if row.get("unit") in (IMPORTANT_SYSTEMD_UNITS | {PROXY_SERVICE})]
     lines = [
         f"Host: {socket.gethostname()}",
         f"CPU: {float(telemetry.get('cpu', {}).get('percent', 0) or 0):.1f}%",
@@ -4507,13 +4519,7 @@ def vm_assistant_context_text(snapshot: dict[str, Any]) -> str:
     firewall = snapshot.get("firewall", {})
     proxy = snapshot.get("proxy", {})
 
-    important_units = {
-        "nginx.service",
-        "docker.service",
-        "ssh.service",
-        "red-dashboard.service",
-        "red-ollama-proxy.service",
-    }
+    important_units = IMPORTANT_SYSTEMD_UNITS | {PROXY_SERVICE}
     service_lines = [
         f"- {row.get('unit')}: {row.get('active')}/{row.get('sub')} ({row.get('description')})"
         for row in services

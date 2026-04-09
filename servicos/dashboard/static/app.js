@@ -61,6 +61,17 @@ const WHATSAPP_TAB_STORAGE_KEY = "redvm.whatsapp.tab.v1";
 const APP_BASE_PATH = window.location.pathname === "/dashboard" || window.location.pathname.startsWith("/dashboard/")
     ? "/dashboard"
     : "";
+const IMPORTANT_SERVICES = [
+    "nginx.service",
+    "docker.service",
+    "ssh.service",
+    "red-ollama-proxy.service",
+    "redia.service",
+    "redtrader.service",
+    "red-proxy-lab.service",
+    "red-iq-vision-bridge.service",
+    "rapidleech.service",
+];
 
 function qs(selector) {
     return document.querySelector(selector);
@@ -504,7 +515,7 @@ function renderOverview() {
     `;
 
     const servicesPreview = state.services
-        .filter((service) => ["nginx.service", "docker.service", "ssh.service", "red-ollama-proxy.service"].includes(service.unit))
+        .filter((service) => IMPORTANT_SERVICES.includes(service.unit))
         .map((service) => `
             <div class="list-row">
                 <div>

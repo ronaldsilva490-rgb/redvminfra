@@ -5,7 +5,7 @@ const DEFAULT_CONFIG = {
   maxTicks: 240,
   sendIntervalMs: 500,
   bridgeEnabled: true,
-  bridgeUrl: "http://redsystems2.ddns.net:3115",
+  bridgeUrl: "http://redsystems.ddns.net:3115",
   bridgeToken: "",
   bridgeMinIntervalMs: 600,
   frameCaptureEnabled: false,

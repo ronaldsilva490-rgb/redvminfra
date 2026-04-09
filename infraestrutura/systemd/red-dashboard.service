@@ -1,7 +1,7 @@
 [Unit]
 Description=Red VM Control Dashboard
-After=network.target docker.service
-Requires=docker.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple

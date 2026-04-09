@@ -11,7 +11,7 @@ import requests
 sys.stdout = open(sys.stdout.fileno(), mode="w", encoding="utf-8", buffering=1)
 
 
-DEFAULT_BASE = "http://redsystems2.ddns.net:3115"
+DEFAULT_BASE = "http://redsystems.ddns.net:3115"
 DEFAULT_SESSION = "chrome-extension:peimfeacggmdcmjfookmdadjjaebmfig"
 
 

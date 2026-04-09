@@ -1,0 +1,18 @@
+[Unit]
+Description=REDIA WhatsApp AI Runtime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/redia
+EnvironmentFile=/opt/redia/.env
+ExecStart=/usr/bin/node /opt/redia/src/index.js
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

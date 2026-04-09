@@ -197,7 +197,7 @@ def spawn_dual(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-url", default=os.environ.get("REDIA_BASE_URL", "http://redsystems2.ddns.net:3099"))
+    parser.add_argument("--base-url", default=os.environ.get("REDIA_BASE_URL", "http://redsystems.ddns.net:3099"))
     parser.add_argument("--worker-name", default=os.environ.get("REDIA_WORKER_NAME", "kaggle-t4"))
     parser.add_argument("--worker-token", default=os.environ.get("REDIA_WORKER_TOKEN", ""))
     parser.add_argument("--model-id", default=os.environ.get("REDIA_MODEL_ID", "stabilityai/sdxl-turbo"))

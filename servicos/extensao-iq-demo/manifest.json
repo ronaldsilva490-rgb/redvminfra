@@ -12,7 +12,7 @@
   "host_permissions": [
     "https://iqoption.com/*",
     "https://*.iqoption.com/*",
-    "http://redsystems2.ddns.net:3115/*"
+    "http://redsystems.ddns.net:3115/*"
   ],
   "background": {
     "service_worker": "src/background.js",
