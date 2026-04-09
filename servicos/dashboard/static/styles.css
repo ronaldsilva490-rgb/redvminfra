@@ -20,6 +20,54 @@
     --sans: "Space Grotesk", "Segoe UI", sans-serif;
 }
 
+.redia-tab-toggle {
+    flex-wrap: wrap;
+}
+
+.redia-tab-shell {
+    display: none;
+    margin-top: 18px;
+}
+
+.redia-tab-shell.active {
+    display: block;
+}
+
+.redia-search-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.redia-conversation-list,
+.redia-schedule-list,
+.redia-benchmark-list {
+    max-height: 640px;
+    overflow: auto;
+}
+
+.redia-conversation-stream,
+.redia-activity-stream {
+    min-height: 280px;
+    max-height: 420px;
+}
+
+.redia-test-output {
+    min-height: 220px;
+}
+
+#view-redia .stack-card.active {
+    border-color: rgba(255, 90, 90, 0.55);
+    box-shadow: 0 0 0 1px rgba(255, 90, 90, 0.18) inset;
+}
+
+@media (max-width: 900px) {
+    .redia-search-row {
+        grid-template-columns: 1fr;
+    }
+}
+
 * {
     box-sizing: border-box;
 }

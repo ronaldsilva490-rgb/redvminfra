@@ -6,6 +6,7 @@ const state = {
     processes: [],
     firewall: { enabled: false, raw: [] },
     proxy: null,
+    redia: null,
     whatsapp: null,
     stack: [],
     repoLayout: [],
@@ -54,12 +55,20 @@ const state = {
     whatsappUi: {
         configDirty: false,
     },
+    rediaUi: {
+        activeTab: "overview",
+        benchmarkRows: [],
+        testResult: null,
+    },
+    selectedRediaConversationId: "",
+    rediaConversationMessages: [],
 };
 
 const PROXY_CHAT_STORAGE_KEY = "redvm.proxyChat.v2";
 const VM_ASSISTANT_STORAGE_KEY = "redvm.vmAssistant.v1";
 const PROJECT_WIZARD_MODE_KEY = "redvm.projects.mode.v1";
 const WHATSAPP_TAB_STORAGE_KEY = "redvm.whatsapp.tab.v1";
+const REDIA_TAB_STORAGE_KEY = "redvm.redia.tab.v1";
 const APP_BASE_PATH = window.location.pathname === "/dashboard" || window.location.pathname.startsWith("/dashboard/")
     ? "/dashboard"
     : "";
@@ -2768,6 +2777,479 @@ function renderContainerLogs(lines) {
     replaceScrollableContent(host, (lines || []).map((line) => `<div>${escapeHtml(line)}</div>`).join(""));
 }
 
+function rediaModels() {
+    return Array.isArray(state.redia?.status?.proxy?.models) ? state.redia.status.proxy.models : [];
+}
+
+function rediaVoices() {
+    return Array.isArray(state.redia?.voices) ? state.redia.voices : [];
+}
+
+function rediaConversationById(chatId) {
+    return (state.redia?.conversations || []).find((item) => item.chat_id === chatId) || null;
+}
+
+function setRediaTab(tab) {
+    const allowed = new Set(["overview", "conversations", "schedule", "lab"]);
+    state.rediaUi.activeTab = allowed.has(tab) ? tab : "overview";
+    try {
+        window.localStorage.setItem(REDIA_TAB_STORAGE_KEY, state.rediaUi.activeTab);
+    } catch (_) {
+        // ignore
+    }
+    qsa("[data-redia-tab]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.rediaTab === state.rediaUi.activeTab);
+    });
+    qsa(".redia-tab-shell").forEach((shell) => {
+        shell.classList.toggle("active", shell.id === `rediaTab${state.rediaUi.activeTab.charAt(0).toUpperCase()}${state.rediaUi.activeTab.slice(1)}`);
+    });
+}
+
+function rediaFormatSchedule(schedule) {
+    const tone = {
+        scheduled: "agendado",
+        running: "executando",
+        completed: "enviado",
+        failed: "falhou",
+        canceled: "cancelado",
+    }[String(schedule?.status || "").toLowerCase()] || (schedule?.status || "n/d");
+    return tone;
+}
+
+function renderRediaSummary() {
+    const host = qs("#rediaSummary");
+    if (!host) return;
+    const runtime = state.redia?.status?.whatsapp || {};
+    const proxy = state.redia?.status?.proxy || {};
+    const counts = state.redia?.counts || {};
+    host.innerHTML = `
+        <div class="kv-item"><span>Runtime</span><strong>${escapeHtml(runtime.status || "desconhecido")}</strong></div>
+        <div class="kv-item"><span>Telefone</span><strong>${escapeHtml(runtime.phone || "n/d")}</strong></div>
+        <div class="kv-item"><span>Proxy</span><strong>${escapeHtml(state.redia?.service_url || "n/d")}</strong></div>
+        <div class="kv-item"><span>Modelos</span><strong>${Number(proxy.models?.length || 0)}</strong></div>
+        <div class="kv-item"><span>Conversas</span><strong>${Number(counts.conversations || 0)}</strong></div>
+        <div class="kv-item"><span>Agendamentos</span><strong>${Number(counts.schedules_pending || 0)} pendentes</strong></div>
+    `;
+}
+
+function renderRediaKpis() {
+    const host = qs("#rediaKpis");
+    if (!host) return;
+    const runtime = state.redia?.status?.whatsapp || {};
+    const proxy = state.redia?.status?.proxy || {};
+    const counts = state.redia?.counts || {};
+    const schedules = state.redia?.schedules || [];
+    host.innerHTML = `
+        <article class="metric-card compact">
+            <div class="metric-label">WhatsApp</div>
+            <div class="metric-value">${escapeHtml(runtime.status || "offline")}</div>
+            <div class="metric-meta">${escapeHtml(runtime.phone || "sem número conectado")}</div>
+        </article>
+        <article class="metric-card compact">
+            <div class="metric-label">Modelo padrão</div>
+            <div class="metric-value">${escapeHtml(state.redia?.config?.chat?.default_model || "auto")}</div>
+            <div class="metric-meta">${Number(proxy.models?.length || 0)} modelos no proxy</div>
+        </article>
+        <article class="metric-card compact">
+            <div class="metric-label">Conversas</div>
+            <div class="metric-value">${Number(counts.conversations || 0)}</div>
+            <div class="metric-meta">${Number(counts.activity || 0)} eventos recentes</div>
+        </article>
+        <article class="metric-card compact">
+            <div class="metric-label">Agenda</div>
+            <div class="metric-value">${Number(counts.schedules_pending || 0)}</div>
+            <div class="metric-meta">${schedules.filter((item) => String(item.status).toLowerCase() === "completed").length} concluídos</div>
+        </article>
+    `;
+}
+
+function renderRediaActivity() {
+    const host = qs("#rediaActivityStream");
+    if (!host) return;
+    const rows = Array.isArray(state.redia?.activity) ? state.redia.activity : [];
+    replaceScrollableContent(host, rows.map((row) => {
+        const meta = [formatDate(row.at), row.type].filter(Boolean).join(" • ");
+        const payload = Object.entries(row || {})
+            .filter(([key]) => !["id", "at", "type"].includes(key))
+            .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
+            .join(" | ");
+        return `<div><strong>${escapeHtml(meta)}</strong>${payload ? `<br>${escapeHtml(payload)}` : ""}</div>`;
+    }).join("") || `<div class="empty">Sem atividade recente da RED I.A.</div>`);
+}
+
+function renderRediaConfig() {
+    const config = state.redia?.config || {};
+    const chat = config.chat || {};
+    const learning = config.learning || {};
+    const proactive = config.proactive || {};
+    const tts = config.tts || {};
+    const image = config.image_generation || {};
+    const models = rediaModels();
+    const voices = rediaVoices();
+
+    function fillSelect(selector, value, options, placeholder = "Selecione") {
+        const el = qs(selector);
+        if (!el) return;
+        const rows = [`<option value="">${escapeHtml(placeholder)}</option>`]
+            .concat(options.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`));
+        el.innerHTML = rows.join("");
+        el.value = value || "";
+    }
+
+    fillSelect("#rediaDefaultModelSelect", chat.default_model || "", models, "Usar modelo padrão");
+    fillSelect("#rediaLearningModelSelect", learning.model || "", models, "Usar modelo padrão");
+    fillSelect("#rediaProactiveModelSelect", proactive.model || "", models, "Usar modelo padrão");
+    fillSelect("#rediaScheduleModelSelect", "", models, "Usar o modelo configurado");
+    fillSelect("#rediaTestModelSelect", chat.default_model || "", models, "Usar modelo padrão");
+
+    const voiceEl = qs("#rediaVoiceSelect");
+    if (voiceEl) {
+        voiceEl.innerHTML = voices.map((voice) => {
+            const name = typeof voice === "string" ? voice : voice.name;
+            const label = typeof voice === "string" ? voice : (voice.display_name || voice.name);
+            return `<option value="${escapeHtml(name)}">${escapeHtml(label)}</option>`;
+        }).join("") || `<option value="">Sem vozes</option>`;
+        voiceEl.value = tts.voice || "";
+    }
+
+    if (qs("#rediaGroupPrefixInput")) qs("#rediaGroupPrefixInput").value = chat.group_prefix || "";
+    if (qs("#rediaTemperatureInput")) qs("#rediaTemperatureInput").value = chat.temperature ?? 0.82;
+    if (qs("#rediaPrivateModeSelect")) qs("#rediaPrivateModeSelect").value = chat.private_mode || "always";
+    if (qs("#rediaGroupModeSelect")) qs("#rediaGroupModeSelect").value = chat.group_mode || "prefix_or_mention";
+    if (qs("#rediaTtsEnabledInput")) qs("#rediaTtsEnabledInput").checked = Boolean(tts.enabled);
+    if (qs("#rediaLearningEnabledInput")) qs("#rediaLearningEnabledInput").checked = Boolean(learning.enabled);
+    if (qs("#rediaProactiveEnabledInput")) qs("#rediaProactiveEnabledInput").checked = Boolean(proactive.enabled);
+    if (qs("#rediaImageEnabledInput")) qs("#rediaImageEnabledInput").checked = Boolean(image.enabled);
+    if (qs("#rediaSystemPromptInput")) qs("#rediaSystemPromptInput").value = chat.system_prompt || "";
+    const benchmarkModels = qs("#rediaBenchmarkModelsInput");
+    if (benchmarkModels && !benchmarkModels.value.trim() && models.length) {
+        benchmarkModels.value = models.slice(0, 5).join("\n");
+    }
+    const benchmarkPrompt = qs("#rediaBenchmarkPromptInput");
+    if (benchmarkPrompt && !benchmarkPrompt.value.trim()) {
+        benchmarkPrompt.value = "Responda como a RED I.A para um contato no WhatsApp, em português do Brasil, de forma natural, útil e humana.";
+    }
+}
+
+function renderRediaConversations() {
+    const list = qs("#rediaConversationsList");
+    const meta = qs("#rediaConversationMeta");
+    const stream = qs("#rediaConversationMessages");
+    if (!list || !meta || !stream) return;
+
+    const all = Array.isArray(state.redia?.conversations) ? state.redia.conversations : [];
+    const filter = (qs("#rediaConversationsSearchInput")?.value || "").trim().toLowerCase();
+    const rows = all.filter((item) => {
+        const haystack = `${item.name || ""} ${item.chat_id || ""} ${item.summary || ""} ${item.vibe || ""}`.toLowerCase();
+        return !filter || haystack.includes(filter);
+    });
+
+    replaceScrollableContent(list, rows.map((item) => `
+        <article class="stack-card ${item.chat_id === state.selectedRediaConversationId ? "active" : ""}">
+            <div class="stack-head">
+                <div>
+                    <strong>${escapeHtml(item.name || item.chat_id || "Sem nome")}</strong>
+                    <small>${escapeHtml(item.kind || "private")} • ${escapeHtml(item.model || state.redia?.config?.chat?.default_model || "auto")}</small>
+                </div>
+                <button class="ghost-button" type="button" data-redia-conversation="${escapeHtml(item.chat_id)}">Abrir</button>
+            </div>
+            <div class="stack-copy">${escapeHtml(item.summary || item.context_hint || "Sem resumo ainda.")}</div>
+            <div class="stack-meta">Última mensagem: ${escapeHtml(formatDate(item.last_message_at || item.updated_at))}</div>
+        </article>
+    `).join("") || `<div class="empty">Nenhuma conversa encontrada.</div>`);
+
+    const selected = rediaConversationById(state.selectedRediaConversationId);
+    if (!selected) {
+        meta.innerHTML = `<div class="kv-item"><span>Conversa</span><strong>Selecione uma conversa</strong></div>`;
+        stream.textContent = "Selecione uma conversa para carregar o histórico salvo.";
+        return;
+    }
+
+    meta.innerHTML = `
+        <div class="kv-item"><span>Chat</span><strong>${escapeHtml(selected.name || selected.chat_id)}</strong></div>
+        <div class="kv-item"><span>Tipo</span><strong>${escapeHtml(selected.kind || "private")}</strong></div>
+        <div class="kv-item"><span>Modelo</span><strong>${escapeHtml(selected.model || state.redia?.config?.chat?.default_model || "auto")}</strong></div>
+        <div class="kv-item"><span>Vibe</span><strong>${escapeHtml(selected.vibe || "n/d")}</strong></div>
+        <div class="kv-item"><span>Tópicos</span><strong>${escapeHtml(selected.topics || "n/d")}</strong></div>
+        <div class="kv-item"><span>Última atividade</span><strong>${escapeHtml(formatDate(selected.last_message_at || selected.updated_at))}</strong></div>
+    `;
+    replaceScrollableContent(stream, (state.rediaConversationMessages || []).map((message) => {
+        const metaLine = `${message.role === "assistant" ? "RED I.A" : (message.sender_name || "Contato")} • ${formatDate(message.created_at)}`;
+        return `<div><strong>${escapeHtml(metaLine)}</strong><br>${escapeHtml(message.text || "")}</div>`;
+    }).join("") || `<div class="empty">Sem mensagens carregadas para esta conversa.</div>`);
+}
+
+function renderRediaSchedules() {
+    const host = qs("#rediaScheduleList");
+    if (!host) return;
+    const rows = Array.isArray(state.redia?.schedules) ? [...state.redia.schedules] : [];
+    rows.sort((a, b) => `${a.send_at}`.localeCompare(`${b.send_at}`));
+    replaceScrollableContent(host, rows.map((item) => `
+        <article class="stack-card">
+            <div class="stack-head">
+                <div>
+                    <strong>${escapeHtml(item.chat_name || item.chat_id || `Agenda #${item.id}`)}</strong>
+                    <small>${escapeHtml(item.mode === "ai" ? "mensagem com IA" : "texto fixo")} • ${escapeHtml(rediaFormatSchedule(item))}</small>
+                </div>
+                <div class="inline-actions">
+                    <button class="ghost-button" type="button" data-redia-schedule-copy="${item.id}">Usar alvo</button>
+                    ${["scheduled", "running", "failed"].includes(String(item.status || "").toLowerCase()) ? `<button class="danger-button" type="button" data-redia-schedule-delete="${item.id}">Cancelar</button>` : ""}
+                </div>
+            </div>
+            <div class="stack-copy">${escapeHtml(item.mode === "ai" ? (item.prompt || "Sem prompt") : (item.text || "Sem texto"))}</div>
+            <div class="stack-meta">
+                ${escapeHtml(formatDate(item.send_at))}<br>
+                ${item.last_error ? `Erro: ${escapeHtml(item.last_error)}` : `Modelo: ${escapeHtml(item.model || state.redia?.config?.proactive?.model || state.redia?.config?.chat?.default_model || "auto")}`}
+            </div>
+        </article>
+    `).join("") || `<div class="empty">Nenhum agendamento criado ainda.</div>`);
+}
+
+function renderRediaLab() {
+    const testOutput = qs("#rediaTestOutput");
+    if (testOutput) {
+        const result = state.rediaUi.testResult;
+        testOutput.innerHTML = result
+            ? `<article class="chat-message assistant"><div class="chat-avatar">IA</div><div class="chat-bubble"><div class="chat-meta">${escapeHtml(result.model || "modelo")} • ${escapeHtml(formatMilliseconds(result.latency_ms || 0))}</div><div class="chat-markdown">${markdownToHtml(result.content || "")}</div></div></article>`
+            : `<div class="empty">Rode um teste para ver como a RED I.A responderia.</div>`;
+    }
+
+    const benchmarkHost = qs("#rediaBenchmarkResults");
+    if (benchmarkHost) {
+        replaceScrollableContent(benchmarkHost, (state.rediaUi.benchmarkRows || []).map((row) => `
+            <article class="stack-card">
+                <div class="stack-head">
+                    <div>
+                        <strong>${escapeHtml(row.model || "modelo")}</strong>
+                        <small>${row.ok ? "ok" : "falhou"}</small>
+                    </div>
+                    <span class="pill ${row.ok ? "active" : "failed"}">${escapeHtml(formatMilliseconds(row.latency_ms || 0))}</span>
+                </div>
+                <div class="stack-copy">${escapeHtml(row.ok ? (row.content || "") : (row.error || "Sem resposta"))}</div>
+            </article>
+        `).join("") || `<div class="empty">Sem benchmark rodado nesta sessão.</div>`);
+    }
+}
+
+function renderRedia() {
+    if (!qs("#view-redia")) return;
+    if (!state.redia) {
+        renderRediaSummary();
+        renderRediaActivity();
+        return;
+    }
+    renderRediaKpis();
+    renderRediaSummary();
+    renderRediaActivity();
+    renderRediaConfig();
+    renderRediaConversations();
+    renderRediaSchedules();
+    renderRediaLab();
+    setRediaTab(state.rediaUi.activeTab || "overview");
+}
+
+async function refreshRedia(showMessage = true) {
+    const payload = await api("/api/redia");
+    state.redia = payload;
+    renderRedia();
+    if (showMessage) {
+        showToast("RED I.A atualizada.", "success");
+    }
+}
+
+function rediaConfigPayload() {
+    return {
+        chat: {
+            default_model: qs("#rediaDefaultModelSelect")?.value || "",
+            group_prefix: qs("#rediaGroupPrefixInput")?.value.trim() || "red",
+            temperature: Number(qs("#rediaTemperatureInput")?.value || 0.82),
+            private_mode: qs("#rediaPrivateModeSelect")?.value || "always",
+            group_mode: qs("#rediaGroupModeSelect")?.value || "prefix_or_mention",
+            system_prompt: qs("#rediaSystemPromptInput")?.value || "",
+        },
+        learning: {
+            enabled: qs("#rediaLearningEnabledInput")?.checked,
+            model: qs("#rediaLearningModelSelect")?.value || "",
+        },
+        proactive: {
+            enabled: qs("#rediaProactiveEnabledInput")?.checked,
+            model: qs("#rediaProactiveModelSelect")?.value || "",
+        },
+        tts: {
+            enabled: qs("#rediaTtsEnabledInput")?.checked,
+            voice: qs("#rediaVoiceSelect")?.value || "",
+        },
+        image_generation: {
+            enabled: qs("#rediaImageEnabledInput")?.checked,
+        },
+    };
+}
+
+async function saveRediaConfig() {
+    const response = await api("/api/redia/config", {
+        method: "POST",
+        body: JSON.stringify(rediaConfigPayload()),
+    });
+    if (response.status_code && response.status_code >= 400) {
+        throw new Error(response.payload?.error || response.payload?.detail || `Falha ${response.status_code}`);
+    }
+    await refreshRedia(false);
+    showToast("Configuração da RED I.A salva.", "success");
+}
+
+async function startRediaRuntime() {
+    const response = await api("/api/redia/whatsapp/start", { method: "POST", body: JSON.stringify({}) });
+    if (response.status_code && response.status_code >= 400) {
+        throw new Error(response.payload?.error || response.payload?.detail || `Falha ${response.status_code}`);
+    }
+    await refreshRedia(false);
+    showToast("Runtime da RED I.A iniciado.", "success");
+}
+
+async function stopRediaRuntime() {
+    const response = await api("/api/redia/whatsapp/stop", { method: "POST", body: JSON.stringify({}) });
+    if (response.status_code && response.status_code >= 400) {
+        throw new Error(response.payload?.error || response.payload?.detail || `Falha ${response.status_code}`);
+    }
+    await refreshRedia(false);
+    showToast("Runtime da RED I.A parado.", "success");
+}
+
+async function loadRediaConversation(chatId) {
+    state.selectedRediaConversationId = chatId;
+    const response = await api(`/api/redia/conversations/${encodeURIComponent(chatId)}/messages`);
+    if (response.status_code && response.status_code >= 400) {
+        throw new Error(response.payload?.error || response.payload?.detail || `Falha ${response.status_code}`);
+    }
+    state.rediaConversationMessages = response.payload?.messages || [];
+    const manualField = qs("#rediaManualChatInput");
+    if (manualField) manualField.value = chatId;
+    const selected = rediaConversationById(chatId) || {};
+    if (qs("#rediaManualChatNameInput")) qs("#rediaManualChatNameInput").value = selected.name || "";
+    const scheduleField = qs("#rediaScheduleChatInput");
+    if (scheduleField) scheduleField.value = chatId;
+    if (qs("#rediaScheduleChatNameInput")) qs("#rediaScheduleChatNameInput").value = selected.name || "";
+    renderRediaConversations();
+}
+
+async function sendRediaMessage({ chatId, chatName = "", text }) {
+    const response = await api("/api/redia/messages/send", {
+        method: "POST",
+        body: JSON.stringify({
+            chat_id: chatId,
+            chat_name: chatName,
+            text,
+            source: "dashboard-principal",
+        }),
+    });
+    if (response.status_code && response.status_code >= 400) {
+        throw new Error(response.payload?.error || response.payload?.detail || `Falha ${response.status_code}`);
+    }
+    await refreshRedia(false);
+    if (state.selectedRediaConversationId === chatId) {
+        await loadRediaConversation(chatId);
+    }
+    return response.payload;
+}
+
+async function sendRediaManualMessage() {
+    const chatId = qs("#rediaManualChatInput")?.value.trim();
+    const chatName = qs("#rediaManualChatNameInput")?.value.trim() || "";
+    const text = qs("#rediaManualMessageInput")?.value.trim();
+    if (!chatId) throw new Error("Informe o contato ou chat.");
+    if (!text) throw new Error("Digite a mensagem que a RED I.A deve enviar.");
+    await sendRediaMessage({ chatId, chatName, text });
+    qs("#rediaManualMessageInput").value = "";
+    showToast("Mensagem enviada pela RED I.A.", "success");
+}
+
+async function sendRediaConversationMessage() {
+    const chatId = state.selectedRediaConversationId || qs("#rediaScheduleChatInput")?.value.trim();
+    const selected = rediaConversationById(chatId) || {};
+    const text = qs("#rediaConversationComposeInput")?.value.trim();
+    if (!chatId) throw new Error("Selecione uma conversa primeiro.");
+    if (!text) throw new Error("Digite a mensagem para a conversa.");
+    await sendRediaMessage({ chatId, chatName: selected.name || "", text });
+    qs("#rediaConversationComposeInput").value = "";
+    showToast("Mensagem enviada para a conversa.", "success");
+}
+
+function rediaSchedulePayload() {
+    const when = qs("#rediaScheduleAtInput")?.value;
+    const localDate = when ? new Date(when) : null;
+    return {
+        chat_id: qs("#rediaScheduleChatInput")?.value.trim() || "",
+        chat_name: qs("#rediaScheduleChatNameInput")?.value.trim() || "",
+        send_at: localDate ? localDate.toISOString() : "",
+        mode: qs("#rediaScheduleModeSelect")?.value || "text",
+        model: qs("#rediaScheduleModelSelect")?.value || "",
+        text: qs("#rediaScheduleTextInput")?.value || "",
+        prompt: qs("#rediaSchedulePromptInput")?.value || "",
+        source: "dashboard-principal",
+    };
+}
+
+async function createRediaSchedule() {
+    const payload = rediaSchedulePayload();
+    if (!payload.chat_id) throw new Error("Informe o contato ou chat do agendamento.");
+    if (!payload.send_at) throw new Error("Escolha data e hora para o agendamento.");
+    const response = await api("/api/redia/schedules", {
+        method: "POST",
+        body: JSON.stringify(payload),
+    });
+    if (response.status_code && response.status_code >= 400) {
+        throw new Error(response.payload?.error || response.payload?.detail || `Falha ${response.status_code}`);
+    }
+    await refreshRedia(false);
+    showToast("Agendamento criado.", "success");
+}
+
+async function deleteRediaSchedule(scheduleId) {
+    const response = await api(`/api/redia/schedules/${encodeURIComponent(scheduleId)}`, { method: "DELETE" });
+    if (response.status_code && response.status_code >= 400) {
+        throw new Error(response.payload?.error || response.payload?.detail || `Falha ${response.status_code}`);
+    }
+    await refreshRedia(false);
+    showToast("Agendamento cancelado.", "success");
+}
+
+async function runRediaTest() {
+    const response = await api("/api/redia/test-ai", {
+        method: "POST",
+        body: JSON.stringify({
+            model: qs("#rediaTestModelSelect")?.value || "",
+            prompt: qs("#rediaTestPromptInput")?.value || "",
+        }),
+    });
+    if (response.status_code && response.status_code >= 400) {
+        throw new Error(response.payload?.error || response.payload?.detail || `Falha ${response.status_code}`);
+    }
+    state.rediaUi.testResult = response.payload;
+    renderRediaLab();
+    showToast("Teste concluído.", "success");
+}
+
+async function runRediaBenchmark() {
+    const models = (qs("#rediaBenchmarkModelsInput")?.value || "")
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    if (!models.length) throw new Error("Informe ao menos um modelo para benchmark.");
+    const response = await api("/api/redia/benchmark", {
+        method: "POST",
+        body: JSON.stringify({
+            models,
+            prompt: qs("#rediaBenchmarkPromptInput")?.value || "",
+        }),
+    });
+    if (response.status_code && response.status_code >= 400) {
+        throw new Error(response.payload?.error || response.payload?.detail || `Falha ${response.status_code}`);
+    }
+    state.rediaUi.benchmarkRows = response.payload?.rows || [];
+    renderRediaLab();
+    showToast("Benchmark concluído.", "success");
+}
+
 function renderAll() {
     renderOverview();
     renderServices();
@@ -2775,7 +3257,7 @@ function renderAll() {
     renderProcesses();
     renderFirewall();
     renderProxy();
-    renderWhatsApp();
+    renderRedia();
     renderProjects();
 }
 
@@ -3431,6 +3913,19 @@ function wireAuthenticatedUi() {
     });
     qs("#whatsappTargetsSearchInput")?.addEventListener("input", renderWhatsAppTargets);
     qs("#whatsappConversationsSearchInput")?.addEventListener("input", renderWhatsAppConversations);
+    qs("#rediaRefreshButton")?.addEventListener("click", () => runUiTask(() => refreshRedia()));
+    qs("#rediaSaveConfigButton")?.addEventListener("click", () => runUiTask(() => saveRediaConfig()));
+    qs("#rediaStartButton")?.addEventListener("click", () => runUiTask(() => startRediaRuntime()));
+    qs("#rediaStopButton")?.addEventListener("click", () => runUiTask(() => stopRediaRuntime()));
+    qs("#rediaManualSendButton")?.addEventListener("click", () => runUiTask(() => sendRediaManualMessage()));
+    qs("#rediaConversationSendButton")?.addEventListener("click", () => runUiTask(() => sendRediaConversationMessage()));
+    qs("#rediaCreateScheduleButton")?.addEventListener("click", () => runUiTask(() => createRediaSchedule()));
+    qs("#rediaRunTestButton")?.addEventListener("click", () => runUiTask(() => runRediaTest()));
+    qs("#rediaRunBenchmarkButton")?.addEventListener("click", () => runUiTask(() => runRediaBenchmark()));
+    qs("#rediaConversationsSearchInput")?.addEventListener("input", renderRediaConversations);
+    qsa("[data-redia-tab]").forEach((button) => {
+        button.addEventListener("click", () => setRediaTab(button.dataset.rediaTab));
+    });
 
     qs("#serviceSearch").addEventListener("input", renderServices);
 
@@ -3465,6 +3960,24 @@ function wireAuthenticatedUi() {
             if (target.dataset.whatsappTargetOpen) {
                 setWhatsAppTab("conversations");
                 await loadWhatsAppConversation(target.dataset.whatsappTargetOpen);
+            }
+
+            if (target.dataset.rediaConversation) {
+                await loadRediaConversation(target.dataset.rediaConversation);
+            }
+
+            if (target.dataset.rediaScheduleDelete) {
+                await deleteRediaSchedule(target.dataset.rediaScheduleDelete);
+            }
+
+            if (target.dataset.rediaScheduleCopy) {
+                const selectedSchedule = (state.redia?.schedules || []).find((item) => Number(item.id) === Number(target.dataset.rediaScheduleCopy));
+                if (selectedSchedule) {
+                    if (qs("#rediaScheduleChatInput")) qs("#rediaScheduleChatInput").value = selectedSchedule.chat_id || "";
+                    if (qs("#rediaScheduleChatNameInput")) qs("#rediaScheduleChatNameInput").value = selectedSchedule.chat_name || "";
+                    setRediaTab("schedule");
+                    showToast("Alvo copiado para a agenda.", "success");
+                }
             }
 
             if (target.dataset.openPath) {
@@ -3784,6 +4297,11 @@ function wireAuthenticatedUi() {
         } catch (_) {
             setWhatsAppTab("connection");
         }
+        try {
+            setRediaTab(window.localStorage.getItem(REDIA_TAB_STORAGE_KEY) || "overview");
+        } catch (_) {
+            setRediaTab("overview");
+        }
         syncProjectManagedCheckoutUi();
         resizeProxyChatInput();
         openDirectory("/");
@@ -3810,6 +4328,15 @@ function wireLoginUi() {
         }
     });
 }
+
+const baseSetView = setView;
+setView = function(view) {
+    baseSetView(view);
+    if (view === "redia") {
+        const title = qs("#pageTitle");
+        if (title) title.textContent = "RED I.A";
+    }
+};
 
 document.addEventListener("DOMContentLoaded", () => {
     lucide.createIcons();

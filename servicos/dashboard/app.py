@@ -86,6 +86,8 @@ PROXY_LOG_FILE = PROXY_DATA_DIR / "proxy.log"
 PROXY_MODEL_CACHE_TTL = int(os.getenv("RED_PROXY_MODEL_CACHE_TTL", "300") or 300)
 PROXY_NVIDIA_SUFFIX = " (NVIDIA)"
 PROXY_IMAGE_MODEL_HINTS = ("flux", "stable-diffusion")
+REDIA_URL = os.getenv("REDIA_URL", "http://127.0.0.1:3099").rstrip("/")
+REDIA_ADMIN_TOKEN = os.getenv("REDIA_ADMIN_TOKEN", "").strip()
 IMPORTANT_SYSTEMD_UNITS = {
     "nginx.service",
     "docker.service",
@@ -463,6 +465,78 @@ def proxy_request_json(path: str, *, method: str = "GET", payload: dict[str, Any
         return exc.code, parsed
     except urllib.error.URLError as exc:
         return 0, {"error": str(exc.reason)}
+
+
+def redia_request_json(path: str, *, method: str = "GET", payload: dict[str, Any] | None = None, timeout: int = 30) -> tuple[int, Any]:
+    data = None
+    headers = {"Accept": "application/json"}
+    if REDIA_ADMIN_TOKEN:
+        headers["Authorization"] = f"Bearer {REDIA_ADMIN_TOKEN}"
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(f"{REDIA_URL}{path}", data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = response.read().decode("utf-8", errors="replace")
+            return response.status, json.loads(body) if body else {}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            parsed = {"raw": body}
+        return exc.code, parsed
+    except urllib.error.URLError as exc:
+        return 0, {"error": str(exc.reason)}
+
+
+def redia_snapshot() -> dict[str, Any]:
+    status_code, status_payload = redia_request_json("/api/status", timeout=25)
+    config_code, config_payload = redia_request_json("/api/config", timeout=25)
+    activity_code, activity_payload = redia_request_json("/api/activity?limit=180", timeout=25)
+    conversations_code, conversations_payload = redia_request_json("/api/conversations", timeout=25)
+    schedules_code, schedules_payload = redia_request_json("/api/schedules?limit=120", timeout=25)
+    voices_code, voices_payload = redia_request_json("/api/tts/voices", timeout=25)
+    image_jobs_code, image_jobs_payload = redia_request_json("/api/image/jobs?limit=60", timeout=25)
+
+    conversations = conversations_payload.get("conversations", []) if isinstance(conversations_payload, dict) else []
+    schedules = schedules_payload.get("schedules", []) if isinstance(schedules_payload, dict) else []
+    runs = status_payload.get("runs", []) if isinstance(status_payload, dict) else []
+    activity_rows = activity_payload.get("events", []) if isinstance(activity_payload, dict) else []
+    runtime = status_payload.get("whatsapp", {}) if isinstance(status_payload, dict) else {}
+    proxy = status_payload.get("proxy", {}) if isinstance(status_payload, dict) else {}
+    image_jobs = image_jobs_payload.get("jobs", []) if isinstance(image_jobs_payload, dict) else []
+    config = config_payload if isinstance(config_payload, dict) else {}
+
+    return {
+        "ok": status_code == 200,
+        "service_url": REDIA_URL,
+        "status": status_payload if isinstance(status_payload, dict) else {"error": "status indisponivel"},
+        "config": config,
+        "activity": activity_rows,
+        "conversations": conversations,
+        "schedules": schedules,
+        "voices": voices_payload.get("voices", []) if isinstance(voices_payload, dict) else [],
+        "image_jobs": image_jobs,
+        "counts": {
+            "conversations": len(conversations),
+            "schedules_pending": len([item for item in schedules if str(item.get("status", "")).lower() in {"scheduled", "running"}]),
+            "runs": len(runs),
+            "activity": len(activity_rows),
+            "voices": len(voices_payload.get("voices", []) if isinstance(voices_payload, dict) else []),
+            "image_jobs_pending": len([item for item in image_jobs if str(item.get("status", "")).lower() in {"queued", "claimed", "generating"}]),
+        },
+        "health": {
+            "status_code": status_code,
+            "config_code": config_code,
+            "activity_code": activity_code,
+            "conversations_code": conversations_code,
+            "schedules_code": schedules_code,
+            "voices_code": voices_code,
+            "image_jobs_code": image_jobs_code,
+        },
+    }
 
 
 def proxy_parse_log_line(line: str) -> dict[str, Any]:
@@ -5614,6 +5688,127 @@ async def api_proxy_delete_key(request: Request, key_id: int) -> JSONResponse:
     await asyncio.to_thread(proxy_force_reload)
     await emit_snapshot(include_heavy=True)
     return JSONResponse({"success": True})
+
+
+@app.get("/api/redia")
+async def api_redia_snapshot(request: Request) -> JSONResponse:
+    ensure_authenticated(request)
+    return JSONResponse(await asyncio.to_thread(redia_snapshot))
+
+
+@app.post("/api/redia/config")
+async def api_redia_save_config(request: Request) -> JSONResponse:
+    ensure_authenticated(request)
+    payload = await request.json()
+    status_code, response_payload = await asyncio.to_thread(
+        redia_request_json,
+        "/api/config",
+        method="PUT",
+        payload=payload,
+        timeout=45,
+    )
+    return JSONResponse({"status_code": status_code, "payload": response_payload})
+
+
+@app.post("/api/redia/whatsapp/start")
+async def api_redia_start_whatsapp(request: Request) -> JSONResponse:
+    ensure_authenticated(request)
+    status_code, payload = await asyncio.to_thread(redia_request_json, "/api/whatsapp/start", method="POST", payload={}, timeout=60)
+    return JSONResponse({"status_code": status_code, "payload": payload})
+
+
+@app.post("/api/redia/whatsapp/stop")
+async def api_redia_stop_whatsapp(request: Request) -> JSONResponse:
+    ensure_authenticated(request)
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    status_code, payload = await asyncio.to_thread(
+        redia_request_json,
+        "/api/whatsapp/stop",
+        method="POST",
+        payload=body or {},
+        timeout=60,
+    )
+    return JSONResponse({"status_code": status_code, "payload": payload})
+
+
+@app.get("/api/redia/conversations/{chat_id}/messages")
+async def api_redia_conversation_messages(request: Request, chat_id: str) -> JSONResponse:
+    ensure_authenticated(request)
+    chat_id = unquote(chat_id)
+    status_code, payload = await asyncio.to_thread(
+        redia_request_json,
+        f"/api/conversations/{quote(chat_id, safe='')}/messages",
+        timeout=30,
+    )
+    return JSONResponse({"status_code": status_code, "payload": payload})
+
+
+@app.post("/api/redia/messages/send")
+async def api_redia_send_message(request: Request) -> JSONResponse:
+    ensure_authenticated(request)
+    payload = await request.json()
+    status_code, response_payload = await asyncio.to_thread(
+        redia_request_json,
+        "/api/messages/send",
+        method="POST",
+        payload=payload,
+        timeout=60,
+    )
+    return JSONResponse({"status_code": status_code, "payload": response_payload})
+
+
+@app.post("/api/redia/test-ai")
+async def api_redia_test_ai(request: Request) -> JSONResponse:
+    ensure_authenticated(request)
+    payload = await request.json()
+    status_code, response_payload = await asyncio.to_thread(
+        redia_request_json,
+        "/api/test-ai",
+        method="POST",
+        payload=payload,
+        timeout=120,
+    )
+    return JSONResponse({"status_code": status_code, "payload": response_payload})
+
+
+@app.post("/api/redia/benchmark")
+async def api_redia_benchmark(request: Request) -> JSONResponse:
+    ensure_authenticated(request)
+    payload = await request.json()
+    status_code, response_payload = await asyncio.to_thread(
+        redia_request_json,
+        "/api/benchmark",
+        method="POST",
+        payload=payload,
+        timeout=240,
+    )
+    return JSONResponse({"status_code": status_code, "payload": response_payload})
+
+
+@app.post("/api/redia/schedules")
+async def api_redia_create_schedule(request: Request) -> JSONResponse:
+    ensure_authenticated(request)
+    payload = await request.json()
+    status_code, response_payload = await asyncio.to_thread(
+        redia_request_json,
+        "/api/schedules",
+        method="POST",
+        payload=payload,
+        timeout=45,
+    )
+    return JSONResponse({"status_code": status_code, "payload": response_payload})
+
+
+@app.delete("/api/redia/schedules/{schedule_id}")
+async def api_redia_delete_schedule(request: Request, schedule_id: int) -> JSONResponse:
+    ensure_authenticated(request)
+    status_code, payload = await asyncio.to_thread(
+        redia_request_json,
+        f"/api/schedules/{int(schedule_id)}",
+        method="DELETE",
+        timeout=45,
+    )
+    return JSONResponse({"status_code": status_code, "payload": payload})
 
 
 @app.get("/api/whatsapp")

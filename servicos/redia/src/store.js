@@ -123,6 +123,26 @@ function initStore() {
       completed_at TEXT NOT NULL DEFAULT ''
     );
     CREATE INDEX IF NOT EXISTS idx_image_jobs_status ON image_jobs(status, created_at);
+
+    CREATE TABLE IF NOT EXISTS scheduled_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status TEXT NOT NULL DEFAULT 'scheduled',
+      chat_id TEXT NOT NULL DEFAULT '',
+      chat_name TEXT NOT NULL DEFAULT '',
+      mode TEXT NOT NULL DEFAULT 'text',
+      text TEXT NOT NULL DEFAULT '',
+      prompt TEXT NOT NULL DEFAULT '',
+      model TEXT NOT NULL DEFAULT '',
+      send_at TEXT NOT NULL,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      result_message_ids_json TEXT NOT NULL DEFAULT '[]',
+      last_error TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      started_at TEXT NOT NULL DEFAULT '',
+      completed_at TEXT NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_scheduled_messages_status_send_at ON scheduled_messages(status, send_at);
   `);
 
   const existing = db.prepare("SELECT value FROM app_config WHERE key = ?").get("config");
@@ -497,6 +517,121 @@ function failImageJob(id, error, workerId = "") {
   return getImageJob(id);
 }
 
+function mapScheduledMessage(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    metadata: safeJsonParse(row.metadata_json, {}),
+    result_message_ids: safeJsonParse(row.result_message_ids_json, []),
+  };
+}
+
+function getScheduledMessage(id) {
+  const row = getDb().prepare("SELECT * FROM scheduled_messages WHERE id = ?").get(Number(id || 0));
+  return mapScheduledMessage(row);
+}
+
+function listScheduledMessages(limit = 80) {
+  return getDb()
+    .prepare("SELECT * FROM scheduled_messages ORDER BY datetime(send_at) ASC, id DESC LIMIT ?")
+    .all(Number(limit || 80))
+    .map(mapScheduledMessage);
+}
+
+function createScheduledMessage(job = {}) {
+  const now = nowIso();
+  const payload = {
+    status: "scheduled",
+    chat_id: String(job.chat_id || job.to || "").trim(),
+    chat_name: String(job.chat_name || "").trim(),
+    mode: String(job.mode || "text").trim() || "text",
+    text: String(job.text || "").slice(0, 8000),
+    prompt: String(job.prompt || "").slice(0, 8000),
+    model: String(job.model || "").trim(),
+    send_at: String(job.send_at || now),
+    metadata_json: stableJson(job.metadata || {}),
+    result_message_ids_json: "[]",
+    last_error: "",
+    created_at: now,
+    updated_at: now,
+    started_at: "",
+    completed_at: "",
+  };
+  const result = getDb()
+    .prepare(
+      `INSERT INTO scheduled_messages
+      (status, chat_id, chat_name, mode, text, prompt, model, send_at, metadata_json, result_message_ids_json, last_error, created_at, updated_at, started_at, completed_at)
+      VALUES
+      (@status, @chat_id, @chat_name, @mode, @text, @prompt, @model, @send_at, @metadata_json, @result_message_ids_json, @last_error, @created_at, @updated_at, @started_at, @completed_at)`,
+    )
+    .run(payload);
+  return getScheduledMessage(result.lastInsertRowid);
+}
+
+function claimDueScheduledMessage(referenceIso = nowIso()) {
+  const dbi = getDb();
+  const tx = dbi.transaction(() => {
+    const row = dbi
+      .prepare(
+        `SELECT * FROM scheduled_messages
+         WHERE status = 'scheduled' AND datetime(send_at) <= datetime(?)
+         ORDER BY datetime(send_at) ASC, id ASC
+         LIMIT 1`,
+      )
+      .get(referenceIso);
+    if (!row) return null;
+    dbi
+      .prepare("UPDATE scheduled_messages SET status = 'running', started_at = ?, updated_at = ?, last_error = '' WHERE id = ?")
+      .run(referenceIso, referenceIso, row.id);
+    return getScheduledMessage(row.id);
+  });
+  return tx();
+}
+
+function completeScheduledMessage(id, { result_message_ids = [], metadata = {} } = {}) {
+  const now = nowIso();
+  const current = getScheduledMessage(id);
+  getDb()
+    .prepare(
+      `UPDATE scheduled_messages
+       SET status = 'completed',
+           result_message_ids_json = ?,
+           metadata_json = ?,
+           updated_at = ?,
+           completed_at = ?,
+           last_error = ''
+       WHERE id = ?`,
+    )
+    .run(
+      stableJson(Array.isArray(result_message_ids) ? result_message_ids : []),
+      stableJson({ ...(current?.metadata || {}), ...(metadata || {}) }),
+      now,
+      now,
+      Number(id || 0),
+    );
+  return getScheduledMessage(id);
+}
+
+function failScheduledMessage(id, error) {
+  const now = nowIso();
+  getDb()
+    .prepare(
+      "UPDATE scheduled_messages SET status = 'failed', last_error = ?, updated_at = ?, completed_at = ? WHERE id = ?",
+    )
+    .run(String(error || "scheduled message failed").slice(0, 2000), now, now, Number(id || 0));
+  return getScheduledMessage(id);
+}
+
+function cancelScheduledMessage(id) {
+  const now = nowIso();
+  getDb()
+    .prepare(
+      "UPDATE scheduled_messages SET status = 'canceled', updated_at = ?, completed_at = ? WHERE id = ? AND status IN ('scheduled', 'running', 'failed')",
+    )
+    .run(now, now, Number(id || 0));
+  return getScheduledMessage(id);
+}
+
 module.exports = {
   initStore,
   getDb,
@@ -525,4 +660,11 @@ module.exports = {
   markImageJobGenerating,
   completeImageJob,
   failImageJob,
+  getScheduledMessage,
+  listScheduledMessages,
+  createScheduledMessage,
+  claimDueScheduledMessage,
+  completeScheduledMessage,
+  failScheduledMessage,
+  cancelScheduledMessage,
 };

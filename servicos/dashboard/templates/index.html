@@ -12,7 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
     <link rel="icon" href="static/favicon.ico" sizes="any">
     <link rel="shortcut icon" href="static/favicon.ico">
-    <link rel="stylesheet" href="static/styles.css?v=20260409-singlevm">
+    <link rel="stylesheet" href="static/styles.css?v=20260409-redia">
 </head>
 <body>
     <script>
@@ -50,7 +50,7 @@
                 <button class="nav-item" data-view="services"><i data-lucide="server-cog"></i><span>Serviços</span></button>
                 <button class="nav-item" data-view="docker"><i data-lucide="container"></i><span>Docker</span></button>
                 <button class="nav-item" data-view="proxy"><i data-lucide="bot"></i><span>Proxy IA</span></button>
-                <button class="nav-item" data-view="whatsapp"><i data-lucide="message-circle-more"></i><span>WhatsApp</span></button>
+                <button class="nav-item" data-view="redia"><i data-lucide="sparkles"></i><span>RED I.A</span></button>
                 <button class="nav-item" data-view="projects"><i data-lucide="folders"></i><span>Projetos</span></button>
                 <button class="nav-item" data-view="logs"><i data-lucide="scroll-text"></i><span>Logs</span></button>
                 <button class="nav-item" data-view="terminal"><i data-lucide="terminal-square"></i><span>Terminal</span></button>
@@ -931,6 +931,282 @@
                 </section>
             </section>
 
+            <section class="view" id="view-redia">
+                <section class="panel stretch-panel">
+                    <div class="panel-head">
+                        <div>
+                            <div class="eyebrow">RED I.A</div>
+                            <h2>Central operacional integrada</h2>
+                            <div class="panel-subtitle">Controle da RED I.A dentro do dashboard principal: runtime, modelos, contatos, memória, disparos manuais e agenda proativa com IA.</div>
+                        </div>
+                        <div class="inline-actions">
+                            <button class="primary-button" id="rediaSaveConfigButton" type="button">Salvar configuração</button>
+                            <button class="ghost-button" id="rediaStartButton" type="button">Ligar WhatsApp</button>
+                            <button class="ghost-button" id="rediaStopButton" type="button">Parar runtime</button>
+                            <button class="ghost-button" id="rediaRefreshButton" type="button">Atualizar</button>
+                        </div>
+                    </div>
+                    <div class="project-kpis" id="rediaKpis"></div>
+                    <div class="panel-grid panel-grid-two">
+                        <section class="panel">
+                            <div class="panel-head slim">
+                                <div>
+                                    <div class="eyebrow">RUNTIME</div>
+                                    <h3>Status da operação</h3>
+                                </div>
+                            </div>
+                            <div class="kv-grid" id="rediaSummary"></div>
+                        </section>
+                        <section class="panel">
+                            <div class="panel-head slim">
+                                <div>
+                                    <div class="eyebrow">ATIVIDADE</div>
+                                    <h3>Fluxo recente</h3>
+                                </div>
+                            </div>
+                            <div class="terminal-stream redia-activity-stream" id="rediaActivityStream"></div>
+                        </section>
+                    </div>
+                </section>
+
+                <section class="panel stretch-panel">
+                    <div class="panel-head slim">
+                        <div>
+                            <div class="eyebrow">PAINEL</div>
+                            <h2>Operação da RED I.A</h2>
+                        </div>
+                        <div class="segmented-control redia-tab-toggle">
+                            <button class="segmented-button active" data-redia-tab="overview" type="button">Visão geral</button>
+                            <button class="segmented-button" data-redia-tab="conversations" type="button">Conversas</button>
+                            <button class="segmented-button" data-redia-tab="schedule" type="button">Agenda IA</button>
+                            <button class="segmented-button" data-redia-tab="lab" type="button">Teste & benchmark</button>
+                        </div>
+                    </div>
+
+                    <div class="redia-tab-shell active" id="rediaTabOverview">
+                        <div class="panel-grid panel-grid-two">
+                            <section class="panel">
+                                <div class="panel-head slim">
+                                    <div>
+                                        <div class="eyebrow">CONFIGURAÇÃO</div>
+                                        <h3>Modelo, voz e comportamento</h3>
+                                    </div>
+                                </div>
+                                <div class="form-grid">
+                                    <label>
+                                        <span>Modelo padrão</span>
+                                        <select id="rediaDefaultModelSelect" class="search"><option value="">Carregando modelos...</option></select>
+                                    </label>
+                                    <label>
+                                        <span>Modelo de aprendizado</span>
+                                        <select id="rediaLearningModelSelect" class="search"><option value="">Carregando modelos...</option></select>
+                                    </label>
+                                    <label>
+                                        <span>Modelo proativo</span>
+                                        <select id="rediaProactiveModelSelect" class="search"><option value="">Carregando modelos...</option></select>
+                                    </label>
+                                    <label>
+                                        <span>Voz TTS</span>
+                                        <select id="rediaVoiceSelect" class="search"><option value="">Carregando vozes...</option></select>
+                                    </label>
+                                    <label>
+                                        <span>Prefixo em grupos</span>
+                                        <input id="rediaGroupPrefixInput" type="text" placeholder="red" />
+                                    </label>
+                                    <label>
+                                        <span>Temperatura</span>
+                                        <input id="rediaTemperatureInput" type="number" min="0" max="2" step="0.05" />
+                                    </label>
+                                    <label>
+                                        <span>Modo privado</span>
+                                        <select id="rediaPrivateModeSelect" class="search">
+                                            <option value="always">Sempre responde</option>
+                                            <option value="mention_or_prefix">Prefixo ou menção</option>
+                                            <option value="disabled">Desligado</option>
+                                        </select>
+                                    </label>
+                                    <label>
+                                        <span>Modo grupo</span>
+                                        <select id="rediaGroupModeSelect" class="search">
+                                            <option value="prefix_or_mention">Prefixo ou menção</option>
+                                            <option value="always">Sempre responde</option>
+                                            <option value="disabled">Desligado</option>
+                                        </select>
+                                    </label>
+                                    <label class="checkbox-field"><input id="rediaTtsEnabledInput" type="checkbox" /><span>Responder com voz quando fizer sentido</span></label>
+                                    <label class="checkbox-field"><input id="rediaLearningEnabledInput" type="checkbox" /><span>Aprender com conversas</span></label>
+                                    <label class="checkbox-field"><input id="rediaProactiveEnabledInput" type="checkbox" /><span>Permitir iniciativa proativa</span></label>
+                                    <label class="checkbox-field"><input id="rediaImageEnabledInput" type="checkbox" /><span>Gerar imagens quando necessário</span></label>
+                                    <label class="wide">
+                                        <span>Prompt-base da RED I.A</span>
+                                        <textarea id="rediaSystemPromptInput" class="file-editor" spellcheck="true" placeholder="Defina a persona base e o jeito de responder da RED I.A."></textarea>
+                                    </label>
+                                </div>
+                            </section>
+
+                            <section class="panel">
+                                <div class="panel-head slim">
+                                    <div>
+                                        <div class="eyebrow">DISPARO MANUAL</div>
+                                        <h3>Enviar mensagem agora</h3>
+                                    </div>
+                                </div>
+                                <div class="form-grid">
+                                    <label>
+                                        <span>Contato ou chat</span>
+                                        <input id="rediaManualChatInput" type="text" placeholder="5511999999999@s.whatsapp.net ou grupo@g.us" />
+                                    </label>
+                                    <label>
+                                        <span>Nome opcional</span>
+                                        <input id="rediaManualChatNameInput" type="text" placeholder="Cliente VIP / Grupo Traders" />
+                                    </label>
+                                    <label class="wide">
+                                        <span>Mensagem</span>
+                                        <textarea id="rediaManualMessageInput" class="file-editor" spellcheck="true" placeholder="A RED I.A envia isso imediatamente para o contato selecionado."></textarea>
+                                    </label>
+                                </div>
+                                <div class="inline-actions">
+                                    <button class="primary-button" id="rediaManualSendButton" type="button">Disparar agora</button>
+                                </div>
+                                <div class="chat-hint" id="rediaManualHint">Use este bloco para enviar mensagens operacionais, avisos ou puxar assunto manualmente sem depender do fluxo automático.</div>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="redia-tab-shell" id="rediaTabConversations">
+                        <div class="redia-search-row">
+                            <input id="rediaConversationsSearchInput" type="text" placeholder="Filtrar por nome, jid, resumo ou vibe" />
+                            <div class="chat-hint">Memória viva da RED I.A. Clique numa conversa para ver o histórico e falar pelo dashboard principal.</div>
+                        </div>
+                        <div class="panel-grid panel-grid-two uneven">
+                            <section class="panel stretch-panel">
+                                <div class="stack-list redia-conversation-list" id="rediaConversationsList"></div>
+                            </section>
+                            <section class="panel stretch-panel">
+                                <div class="kv-grid" id="rediaConversationMeta"></div>
+                                <div class="terminal-stream redia-conversation-stream" id="rediaConversationMessages">Selecione uma conversa para carregar o histórico salvo.</div>
+                                <label>
+                                    <span>Mensagem para a conversa selecionada</span>
+                                    <textarea id="rediaConversationComposeInput" class="file-editor" spellcheck="true" placeholder="Escreva aqui e dispare como RED I.A para o chat selecionado."></textarea>
+                                </label>
+                                <div class="inline-actions">
+                                    <button class="primary-button" id="rediaConversationSendButton" type="button">Enviar para a conversa</button>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="redia-tab-shell" id="rediaTabSchedule">
+                        <div class="panel-grid panel-grid-two">
+                            <section class="panel">
+                                <div class="panel-head slim">
+                                    <div>
+                                        <div class="eyebrow">AGENDAMENTO</div>
+                                        <h3>Puxar assunto ou enviar mensagem em horário certo</h3>
+                                    </div>
+                                </div>
+                                <div class="form-grid">
+                                    <label>
+                                        <span>Contato ou chat</span>
+                                        <input id="rediaScheduleChatInput" type="text" placeholder="5511999999999@s.whatsapp.net ou grupo@g.us" />
+                                    </label>
+                                    <label>
+                                        <span>Nome opcional</span>
+                                        <input id="rediaScheduleChatNameInput" type="text" placeholder="Nome para organizar a agenda" />
+                                    </label>
+                                    <label>
+                                        <span>Quando enviar</span>
+                                        <input id="rediaScheduleAtInput" type="datetime-local" />
+                                    </label>
+                                    <label>
+                                        <span>Modo</span>
+                                        <select id="rediaScheduleModeSelect" class="search">
+                                            <option value="text">Texto fixo</option>
+                                            <option value="ai">Gerar com IA na hora</option>
+                                        </select>
+                                    </label>
+                                    <label>
+                                        <span>Modelo opcional</span>
+                                        <select id="rediaScheduleModelSelect" class="search"><option value="">Usar o modelo configurado</option></select>
+                                    </label>
+                                    <label class="wide">
+                                        <span>Texto fixo</span>
+                                        <textarea id="rediaScheduleTextInput" class="file-editor" spellcheck="true" placeholder="Mensagem literal para a RED I.A enviar no horário agendado."></textarea>
+                                    </label>
+                                    <label class="wide">
+                                        <span>Instrução para a IA</span>
+                                        <textarea id="rediaSchedulePromptInput" class="file-editor" spellcheck="true" placeholder="Ex.: às 09:00 puxe assunto com leveza sobre a entrega de hoje e veja se a pessoa precisa de ajuda."></textarea>
+                                    </label>
+                                </div>
+                                <div class="inline-actions">
+                                    <button class="primary-button" id="rediaCreateScheduleButton" type="button">Agendar</button>
+                                </div>
+                            </section>
+
+                            <section class="panel stretch-panel">
+                                <div class="panel-head slim">
+                                    <div>
+                                        <div class="eyebrow">FILAS</div>
+                                        <h3>Agenda atual</h3>
+                                    </div>
+                                </div>
+                                <div class="stack-list redia-schedule-list" id="rediaScheduleList"></div>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="redia-tab-shell" id="rediaTabLab">
+                        <div class="panel-grid panel-grid-two">
+                            <section class="panel">
+                                <div class="panel-head slim">
+                                    <div>
+                                        <div class="eyebrow">TESTE AI</div>
+                                        <h3>Simular resposta da RED I.A</h3>
+                                    </div>
+                                </div>
+                                <div class="form-grid">
+                                    <label>
+                                        <span>Modelo</span>
+                                        <select id="rediaTestModelSelect" class="search"><option value="">Carregando modelos...</option></select>
+                                    </label>
+                                    <label class="wide">
+                                        <span>Prompt</span>
+                                        <textarea id="rediaTestPromptInput" class="file-editor" spellcheck="true" placeholder="Teste um tom, um contexto ou uma nova instrução antes de usar na operação."></textarea>
+                                    </label>
+                                </div>
+                                <div class="inline-actions">
+                                    <button class="primary-button" id="rediaRunTestButton" type="button">Rodar teste</button>
+                                </div>
+                                <div class="chat-shell redia-test-output" id="rediaTestOutput"></div>
+                            </section>
+
+                            <section class="panel">
+                                <div class="panel-head slim">
+                                    <div>
+                                        <div class="eyebrow">BENCHMARK</div>
+                                        <h3>Comparar modelos rápido</h3>
+                                    </div>
+                                </div>
+                                <div class="form-grid">
+                                    <label class="wide">
+                                        <span>Modelos (um por linha)</span>
+                                        <textarea id="rediaBenchmarkModelsInput" class="file-editor" spellcheck="false" placeholder="Cole aqui os modelos que quer comparar."></textarea>
+                                    </label>
+                                    <label class="wide">
+                                        <span>Prompt do benchmark</span>
+                                        <textarea id="rediaBenchmarkPromptInput" class="file-editor" spellcheck="true" placeholder="Prompt curto para comparar velocidade e tom de resposta."></textarea>
+                                    </label>
+                                </div>
+                                <div class="inline-actions">
+                                    <button class="primary-button" id="rediaRunBenchmarkButton" type="button">Rodar benchmark</button>
+                                </div>
+                                <div class="stack-list redia-benchmark-list" id="rediaBenchmarkResults"></div>
+                            </section>
+                        </div>
+                    </div>
+                </section>
+            </section>
+
             <section class="view" id="view-logs">
                 <section class="panel stretch-panel">
                     <div class="panel-head">
@@ -1047,6 +1323,6 @@
     <div id="toastStack" class="toast-stack"></div>
     {% endif %}
 
-    <script src="static/app.js?v=20260409-singlevm"></script>
+    <script src="static/app.js?v=20260409-redia"></script>
 </body>
 </html>

@@ -8,6 +8,7 @@ const store = require("./store");
 const { listModels, chatComplete } = require("./redsystemsClient");
 const { saveResultImage } = require("./imageGeneration");
 const activity = require("./activity");
+const { buildChatMessages } = require("./memory");
 
 const execFileAsync = promisify(execFile);
 
@@ -57,6 +58,142 @@ asyncio.run(main())
   return voiceCache.rows;
 }
 
+function normalizeIsoDate(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString();
+}
+
+function clipText(value, limit = 4000) {
+  return String(value || "").trim().slice(0, limit);
+}
+
+function recordOutgoingMessage({ chatId, chatName = "", text = "", metadata = {} }) {
+  const finalText = clipText(text, 12000);
+  if (!chatId || !finalText) return;
+  store.ensureConversation(chatId, { name: chatName });
+  store.appendMessage({
+    id: `${chatId}:assistant:${Date.now()}:${Math.random().toString(16).slice(2, 8)}`,
+    chat_id: chatId,
+    chat_name: chatName,
+    role: "assistant",
+    direction: "outgoing",
+    sender_name: "RED I.A",
+    text: finalText,
+    content_type: "text",
+    metadata,
+  });
+}
+
+function buildScheduledAiMessages(schedule, config) {
+  const conversation = store.ensureConversation(schedule.chat_id, { name: schedule.chat_name || "" });
+  const prompt = clipText(
+    schedule.prompt
+      || "Puxe assunto com naturalidade, em portugues do Brasil, sem parecer automatizado e sem dizer que foi agendado.",
+    6000,
+  );
+  const messages = buildChatMessages({
+    config,
+    conversation,
+    prompt,
+    senderName: schedule.chat_name || conversation?.name || "operador",
+    senderJid: schedule.chat_id,
+    model: schedule.model || config.proactive?.model || config.chat?.default_model || "",
+  });
+  if (messages[0]?.content) {
+    messages[0].content += "\n\nVoce esta enviando uma mensagem proativa agendada pelo operador. Seja natural, contextual, curta quando fizer sentido e nao diga que esta executando automacao, agenda ou rotina.";
+  }
+  return messages;
+}
+
+function startScheduleWorker({ whatsapp }) {
+  let running = false;
+
+  async function tick() {
+    if (running) return;
+    running = true;
+    try {
+      while (true) {
+        const scheduled = store.claimDueScheduledMessage();
+        if (!scheduled) break;
+        try {
+          const config = store.getConfig();
+          const mode = String(scheduled.mode || "text").trim().toLowerCase();
+          let text = clipText(scheduled.text, 12000);
+          if (mode === "ai") {
+            const completion = await chatComplete(config, {
+              role: "scheduled-outreach",
+              model: scheduled.model || config.proactive?.model || config.chat?.default_model || "",
+              temperature: 0.75,
+              messages: buildScheduledAiMessages(scheduled, config),
+              timeoutMs: 90000,
+              meta: { source: "schedule", schedule_id: scheduled.id, chat_id: scheduled.chat_id },
+            });
+            text = clipText(completion.content, 12000);
+            store.saveModelRun({
+              role: "scheduled-outreach",
+              model: completion.model,
+              prompt_chars: scheduled.prompt.length,
+              response_chars: text.length,
+              latency_ms: completion.latency_ms,
+              ok: true,
+            });
+          }
+          if (!text) {
+            throw new Error("Mensagem agendada sem texto final");
+          }
+          activity.publish("schedule:sending", {
+            schedule_id: scheduled.id,
+            mode,
+            chat_id: scheduled.chat_id,
+            send_at: scheduled.send_at,
+          });
+          const sent = await whatsapp.sendTextNotification(scheduled.chat_id, text);
+          recordOutgoingMessage({
+            chatId: sent.chat_id || scheduled.chat_id,
+            chatName: scheduled.chat_name,
+            text,
+            metadata: {
+              schedule_id: scheduled.id,
+              mode,
+              message_ids: sent.message_ids || [],
+            },
+          });
+          const completed = store.completeScheduledMessage(scheduled.id, {
+            result_message_ids: sent.message_ids || [],
+            metadata: { sent_chat_id: sent.chat_id || scheduled.chat_id },
+          });
+          activity.publish("schedule:sent", {
+            schedule_id: completed.id,
+            mode,
+            chat_id: completed.chat_id,
+            message_ids: completed.result_message_ids || [],
+          });
+        } catch (err) {
+          const failed = store.failScheduledMessage(scheduled.id, err.message);
+          activity.publish("schedule:error", {
+            schedule_id: failed?.id || scheduled.id,
+            chat_id: scheduled.chat_id,
+            mode: scheduled.mode,
+            error: err.message,
+          });
+        }
+      }
+    } finally {
+      running = false;
+    }
+  }
+
+  const timer = setInterval(() => {
+    tick().catch(() => {});
+  }, 5000);
+  timer.unref?.();
+  tick().catch(() => {});
+  return timer;
+}
+
 function startDashboard({ whatsapp }) {
   const app = express();
   app.use(cors());
@@ -80,6 +217,8 @@ function startDashboard({ whatsapp }) {
     if (bearer === adminToken || queryToken === adminToken) return next();
     return res.status(401).json({ error: "REDIA admin token required" });
   });
+
+  const schedulerTimer = startScheduleWorker({ whatsapp });
 
   app.use(express.static(path.join(__dirname, "..", "public")));
 
@@ -134,6 +273,85 @@ function startDashboard({ whatsapp }) {
       });
       res.status(502).json({ ok: false, error: err.message });
     }
+  });
+
+  app.post("/api/messages/send", async (req, res) => {
+    const to = String(req.body?.chat_id || req.body?.to || "").trim();
+    const chatName = String(req.body?.chat_name || "").trim();
+    const text = clipText(req.body?.text, 12000);
+    if (!to) return res.status(400).json({ ok: false, error: "missing chat_id" });
+    if (!text) return res.status(400).json({ ok: false, error: "missing text" });
+    try {
+      const sent = await whatsapp.sendTextNotification(to, text);
+      recordOutgoingMessage({
+        chatId: sent.chat_id || to,
+        chatName,
+        text,
+        metadata: {
+          source: req.body?.source || "dashboard-manual",
+          message_ids: sent.message_ids || [],
+        },
+      });
+      activity.publish("whatsapp:manual_send", {
+        chat_id: sent.chat_id || to,
+        chars: text.length,
+        source: req.body?.source || "dashboard-manual",
+      });
+      res.json({ ok: true, sent });
+    } catch (err) {
+      activity.publish("whatsapp:manual_send_error", {
+        chat_id: to,
+        source: req.body?.source || "dashboard-manual",
+        error: err.message,
+      });
+      res.status(502).json({ ok: false, error: err.message });
+    }
+  });
+
+  app.get("/api/schedules", (req, res) => {
+    res.json({ schedules: store.listScheduledMessages(Number(req.query.limit || 80)) });
+  });
+
+  app.post("/api/schedules", (req, res) => {
+    const mode = String(req.body?.mode || "text").trim().toLowerCase();
+    const chatId = String(req.body?.chat_id || req.body?.to || "").trim();
+    const sendAt = normalizeIsoDate(req.body?.send_at);
+    const text = clipText(req.body?.text, 12000);
+    const prompt = clipText(req.body?.prompt, 12000);
+    if (!chatId) return res.status(400).json({ ok: false, error: "missing chat_id" });
+    if (!sendAt) return res.status(400).json({ ok: false, error: "invalid send_at" });
+    if (mode === "text" && !text) return res.status(400).json({ ok: false, error: "missing text" });
+    if (mode === "ai" && !prompt) return res.status(400).json({ ok: false, error: "missing prompt" });
+    const schedule = store.createScheduledMessage({
+      chat_id: chatId,
+      chat_name: String(req.body?.chat_name || "").trim(),
+      mode,
+      text,
+      prompt,
+      model: String(req.body?.model || "").trim(),
+      send_at: sendAt,
+      metadata: {
+        source: req.body?.source || "dashboard",
+      },
+    });
+    activity.publish("schedule:queued", {
+      schedule_id: schedule.id,
+      chat_id: schedule.chat_id,
+      mode: schedule.mode,
+      send_at: schedule.send_at,
+    });
+    res.json({ ok: true, schedule });
+  });
+
+  app.delete("/api/schedules/:id", (req, res) => {
+    const schedule = store.cancelScheduledMessage(req.params.id);
+    if (!schedule) return res.status(404).json({ ok: false, error: "schedule not found" });
+    activity.publish("schedule:canceled", {
+      schedule_id: schedule.id,
+      chat_id: schedule.chat_id,
+      mode: schedule.mode,
+    });
+    res.json({ ok: true, schedule });
   });
 
   app.get("/api/image/jobs", (req, res) => {
@@ -324,9 +542,13 @@ function startDashboard({ whatsapp }) {
   const config = store.getConfig();
   const host = config.app.host || "0.0.0.0";
   const port = config.app.port || 3099;
-  return app.listen(port, host, () => {
+  const server = app.listen(port, host, () => {
     console.log(`[dashboard] http://${host}:${port}`);
   });
+  server.on("close", () => {
+    clearInterval(schedulerTimer);
+  });
+  return server;
 }
 
 module.exports = { startDashboard };
