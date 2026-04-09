@@ -1,0 +1,338 @@
+{
+  "generated_from": "C:/Users/Ronyd/Desktop/DELIVERY/Tapp/redvm/servicos/proxy-lab/data/discovered_models.json",
+  "providers": {
+    "groq": {
+      "included": [
+        "qwen/qwen3-32b",
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "llama-3.3-70b-versatile",
+        "groq/compound-mini",
+        "groq/compound",
+        "moonshotai/kimi-k2-instruct",
+        "moonshotai/kimi-k2-instruct-0905",
+        "llama-3.1-8b-instant"
+      ],
+      "excluded": [
+        {
+          "id": "allam-2-7b",
+          "reason": "allam"
+        },
+        {
+          "id": "canopylabs/orpheus-arabic-saudi",
+          "reason": "orpheus"
+        },
+        {
+          "id": "canopylabs/orpheus-v1-english",
+          "reason": "orpheus"
+        },
+        {
+          "id": "meta-llama/llama-prompt-guard-2-22m",
+          "reason": "prompt-guard"
+        },
+        {
+          "id": "meta-llama/llama-prompt-guard-2-86m",
+          "reason": "prompt-guard"
+        },
+        {
+          "id": "openai/gpt-oss-safeguard-20b",
+          "reason": "safeguard"
+        },
+        {
+          "id": "whisper-large-v3",
+          "reason": "whisper"
+        },
+        {
+          "id": "whisper-large-v3-turbo",
+          "reason": "whisper"
+        }
+      ],
+      "priority_top_10": [
+        "qwen/qwen3-32b",
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "llama-3.3-70b-versatile",
+        "groq/compound-mini",
+        "groq/compound",
+        "moonshotai/kimi-k2-instruct",
+        "moonshotai/kimi-k2-instruct-0905",
+        "llama-3.1-8b-instant"
+      ]
+    },
+    "mistral": {
+      "included": [
+        "mistral-small-latest",
+        "mistral-small-2603",
+        "mistral-medium-latest",
+        "mistral-medium-2508",
+        "mistral-large-latest",
+        "mistral-large-2512",
+        "magistral-small-latest",
+        "magistral-medium-latest",
+        "ministral-3b-latest",
+        "ministral-8b-latest",
+        "ministral-14b-latest",
+        "devstral-latest",
+        "devstral-medium-latest",
+        "devstral-small-2507",
+        "open-mistral-nemo",
+        "open-mistral-nemo-2407",
+        "devstral-2512",
+        "devstral-medium-2507",
+        "magistral-medium-2509",
+        "magistral-small-2509",
+        "ministral-14b-2512",
+        "ministral-3b-2512",
+        "ministral-8b-2512",
+        "mistral-large-2411",
+        "mistral-medium",
+        "mistral-medium-2505",
+        "mistral-small-2506",
+        "mistral-tiny-2407",
+        "mistral-tiny-latest"
+      ],
+      "excluded": [
+        {
+          "id": "codestral-2508",
+          "reason": "codestral"
+        },
+        {
+          "id": "codestral-embed",
+          "reason": "embed"
+        },
+        {
+          "id": "codestral-embed-2505",
+          "reason": "embed"
+        },
+        {
+          "id": "codestral-latest",
+          "reason": "codestral"
+        },
+        {
+          "id": "labs-leanstral-2603",
+          "reason": "leanstral"
+        },
+        {
+          "id": "labs-mistral-small-creative",
+          "reason": "creative"
+        },
+        {
+          "id": "mistral-embed",
+          "reason": "embed"
+        },
+        {
+          "id": "mistral-embed-2312",
+          "reason": "embed"
+        },
+        {
+          "id": "mistral-large-pixtral-2411",
+          "reason": "pixtral"
+        },
+        {
+          "id": "mistral-moderation-2411",
+          "reason": "moderation"
+        },
+        {
+          "id": "mistral-moderation-2603",
+          "reason": "moderation"
+        },
+        {
+          "id": "mistral-moderation-latest",
+          "reason": "moderation"
+        },
+        {
+          "id": "mistral-ocr-2505",
+          "reason": "ocr"
+        },
+        {
+          "id": "mistral-ocr-2512",
+          "reason": "ocr"
+        },
+        {
+          "id": "mistral-ocr-latest",
+          "reason": "ocr"
+        },
+        {
+          "id": "mistral-vibe-cli-fast",
+          "reason": "vibe-cli"
+        },
+        {
+          "id": "mistral-vibe-cli-latest",
+          "reason": "vibe-cli"
+        },
+        {
+          "id": "mistral-vibe-cli-with-tools",
+          "reason": "vibe-cli"
+        },
+        {
+          "id": "pixtral-large-2411",
+          "reason": "pixtral"
+        },
+        {
+          "id": "pixtral-large-latest",
+          "reason": "pixtral"
+        },
+        {
+          "id": "voxtral-mini-2507",
+          "reason": "voxtral"
+        },
+        {
+          "id": "voxtral-mini-2602",
+          "reason": "voxtral"
+        },
+        {
+          "id": "voxtral-mini-latest",
+          "reason": "voxtral"
+        },
+        {
+          "id": "voxtral-mini-realtime-2602",
+          "reason": "realtime"
+        },
+        {
+          "id": "voxtral-mini-realtime-latest",
+          "reason": "realtime"
+        },
+        {
+          "id": "voxtral-mini-transcribe-2507",
+          "reason": "transcribe"
+        },
+        {
+          "id": "voxtral-mini-transcribe-realtime-2602",
+          "reason": "transcribe"
+        },
+        {
+          "id": "voxtral-mini-tts-2603",
+          "reason": "tts"
+        },
+        {
+          "id": "voxtral-mini-tts-latest",
+          "reason": "tts"
+        },
+        {
+          "id": "voxtral-small-2507",
+          "reason": "voxtral"
+        },
+        {
+          "id": "voxtral-small-latest",
+          "reason": "voxtral"
+        }
+      ],
+      "priority_top_10": [
+        "mistral-small-latest",
+        "mistral-small-2603",
+        "mistral-medium-latest",
+        "mistral-medium-2508",
+        "mistral-large-latest",
+        "mistral-large-2512",
+        "magistral-small-latest",
+        "magistral-medium-latest",
+        "ministral-3b-latest",
+        "ministral-8b-latest"
+      ]
+    }
+  },
+  "benchmark_round_1": [
+    {
+      "provider": "groq",
+      "model": "qwen/qwen3-32b",
+      "display_name": "qwen/qwen3-32b (GROQ)"
+    },
+    {
+      "provider": "groq",
+      "model": "openai/gpt-oss-20b",
+      "display_name": "openai/gpt-oss-20b (GROQ)"
+    },
+    {
+      "provider": "groq",
+      "model": "openai/gpt-oss-120b",
+      "display_name": "openai/gpt-oss-120b (GROQ)"
+    },
+    {
+      "provider": "groq",
+      "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+      "display_name": "meta-llama/llama-4-scout-17b-16e-instruct (GROQ)"
+    },
+    {
+      "provider": "groq",
+      "model": "llama-3.3-70b-versatile",
+      "display_name": "llama-3.3-70b-versatile (GROQ)"
+    },
+    {
+      "provider": "groq",
+      "model": "groq/compound-mini",
+      "display_name": "groq/compound-mini (GROQ)"
+    },
+    {
+      "provider": "groq",
+      "model": "groq/compound",
+      "display_name": "groq/compound (GROQ)"
+    },
+    {
+      "provider": "groq",
+      "model": "moonshotai/kimi-k2-instruct",
+      "display_name": "moonshotai/kimi-k2-instruct (GROQ)"
+    },
+    {
+      "provider": "groq",
+      "model": "moonshotai/kimi-k2-instruct-0905",
+      "display_name": "moonshotai/kimi-k2-instruct-0905 (GROQ)"
+    },
+    {
+      "provider": "groq",
+      "model": "llama-3.1-8b-instant",
+      "display_name": "llama-3.1-8b-instant (GROQ)"
+    },
+    {
+      "provider": "mistral",
+      "model": "mistral-small-latest",
+      "display_name": "mistral-small-latest (MISTRAL)"
+    },
+    {
+      "provider": "mistral",
+      "model": "mistral-small-2603",
+      "display_name": "mistral-small-2603 (MISTRAL)"
+    },
+    {
+      "provider": "mistral",
+      "model": "mistral-medium-latest",
+      "display_name": "mistral-medium-latest (MISTRAL)"
+    },
+    {
+      "provider": "mistral",
+      "model": "mistral-medium-2508",
+      "display_name": "mistral-medium-2508 (MISTRAL)"
+    },
+    {
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "display_name": "mistral-large-latest (MISTRAL)"
+    },
+    {
+      "provider": "mistral",
+      "model": "mistral-large-2512",
+      "display_name": "mistral-large-2512 (MISTRAL)"
+    },
+    {
+      "provider": "mistral",
+      "model": "magistral-small-latest",
+      "display_name": "magistral-small-latest (MISTRAL)"
+    },
+    {
+      "provider": "mistral",
+      "model": "magistral-medium-latest",
+      "display_name": "magistral-medium-latest (MISTRAL)"
+    },
+    {
+      "provider": "mistral",
+      "model": "ministral-3b-latest",
+      "display_name": "ministral-3b-latest (MISTRAL)"
+    },
+    {
+      "provider": "mistral",
+      "model": "ministral-8b-latest",
+      "display_name": "ministral-8b-latest (MISTRAL)"
+    }
+  ]
+}

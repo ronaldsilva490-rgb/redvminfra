@@ -282,8 +282,9 @@ class IQOptionDemoAdapter:
             if api.get_balance_mode() != "PRACTICE":
                 raise RuntimeError("practice_not_selected")
             availability = self._binary_status_map(api).get(active) or {}
-            if availability and not availability.get("open", True):
-                raise RuntimeError(f"iqoption_buy_suspended:{active}")
+            # A disponibilidade em get_all_init_v2 pode vir atrasada/inconsistente para pares normais.
+            # Para o Trader ser fiel ao comportamento real da IQ, tentamos a compra mesmo assim e
+            # deixamos a propria API devolver o motivo final em caso de recusa.
             ok, order_id = api.buy(float(amount), active, action, expiration_minutes)
             if not ok:
                 raise RuntimeError(f"iqoption_buy_failed:{order_id}")

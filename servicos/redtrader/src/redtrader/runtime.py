@@ -132,6 +132,8 @@ class TraderRuntime:
         self.last_decision_at = 0.0
         self.last_wait_event_at = 0.0
         self.last_learning_at = 0.0
+        self.last_candidate_market_type = str(self.db.get_kv("last_candidate_market_type", "") or "")
+        self.last_candidate_symbol = str(self.db.get_kv("last_candidate_symbol", "") or "")
         self.learning_task: asyncio.Task | None = None
         self.asset_cooldowns: dict[str, float] = {}
         self.queues: set[asyncio.Queue] = set()
@@ -455,6 +457,31 @@ class TraderRuntime:
             "turbo_open": bool(availability.get("turbo_open")),
             "binary_open": bool(availability.get("binary_open")),
         }
+
+    def _pick_candidate_round_robin(self, candidates: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, Any]:
+        if not candidates:
+            raise ValueError("empty_candidates")
+        symbol_order = [str(item).upper() for item in (config.get("symbols") or []) if str(item).strip()]
+        order_map = {symbol: index for index, symbol in enumerate(symbol_order)}
+        ordered = sorted(
+            candidates,
+            key=lambda item: (
+                order_map.get(str(item.get("symbol") or "").upper(), 10_000),
+                str(item.get("symbol") or "").upper(),
+            ),
+        )
+        chosen = ordered[0]
+        last_symbol = str(self.last_candidate_symbol or "").upper()
+        if last_symbol:
+            for index, item in enumerate(ordered):
+                if str(item.get("symbol") or "").upper() == last_symbol:
+                    chosen = ordered[(index + 1) % len(ordered)]
+                    break
+        self.last_candidate_symbol = str(chosen.get("symbol") or "").upper()
+        self.db.set_kv("last_candidate_symbol", self.last_candidate_symbol)
+        self.last_candidate_market_type = self._symbol_market_label(chosen.get("symbol"))
+        self.db.set_kv("last_candidate_market_type", self.last_candidate_market_type)
+        return chosen
 
     def _should_notify_trade_rejection(self, symbol: Any, raw_error: str, next_open_ts: float = 0.0) -> bool:
         state = self.db.get_kv("whatsapp_trade_rejection_state", {}) or {}
@@ -1277,6 +1304,9 @@ class TraderRuntime:
             "error": clean_error,
             "next_open_at": open_info.get("next_open_at") if open_info.get("next_open_reliable") else "",
             "next_open_ts": next_open_ts,
+            "next_cycle_at": open_info.get("next_cycle_at") or "",
+            "turbo_open": bool(open_info.get("turbo_open")),
+            "binary_open": bool(open_info.get("binary_open")),
         }
         lines = [
             "🟡 *RED Trader | TENTATIVA NÃO EXECUTADA*",
@@ -1286,7 +1316,9 @@ class TraderRuntime:
             f"⚠️ Motivo real: `{payload['error']}`",
         ]
         if payload["next_open_at"]:
-            lines.append(f"⏰ Próxima abertura informada pela IQ: *{payload['next_open_at']}*")
+            lines.append(f"⏰ Próxima abertura confirmada pela IQ: *{payload['next_open_at']}*")
+        elif payload["next_cycle_at"]:
+            lines.append(f"⏰ Próxima janela/ciclo informado pela IQ: *{payload['next_cycle_at']}*")
         elif "suspended" in clean_error.lower() or "ativo suspenso" in clean_error.lower():
             lines.append("⏰ A IQ não informou um horário confiável de abertura para este par neste momento.")
         fallback = "\n".join(lines)
@@ -1400,13 +1432,20 @@ class TraderRuntime:
                 self.last_wait_event_at = time.time()
                 self.publish("strategy:wait", "Nenhum candidato passou nos gates tecnicos", {"min_score": min_score})
             return
-        candidate = candidates[0]
+        candidate = self._pick_candidate_round_robin(candidates, config)
         candidate["recovery_context"] = self.iq_recovery_state()
         candidate["recent_trade_feedback"] = self.recent_iq_feedback()
         self.publish(
             "strategy:candidate",
             f"Candidato tecnico encontrado em {candidate['symbol']}",
-            {"symbol": candidate["symbol"], "technical_score": candidate["technical_score"], "checks": candidate["checks"]},
+            {
+                "symbol": candidate["symbol"],
+                "market_type": self._symbol_market_label(candidate["symbol"]),
+                "technical_score": candidate["technical_score"],
+                "checks": candidate["checks"],
+                "last_candidate_symbol": self.last_candidate_symbol,
+                "last_candidate_market_type": self.last_candidate_market_type,
+            },
         )
         self.last_decision_at = time.time()
         decision = await self.run_ai_committee(candidate, config)
@@ -1432,7 +1471,7 @@ class TraderRuntime:
                     if next_open_ts > time.time():
                         cooldown_seconds = max(20, min(120, int(next_open_ts - time.time())))
                     else:
-                        cooldown_seconds = 60
+                        cooldown_seconds = 15 if self._symbol_market_label(candidate["symbol"]) == "PAR NORMAL" else 30
                 self.asset_cooldowns[candidate["symbol"]] = time.time() + cooldown_seconds
                 self.publish(
                     "trade:error",

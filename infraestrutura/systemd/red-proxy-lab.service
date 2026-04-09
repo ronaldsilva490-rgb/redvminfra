@@ -1,0 +1,18 @@
+[Unit]
+Description=RED Proxy Lab (Groq + Mistral)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/red-proxy-lab
+Environment=RED_LAB_PROXY_HOST=127.0.0.1
+Environment=RED_LAB_PROXY_PORT=8090
+Environment=RED_LAB_PROXY_DATA_DIR=/opt/red-proxy-lab/data
+Environment=RED_LAB_PROXY_AUTODISCOVER=true
+ExecStart=/opt/red-proxy-lab/.venv/bin/python /opt/red-proxy-lab/proxy.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

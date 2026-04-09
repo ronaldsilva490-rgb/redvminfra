@@ -1,0 +1,15 @@
+[Unit]
+Description=RED IQ Demo Vision Bridge
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/red-iq-vision-bridge
+EnvironmentFile=-/etc/red-iq-vision-bridge.env
+ExecStart=/opt/red-iq-vision-bridge/.venv/bin/uvicorn app:app --host 0.0.0.0 --port 3115
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target

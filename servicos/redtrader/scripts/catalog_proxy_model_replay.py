@@ -33,6 +33,7 @@ MODEL_TIMEOUT = float(os.getenv("CATALOG_MODEL_TIMEOUT", "240") or "240")
 BASE_AMOUNT = float(os.getenv("CATALOG_BASE_AMOUNT", "10") or "10")
 PAYOUT = float(os.getenv("CATALOG_PAYOUT", "0.85") or "0.85")
 FIXTURE_PATH = os.getenv("CATALOG_FIXTURE", "").strip()
+OUTPUT_DIR = Path(os.getenv("CATALOG_OUTPUT_DIR", str(DB_PATH.parent))).expanduser()
 
 
 @dataclass
@@ -60,6 +61,40 @@ def extract_json(text: str) -> dict[str, Any]:
     if start >= 0 and end > start:
         clean = clean[start : end + 1]
     return json.loads(clean)
+
+
+def extract_structured(text: str) -> dict[str, Any]:
+    content = (text or "").strip()
+    if not content:
+        return {"decision": "WAIT", "confidence": 0.0, "reasoning_summary": ""}
+    try:
+        parsed = extract_json(content)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+    stripped = re.sub(r"<think>[\s\S]*?(?:</think>|$)", " ", content, flags=re.IGNORECASE).strip()
+    if not stripped:
+        stripped = content
+    decision_match = re.search(r"\b(CALL|PUT|WAIT)\b", stripped, flags=re.IGNORECASE)
+    if not decision_match:
+        if re.search(r"\b(AVOID|REJECT|SKIP|NO[_ -]?TRADE)\b", stripped, flags=re.IGNORECASE):
+            decision_match = re.search(r"WAIT", "WAIT")
+    confidence_match = re.search(r"confidence[^0-9]*([01](?:\.\d+)?|\d{1,3}(?:\.\d+)?)", stripped, flags=re.IGNORECASE)
+    confidence = 0.0
+    if confidence_match:
+        try:
+            confidence = float(confidence_match.group(1))
+            if confidence > 1:
+                confidence = min(1.0, confidence / 100.0)
+        except Exception:
+            confidence = 0.0
+    return {
+        "decision": decision_match.group(1).upper() if decision_match else "WAIT",
+        "confidence": confidence,
+        "reasoning_summary": stripped[:240],
+        "risk_flags": ["fallback_parse"],
+    }
 
 
 def normalize_decision(value: Any) -> str:
@@ -125,44 +160,52 @@ def compact_payload(payload: dict[str, Any]) -> dict[str, Any]:
     candidate = payload.get("candidate") or {}
     snapshot = candidate.get("snapshot") or {}
     features = candidate.get("features") or snapshot.get("features") or {}
-    keep = [
-        "last_price",
-        "trend_1s",
-        "trend_1m",
-        "trend_5m",
-        "trend_15m",
-        "rsi_1s",
-        "rsi_1m",
-        "rsi_5m",
-        "rsi_15m",
-        "change_1s_5",
-        "change_1s_15",
-        "change_1m_15",
-        "change_5m_15",
-        "change_15m_15",
-        "ret_std_1s_30",
-        "ret_std_1m_30",
-        "ret_std_5m_30",
-        "spread_pct",
-        "bid_ask_ratio",
-    ]
+    code_context = candidate.get("code_context") or {}
+    recovery_context = candidate.get("recovery_context") or payload.get("recovery_context") or {}
+    recent_feedback = candidate.get("recent_trade_feedback") or payload.get("recent_trade_feedback") or []
+    learning_context = payload.get("learning_context") or {}
     return {
-        "mode": payload.get("mode", "iqoption_demo_binary_only"),
-        "risk_profile": payload.get("risk_profile"),
-        "constraints": payload.get("constraints"),
-        "candidate": {
+        "scenario": {
             "symbol": candidate.get("symbol"),
             "price": candidate.get("price"),
+            "expiry_minutes": candidate.get("expiration_minutes"),
             "technical_score": candidate.get("technical_score"),
-            "checks": candidate.get("checks"),
-            "suggested_action": candidate.get("action"),
-            "trade_type": candidate.get("trade_type"),
-            "expiration_minutes": candidate.get("expiration_minutes"),
             "risk_reward": candidate.get("risk_reward"),
-            "features": {key: features.get(key) for key in keep if key in features},
+            "suggested_action": candidate.get("action"),
         },
-        "recovery_context": candidate.get("recovery_context") or payload.get("recovery_context"),
-        "recent_trade_feedback": candidate.get("recent_trade_feedback") or payload.get("recent_trade_feedback"),
+        "features": {
+            "trend_1s": features.get("trend_1s"),
+            "trend_1m": features.get("trend_1m"),
+            "trend_5m": features.get("trend_5m"),
+            "rsi_1s": features.get("rsi_1s"),
+            "rsi_1m": features.get("rsi_1m"),
+            "rsi_5m": features.get("rsi_5m"),
+            "change_1s_5": features.get("change_1s_5"),
+            "change_1m_15": features.get("change_1m_15"),
+            "change_5m_15": features.get("change_5m_15"),
+        },
+        "code_context": {
+            "preferred_direction": code_context.get("preferred_direction"),
+            "up_count": code_context.get("up_count"),
+            "down_count": code_context.get("down_count"),
+            "put_exhaustion_risk": code_context.get("put_exhaustion_risk"),
+            "call_exhaustion_risk": code_context.get("call_exhaustion_risk"),
+        },
+        "recovery": {
+            "stage": recovery_context.get("stage"),
+            "loss_total": recovery_context.get("loss_total"),
+            "last_side": recovery_context.get("last_side"),
+            "same_symbol": recovery_context.get("last_symbol") == candidate.get("symbol"),
+        },
+        "recent_feedback": [
+            f"{item.get('symbol')} {item.get('side')} g{item.get('gale_stage')} pnl={item.get('pnl')}"
+            for item in recent_feedback[:2]
+            if isinstance(item, dict)
+        ],
+        "learning": {
+            "avoid_patterns": len(learning_context.get("active_avoid_patterns") or []),
+            "last_summary": ((learning_context.get("last_reflection") or {}).get("summary") or "")[:120],
+        },
     }
 
 
@@ -285,13 +328,14 @@ def call_model(client: httpx.Client, model: str, point: ReplayPoint, timeout: fl
     user = {
         "task": "REPLAY_WHAT_IF_IQ_OPTION_DEMO",
         "instruction": (
-            "Avalie esta entrada historica sem saber o futuro. Use apenas market_snapshot. "
-            "Decida CALL, PUT ou WAIT para expiracao curta. Responda somente JSON valido."
+            "Avalie esta entrada historica sem saber o futuro. Use apenas os dados fornecidos. "
+            "Expiracao de 1 minuto exige timing limpo. Se houver ambiguidade, exaustao, atraso ou estiramento, prefira WAIT. "
+            "Responda em JSON de uma linha."
         ),
         "output_schema": {
             "decision": "WAIT|CALL|PUT",
-            "confidence": 0,
-            "reasoning_summary": "frase curta",
+            "confidence": "0..1",
+            "reasoning_summary": "frase curta, sem markdown",
             "risk_flags": [],
         },
         "market_snapshot": snapshot_for_model,
@@ -304,18 +348,18 @@ def call_model(client: httpx.Client, model: str, point: ReplayPoint, timeout: fl
             "messages": [
                 {
                     "role": "system",
-                    "content": "Voce e um auditor quantitativo de operacoes binarias DEMO/PRACTICE. Nao prometa lucro. Responda somente JSON valido.",
+                    "content": "Voce audita entradas binarias de 1 minuto. Seja curto e conservador no timing. Primeira saida deve ser JSON de uma linha.",
                 },
                 {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
             ],
-            "options": {"temperature": 0.03, "num_ctx": 4096, "num_predict": 650},
+            "options": {"temperature": 0.02, "num_ctx": 1536, "num_predict": 160},
         },
         timeout=timeout,
     )
     response.raise_for_status()
     payload = response.json()
     content = (payload.get("message") or {}).get("content") or payload.get("response") or ""
-    parsed = extract_json(content)
+    parsed = extract_structured(content)
     try:
         confidence = float(parsed.get("confidence") or 0)
     except (TypeError, ValueError):
@@ -455,7 +499,8 @@ def main() -> None:
             )
 
     ranking = sorted(all_results.items(), key=lambda item: (item[1]["pnl"], item[1]["wins"], -item[1]["losses"], -item[1]["invalid"]), reverse=True)
-    output = DB_PATH.parent / f"catalog_proxy_model_replay_{int(time.time())}.json"
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output = OUTPUT_DIR / f"catalog_proxy_model_replay_{int(time.time())}.json"
     output.write_text(json.dumps({"created_at": time.time(), "sequences": sequences, "results": all_results, "ranking": [name for name, _ in ranking]}, ensure_ascii=False, indent=2), encoding="utf-8")
     print("\nTOP 10:")
     for name, result in ranking[:10]:

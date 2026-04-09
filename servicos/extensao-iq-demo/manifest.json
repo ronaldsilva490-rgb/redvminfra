@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "RED IQ Demo Vision",
+  "description": "Overlay em tempo real para ler a IQ Option demo e preparar análise manual-like.",
+  "version": "0.1.25",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://iqoption.com/*",
+    "https://*.iqoption.com/*",
+    "http://redsystems2.ddns.net:3115/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "RED IQ Demo Vision",
+    "default_popup": "src/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://iqoption.com/*",
+        "https://*.iqoption.com/*"
+      ],
+      "js": [
+        "src/injected-bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://iqoption.com/*",
+        "https://*.iqoption.com/*"
+      ],
+      "js": [
+        "src/content.js"
+      ],
+      "css": [
+        "src/overlay.css"
+      ],
+      "run_at": "document_start"
+    }
+  ]
+}
