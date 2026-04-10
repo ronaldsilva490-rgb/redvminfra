@@ -1,15 +1,20 @@
 # REDIA
 
-REDIA is a standalone WhatsApp AI runtime. It is designed for a separate VM, with:
+REDIA e o runtime principal da **RED I.A**.
 
-- WhatsApp connection through Baileys.
-- Local SQLite storage for config, conversations, summaries and long-term memory.
-- RED Systems proxy as the main Ollama-compatible AI backend.
-- Image analysis and audio transcription as required parts of the message pipeline.
-- Edge TTS only, with a configurable probability for sending replies as voice notes.
-- A local dashboard for configuration and model experiments.
+Ela nao deve mais ser pensada como “servico solto de outra VM”. Hoje ela faz parte da stack da **VM unica** e conversa diretamente com o dashboard principal.
 
-## Start
+## O que ela faz
+
+- conexao WhatsApp via Baileys
+- SQLite local para config, conversas, memoria e agenda
+- proxy RED como backend IA principal
+- analise de imagem e transcricao de audio
+- TTS com Edge
+- dashboard/runtime proprio em `/redia/`
+- integracao com o dashboard principal em `/dashboard/redia`
+
+## Start local
 
 ```bash
 cp .env.example .env
@@ -17,25 +22,42 @@ npm install
 npm start
 ```
 
-Dashboard:
+Runtime:
 
 ```text
 http://localhost:3099
 ```
 
-Docker:
+## Papel no dashboard principal
 
-```bash
-docker compose up -d --build
-```
+A integracao no dashboard principal deve suportar:
+
+- status do runtime
+- status do WhatsApp
+- configuracao
+- conversas
+- envio manual
+- schedules
+- teste de IA
+- benchmark
+
+Se essa integracao quebrar, verifique primeiro:
+
+1. `REDIA_ADMIN_TOKEN`
+2. `REDIA_URL`
+3. conectividade entre dashboard e runtime
 
 ## Model roles
 
-The first version separates model roles instead of using one model for everything:
+Separacao atual por funcao:
 
-- `chat.default_model`: human conversation.
-- `chat.vision_model`: image analysis.
-- `learning.model`: JSON summaries, facts, profiles and vibe.
-- `proactive.model`: decisions about when the AI should participate.
+- `chat.default_model`: conversa principal
+- `chat.vision_model`: analise de imagem
+- `learning.model`: resumo/fatos/perfil
+- `proactive.model`: participacao espontanea
 
-The dashboard exposes these fields so we can benchmark `gemma4`, `gemini flash`, `gpt-oss`, `qwen3-coder-next`, vision models and future models without changing code.
+## Observacoes
+
+- o runtime proprio da REDIA continua vivo;
+- o centro operacional da stack, porem, e o dashboard principal;
+- nao trate o painel standalone como unica fonte da verdade.

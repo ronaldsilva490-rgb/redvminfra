@@ -1,15 +1,29 @@
 # Servicos
 
-Codigo dos servicos vivos ou ainda uteis da RED Systems.
+Codigo dos servicos vivos, experimentais ou legados ainda uteis da RED Systems.
 
 ```text
-proxy/        Proxy IA Ollama-compatible com roteamento NVIDIA.
-proxy-lab/    Laboratorio Groq + Mistral para benchmark pago.
-dashboard/    Painel Red VM / Red Systems.
-redia/        IA de WhatsApp standalone.
-redtrader/    Painel paper/demo de trading.
-extensao-iq-demo/ Extensao Chrome MV3 para ler a IQ demo em tempo real.
-deploy-agent/ Webhook/deploy inteligente legado.
+portal/            Home publica da stack
+dashboard/         Painel principal da VM unica
+proxy/             Proxy IA oficial
+proxy-lab/         Laboratorio de benchmark pago
+redia/             Runtime da RED I.A
+redtrader/         Trader demo/paper
+extensao-iq-demo/  Extensao Chrome e IQ Bridge
+deploy-agent/      Legado
 ```
 
-Cada servico deve manter seu proprio `.env.example`, dependencias e README quando houver. Dados runtime ficam em `data/` e sao ignorados pelo Git.
+## Observacoes importantes
+
+- `dashboard/` e o centro operacional da VM unica.
+- `redia/` continua existindo como runtime proprio, mas tambem foi portada para dentro do dashboard principal na rota `/dashboard/redia`.
+- `proxy-lab/` e laboratorio; nao trate como producao.
+- `deploy-agent/` e legado; so mexa se houver motivo real.
+
+Cada servico deve manter:
+
+- `.env.example`
+- dependencias declaradas
+- README quando o contexto operacional exigir
+
+Dados runtime devem ficar em `data/` ou nos caminhos de runtime da VM e **nao** devem ir para Git.

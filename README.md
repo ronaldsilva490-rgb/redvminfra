@@ -5,7 +5,7 @@
 <h1 align="center">RED Systems Infra Lab</h1>
 
 <p align="center">
-  <strong>Proxy IA, dashboard de VM, WhatsApp AI, trading paper e automação de deploy em um laboratório RED.</strong>
+  <strong>Portal, dashboard, RED I.A, proxy IA, RED Trader, proxy-lab e IQ bridge organizados para uma VM unica.</strong>
 </p>
 
 <p align="center">
@@ -16,63 +16,132 @@
 </p>
 
 <p align="center">
-  <em>Uma base para replicar a stack RED em qualquer VM: subir, testar, observar, quebrar com elegância e corrigir rápido.</em>
+  <em>O repo e a VM principal precisam contar a mesma historia: uma stack unificada, observavel e operavel sem pular entre maquinas.</em>
 </p>
 
 ---
 
-## Mapa do Repositório
+## Visao Atual
+
+Hoje a RED Systems roda consolidada em **uma VM principal**.
+
+Servicos publicos:
+
+- `/` -> portal
+- `/dashboard/` -> painel principal
+- `/proxy/` -> proxy IA oficial
+- `/redia/` -> runtime da RED I.A
+- `/trader/` -> RED Trader
+- `/proxy-lab/` -> laboratorio de benchmark
+- `/iq-bridge/` -> bridge da extensao IQ demo
+
+### Dashboard com rotas reais por aba
+
+O dashboard principal nao depende mais so de abas locais em JS. Cada area importante tem caminho proprio:
+
+- `/dashboard/`
+- `/dashboard/servicos`
+- `/dashboard/docker`
+- `/dashboard/proxyia`
+- `/dashboard/redia`
+- `/dashboard/projetos`
+- `/dashboard/logs`
+- `/dashboard/terminal`
+- `/dashboard/arquivos`
+- `/dashboard/firewall`
+- `/dashboard/processos`
+
+---
+
+## Mapa do Repositorio
 
 ```text
 servicos/
-  portal/                Página inicial RED com atalhos públicos
-  proxy/                 Proxy Ollama-compatible com roteamento NVIDIA
-  dashboard/             Painel Red VM / Red Systems
-  redia/                 IA de WhatsApp com memória, mídia, TTS e STT
-  redtrader/             Trading paper/demo com dados reais e IA
-  deploy-agent/          Webhook/deploy inteligente legado
+  portal/                Home publica da RED Systems
+  dashboard/             Painel principal da VM unica
+  proxy/                 Proxy IA oficial, Ollama-compatible com upstream NVIDIA
+  proxy-lab/             Laboratorio pago/experimental para benchmark de modelos
+  redia/                 Runtime da RED I.A com Baileys, memoria, audio e imagem
+  redtrader/             Trading demo/paper com IQ e comite/modelos
+  extensao-iq-demo/      Extensao Chrome MV3 e bridge de telemetria/comandos
+  deploy-agent/          Legado
 
 infraestrutura/
-  systemd/               Units de serviços
-  nginx/                 Reverse proxy
-  docker/                Compose auxiliares
-  scripts/               Espaço para automação de infra
+  systemd/               Units oficiais da VM unica
+  nginx/                 Friendly paths e reverse proxy
+  docker/                Artefatos auxiliares/legados
+  scripts/               Instalacao, sync e apoio de infra
 
 ferramentas/
-  vm/                    Helpers Paramiko/env
-  implantacao/           Analisadores e ferramentas de deploy
-  diagnosticos/          Checks reutilizáveis
-  avaliacoes/            Benchmarks de modelos
-  nvidia/                Utilitários NIM/NVCF
-
-referencias/
-  whatsappold/           Bot antigo para portar lógicas úteis
+  vm/                    Paramiko, execucao remota e migracao
+  implantacao/           Utilitarios de deploy
+  diagnosticos/          Checks reaproveitaveis
+  avaliacoes/            Benchmarks e catalogos
+  nvidia/                Utilitarios NIM/NVCF
 
 documentacao/
-  implantacao-servicos.md Manual de implantação por serviço
-  manual-completo.md      Runbook geral da RED Systems
-  arquitetura.md          Visão técnica
-  preparacao-vm.md        Preparação de VM
-
-identidade/
-  logo/                  Logo e favicon RED
-
-artefatos/               Ignorado: imagens, áudios e catálogos gerados
-.privado/                Ignorado: senhas, snapshots e scripts antigos locais
+  arquitetura.md
+  implantacao-servicos.md
+  manual-completo.md
+  preparacao-vm.md
 ```
 
-## Serviços
+---
 
-| Serviço | Caminho | Função |
+## Servicos
+
+| Servico | Caminho | Funcao |
 |---|---|---|
-| Portal | `servicos/portal` | Página inicial futurista da RED em `/`, com atalhos para todos os serviços. |
-| Proxy IA | `servicos/proxy` | Expõe `/api/chat`, `/api/generate`, `/api/tags` e `/api/images/generate`; modelos com `(NVIDIA)` vão para NVIDIA NIM. |
-| Dashboard | `servicos/dashboard` | Painel operacional da VM, com chat do proxy, chaves, logs e teste de geração de imagens. |
-| REDIA | `servicos/redia` | Runtime WhatsApp AI com memória local, aprendizado, mídia, Edge TTS e fila de imagem. |
-| RED Trader | `servicos/redtrader` | Painel de paper trading 24/7 com dados reais, saldo simulado e comitê de IA. |
-| Deploy Agent | `servicos/deploy-agent` | Webhook/deploy inteligente legado para projetos Docker/systemd. |
+| Portal | `servicos/portal` | Home publica com atalhos para a stack da VM unica. |
+| Dashboard | `servicos/dashboard` | Painel principal da VM: servicos, terminal, arquivos, proxy, RED I.A, projetos e observabilidade. |
+| Proxy IA | `servicos/proxy` | Gateway Ollama-compatible com roteamento NVIDIA. |
+| RED I.A | `servicos/redia` | Runtime principal de WhatsApp AI com memoria, audio, imagem e automacoes. |
+| RED Trader | `servicos/redtrader` | Ambiente demo/paper de trading com IA. |
+| Proxy Lab | `servicos/proxy-lab` | Laboratorio separado para benchmark pago e testes de modelos. |
+| IQ Bridge | `servicos/extensao-iq-demo/bridge` | Bridge da extensao Chrome para snapshots, logs e comandos da IQ demo. |
+| Deploy Agent | `servicos/deploy-agent` | Legado, mantido so por compatibilidade. |
 
-## Começo Rápido
+---
+
+## RED I.A no Dashboard Principal
+
+A RED I.A nao e mais so “um painel separado”.
+
+Hoje o caminho principal de operacao e:
+
+- dashboard principal -> aba/rota **RED I.A**
+- URL: `/dashboard/redia`
+
+Essa area foi portada para dentro do painel principal para concentrar:
+
+- runtime/status
+- conversas
+- memoria
+- envio manual
+- agenda
+- disparos usando IA
+- benchmark/testes
+
+O runtime standalone em `/redia/` continua existindo, mas o centro operacional da stack e o dashboard principal.
+
+---
+
+## Extensao IQ Demo
+
+A extensao e o bridge existem para capturar e comandar a IQ demo com telemetria suficiente para correlacionar:
+
+- `active_id`
+- ativo atual
+- payout
+- ticks/candles
+- portfolio/positions
+- comandos remotos
+
+Regra pratica: trate transporte e portfolio como fonte principal de verdade; OCR/DOM superficial e so apoio.
+
+---
+
+## Comeco Rapido
 
 ```powershell
 git clone <repo-url>
@@ -92,14 +161,33 @@ $env:REDSYSTEMS_SSH_PASSWORD="sua-senha"
 python ferramentas/vm/paramiko_exec.py "systemctl status red-dashboard --no-pager"
 ```
 
+---
+
+## Fluxo de Deploy
+
+Sempre:
+
+1. editar localmente;
+2. validar sintaxe/checks;
+3. fazer backup remoto;
+4. subir so o que mudou;
+5. reiniciar apenas o servico tocado;
+6. validar por `systemctl`, endpoint e, quando fizer sentido, UI real.
+
+Nunca subir “na fé”.
+
+---
+
 ## Manuais
 
-- [Implantação de serviços](documentacao/implantacao-servicos.md)
+- [Implantacao de servicos](documentacao/implantacao-servicos.md)
 - [Manual completo](documentacao/manual-completo.md)
 - [Arquitetura](documentacao/arquitetura.md)
-- [Preparação de VM](documentacao/preparacao-vm.md)
+- [Preparacao de VM](documentacao/preparacao-vm.md)
 
-## Regras de Segurança
+---
+
+## Regras de Seguranca
 
 Segredos reais ficam fora do Git:
 
@@ -117,4 +205,5 @@ rg -n "(g[h]p_|n[v]api-|g[s]k_|api_key|password|senha|token|secret)" -S .
 git status --short --ignored
 ```
 
-O arquivo antigo com instruções sensíveis foi preservado em `.privado/AGENTS.original.md`. Scripts antigos com credenciais hardcoded foram movidos para `.privado/legacy-vm-scripts/`.
+Se a documentacao do repo e a realidade da VM divergirem, considere isso um bug e alinhe os dois lados.
+
