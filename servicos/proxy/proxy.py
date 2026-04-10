@@ -601,7 +601,7 @@ def proxy_error_response(message, status=500, error_type="red_proxy_error"):
 
 def response_headers_subset(headers):
     selected = {}
-    for h in ("Content-Type", "Content-Length", "Transfer-Encoding", "X-Request-Id"):
+    for h in ("Content-Type", "Cache-Control", "X-Request-Id"):
         if h in headers:
             selected[h] = headers[h]
     return selected
@@ -1796,7 +1796,7 @@ def forward_to_upstream(full_path=None):
                         yield chunk
 
             response_headers = {}
-            for h in ("Content-Type", "Content-Length", "Transfer-Encoding", "X-Request-Id"):
+            for h in ("Content-Type", "Cache-Control", "X-Request-Id"):
                 if h in resp.headers:
                     response_headers[h] = resp.headers[h]
 
@@ -2340,7 +2340,7 @@ def catch_all(path):
                         yield chunk
 
             response_headers = {}
-            for h in ('Content-Type', 'Content-Length', 'Transfer-Encoding', 'X-Request-Id'):
+            for h in ('Content-Type', 'Cache-Control', 'X-Request-Id'):
                 if h in resp.headers:
                     response_headers[h] = resp.headers[h]
 
