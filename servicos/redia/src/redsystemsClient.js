@@ -1,8 +1,25 @@
 const { performance } = require("perf_hooks");
 const activity = require("./activity");
+const { LOCAL_PROXY_URL } = require("./defaultConfig");
 
 function proxyUrl(config) {
-  return String(config?.proxy?.base_url || "http://redsystems.ddns.net:8080").replace(/\/+$/, "");
+  const fallback = String(LOCAL_PROXY_URL || "http://127.0.0.1:8080").replace(/\/+$/, "");
+  const raw = String(config?.proxy?.base_url || "").trim();
+  if (!raw) return fallback;
+  try {
+    const url = new URL(raw);
+    const host = String(url.hostname || "").toLowerCase();
+    const port = String(url.port || "");
+    const path = String(url.pathname || "").replace(/\/+$/, "");
+    const knownLegacyHosts = new Set(["redsystems.ddns.net", "200.98.201.66", "20.206.248.3", "127.0.0.1", "localhost"]);
+    const legacyPath = path === "/proxy" || path === "/ollama";
+    if (knownLegacyHosts.has(host) && (port === "8080" || legacyPath || host === "redsystems.ddns.net" || host === "200.98.201.66" || host === "20.206.248.3")) {
+      return fallback;
+    }
+    return raw.replace(/\/+$/, "");
+  } catch {
+    return fallback;
+  }
 }
 
 async function fetchJson(url, options = {}) {

@@ -1,10 +1,44 @@
 const Database = require("better-sqlite3");
-const { DEFAULT_CONFIG } = require("./defaultConfig");
+const { DEFAULT_CONFIG, LOCAL_PROXY_URL } = require("./defaultConfig");
 const { dbPath, ensureDir } = require("./paths");
 const { safeJsonParse, stableJson, deepMerge, nowIso } = require("./json");
 const path = require("path");
 
 let db = null;
+
+function normalizeProxyBaseUrl(value) {
+  const fallback = String(LOCAL_PROXY_URL || "http://127.0.0.1:8080").replace(/\/+$/, "");
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+  try {
+    const url = new URL(raw);
+    const host = String(url.hostname || "").toLowerCase();
+    const port = String(url.port || "");
+    const path = String(url.pathname || "").replace(/\/+$/, "");
+    const knownPublicHosts = new Set(["redsystems.ddns.net", "200.98.201.66", "20.206.248.3"]);
+    const knownLocalHosts = new Set(["127.0.0.1", "localhost"]);
+    const knownHosts = new Set([...knownPublicHosts, ...knownLocalHosts]);
+    const legacyPath = path === "/proxy" || path === "/ollama";
+    const legacyProxyPort = port === "8080";
+
+    if (knownHosts.has(host) && (legacyProxyPort || legacyPath || knownPublicHosts.has(host))) {
+      return fallback;
+    }
+    return raw.replace(/\/+$/, "");
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeConfig(config) {
+  const merged = deepMerge(DEFAULT_CONFIG, config || {});
+  return deepMerge(merged, {
+    proxy: {
+      ...(merged.proxy || {}),
+      base_url: normalizeProxyBaseUrl(merged.proxy?.base_url),
+    },
+  });
+}
 
 function getDb() {
   if (!db) initStore();
@@ -152,17 +186,26 @@ function initStore() {
       stableJson(DEFAULT_CONFIG),
       nowIso(),
     );
+  } else {
+    const current = safeJsonParse(existing.value, {});
+    const normalized = normalizeConfig(current);
+    if (stableJson(current) !== stableJson(normalized)) {
+      db.prepare("UPDATE app_config SET value = ?, updated_at = ? WHERE key = 'config'").run(
+        stableJson(normalized),
+        nowIso(),
+      );
+    }
   }
   return db;
 }
 
 function getConfig() {
   const row = getDb().prepare("SELECT value FROM app_config WHERE key = ?").get("config");
-  return deepMerge(DEFAULT_CONFIG, safeJsonParse(row?.value, {}));
+  return normalizeConfig(safeJsonParse(row?.value, {}));
 }
 
 function saveConfig(partial) {
-  const merged = deepMerge(getConfig(), partial || {});
+  const merged = normalizeConfig(deepMerge(getConfig(), partial || {}));
   getDb().prepare(
     "INSERT INTO app_config (key, value, updated_at) VALUES ('config', ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
   ).run(stableJson(merged), nowIso());

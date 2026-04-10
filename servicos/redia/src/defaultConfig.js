@@ -1,3 +1,5 @@
+const LOCAL_PROXY_URL = (process.env.REDIA_PROXY_URL || "http://127.0.0.1:8080").replace(/\/+$/, "");
+
 const DEFAULT_CONFIG = {
   app: {
     name: "REDIA",
@@ -5,7 +7,7 @@ const DEFAULT_CONFIG = {
     port: parseInt(process.env.REDIA_PORT || "3099", 10),
   },
   proxy: {
-    base_url: process.env.REDIA_PROXY_URL || "http://redsystems.ddns.net:8080",
+    base_url: LOCAL_PROXY_URL,
     timeout_ms: 90000,
   },
   chat: {
@@ -104,4 +106,4 @@ const DEFAULT_CONFIG = {
   },
 };
 
-module.exports = { DEFAULT_CONFIG };
+module.exports = { DEFAULT_CONFIG, LOCAL_PROXY_URL };
