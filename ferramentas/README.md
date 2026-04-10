@@ -9,6 +9,7 @@ diagnosticos/ Espaco para checks sem credenciais hardcoded.
 avaliacoes/   Benchmarks de modelos.
 nvidia/       Testes e utilitarios NVIDIA NIM/NVCF.
 red_model_studio/ App desktop PySide6 para testar chat/imagem do proxy.
+redclaudecode/  Launcher visual do Claude Code usando o proxy da RED Systems.
 ```
 
 Scripts antigos com senha hardcoded foram preservados em `.privado/legacy-vm-scripts/` e nao devem ser publicados.
@@ -22,4 +23,18 @@ Executar:
 ```powershell
 pip install -r ferramentas/requirements.txt
 python -m ferramentas.red_model_studio
+```
+
+## RED Claude Code
+
+Launcher Windows para abrir o Claude Code com:
+
+- selecao visual de modelo do proxy
+- busca por modelo/provider
+- escolha da pasta de trabalho via Explorer
+
+Executar:
+
+```powershell
+ferramentas\redclaudecode\RED Systems Claude Code.bat
 ```
