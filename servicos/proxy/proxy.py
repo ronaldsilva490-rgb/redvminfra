@@ -169,6 +169,7 @@ CACHEABLE_GETS = {
     "/api/tags": 300,        # 5 min
     "/api/version": 3600,    # 1 hora
 }
+MODEL_CATALOG_CACHE_KEY = "/__meta/v1/models"
 
 
 def cache_get(path):
@@ -396,6 +397,486 @@ def nvidia_headers(content_type="application/json"):
     }
 
 
+def proxy_error_response(message, status=500, error_type="red_proxy_error"):
+    return jsonify({"error": {"message": message, "type": error_type}}), status
+
+
+def response_headers_subset(headers):
+    selected = {}
+    for h in ("Content-Type", "Content-Length", "Transfer-Encoding", "X-Request-Id"):
+        if h in headers:
+            selected[h] = headers[h]
+    return selected
+
+
+def upstream_request(method, path, source_ip, *, json_body=None, raw_data=None, timeout=180, stream=False, extra_headers=None):
+    req_path = path
+    last_error = None
+    for attempt in range(MAX_RETRIES + 1):
+        key_id, api_key = key_pool.get_key()
+        if not api_key:
+            return None, Response('{"error":"No keys available"}', status=503, content_type="application/json")
+
+        started = time.time()
+        try:
+            headers = {"Authorization": "Bearer " + api_key, "Accept": "application/json"}
+            if json_body is not None:
+                headers["Content-Type"] = "application/json"
+            if extra_headers:
+                headers.update(extra_headers)
+
+            if attempt == 0:
+                log_message("INFO", method + " " + req_path, key_id, source_ip, req_path, 0, 0)
+
+            resp = http_session.request(
+                method=method,
+                url=OLLAMA_BASE + req_path,
+                headers=headers,
+                json=json_body,
+                data=raw_data,
+                timeout=timeout,
+                stream=stream,
+                allow_redirects=False,
+            )
+            latency = time.time() - started
+
+            if resp.status_code == 429 and attempt < MAX_RETRIES:
+                key_pool.report_failure(key_id, is_rate_limit=True)
+                log_message("WARN", "429 key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 429)
+                continue
+            if resp.status_code == 404 and attempt < MAX_RETRIES:
+                key_pool.report_failure(key_id, is_rate_limit=False)
+                log_message("WARN", "404 key " + str(key_id) + " (sem acesso?) -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 404)
+                continue
+            if resp.status_code >= 500 and attempt < MAX_RETRIES:
+                key_pool.report_failure(key_id, is_rate_limit=False)
+                log_message("WARN", str(resp.status_code) + " key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, resp.status_code)
+                continue
+
+            if resp.status_code < 400:
+                key_pool.report_success(key_id)
+            else:
+                key_pool.report_failure(key_id, resp.status_code == 429)
+
+            log_message("INFO", method + " " + req_path + " -> HTTP " + str(resp.status_code), key_id, source_ip, req_path, latency, resp.status_code)
+            return resp, None
+        except Exception as e:
+            latency = time.time() - started
+            last_error = str(e)
+            key_pool.report_failure(key_id, is_rate_limit=False)
+            if attempt < MAX_RETRIES:
+                log_message("WARN", "Exception key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 0)
+                continue
+            log_message("ERROR", method + " " + req_path + " -> " + last_error[:80], key_id, source_ip, req_path, latency, 500)
+            return None, Response(json.dumps({"error": last_error}), status=500, content_type="application/json")
+
+    return None, Response(json.dumps({"error": last_error or "Max retries exceeded"}), status=502, content_type="application/json")
+
+
+def upstream_json_request(method, path, source_ip, *, body=None, timeout=180):
+    resp, error_response = upstream_request(method, path, source_ip, json_body=body, timeout=timeout, stream=False)
+    if error_response is not None:
+        return None, error_response
+    if resp is None:
+        return None, Response('{"error":"upstream unavailable"}', status=502, content_type="application/json")
+    if resp.status_code >= 400:
+        return None, Response(resp.content, status=resp.status_code, content_type=resp.headers.get("Content-Type", "application/json"))
+    try:
+        return resp.json(), None
+    except Exception:
+        return None, Response(resp.content, status=502, content_type=resp.headers.get("Content-Type", "application/json"))
+
+
+def upstream_model_entries(source_ip):
+    cached_body, _cached_ct, _cached_status = cache_get(MODEL_CATALOG_CACHE_KEY)
+    if cached_body is not None:
+        try:
+            return json.loads(cached_body.decode("utf-8")).get("data") or []
+        except Exception:
+            pass
+
+    upstream_entries = []
+    data, error_response = upstream_json_request("GET", "/v1/models", source_ip)
+    if error_response is None and isinstance(data, dict):
+        upstream_entries = list(data.get("data") or [])
+    else:
+        tags_data, tags_error = upstream_json_request("GET", "/api/tags", source_ip)
+        if tags_error is None and isinstance(tags_data, dict):
+            for item in tags_data.get("models") or []:
+                if not isinstance(item, dict):
+                    continue
+                model_name = str(item.get("name") or item.get("model") or "").strip()
+                if not model_name:
+                    continue
+                upstream_entries.append(
+                    {
+                        "id": model_name,
+                        "object": "model",
+                        "created": 1775520000,
+                        "owned_by": "upstream",
+                    }
+                )
+
+    merged = []
+    seen = set()
+    for item in upstream_entries:
+        if not isinstance(item, dict):
+            continue
+        model_name = str(item.get("id") or item.get("name") or "").strip()
+        if not model_name:
+            continue
+        key = model_name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized = dict(item)
+        normalized["id"] = model_name
+        normalized.setdefault("object", "model")
+        normalized.setdefault("created", 1775520000)
+        normalized.setdefault("owned_by", "upstream")
+        merged.append(normalized)
+
+    for model in NVIDIA_MODELS:
+        model_name = nvidia_display_name(model["id"])
+        if model_name.lower() in seen:
+            continue
+        seen.add(model_name.lower())
+        merged.append(
+            {
+                "id": model_name,
+                "object": "model",
+                "created": 1775520000,
+                "owned_by": "nvidia",
+            }
+        )
+
+    payload = {"object": "list", "data": merged}
+    cache_set(MODEL_CATALOG_CACHE_KEY, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json", 200, 300)
+    return merged
+
+
+def completion_prompt_to_text(prompt):
+    if isinstance(prompt, str):
+        return prompt
+    if isinstance(prompt, list):
+        parts = []
+        for item in prompt:
+            if isinstance(item, str):
+                parts.append(item)
+            elif item is None:
+                continue
+            else:
+                parts.append(str(item))
+        return "\n".join(parts)
+    if prompt is None:
+        return ""
+    return str(prompt)
+
+
+def coerce_int(value, default):
+    try:
+        return int(value)
+    except Exception:
+        return int(default)
+
+
+def extract_message_text(message):
+    if not isinstance(message, dict):
+        return "" if message is None else str(message)
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                item_type = item.get("type")
+                if item_type in ("text", "output_text", "input_text"):
+                    parts.append(str(item.get("text") or ""))
+        return "\n".join(part for part in parts if part)
+    return ""
+
+
+def openai_completion_to_chat_payload(body):
+    payload = {
+        "model": extract_model_name(body),
+        "messages": [{"role": "user", "content": completion_prompt_to_text(body.get("prompt"))}],
+        "stream": False,
+        "max_tokens": coerce_int(body.get("max_tokens") or 256, 256),
+    }
+    for key in ("temperature", "top_p", "presence_penalty", "frequency_penalty", "stop", "n"):
+        if body.get(key) is not None:
+            payload[key] = body.get(key)
+    return payload
+
+
+def openai_completion_from_chat(data, model_name):
+    choice = (data.get("choices") or [{}])[0]
+    message = choice.get("message") or {}
+    text = extract_message_text(message)
+    return {
+        "id": data.get("id") or ("cmpl_" + uuid.uuid4().hex),
+        "object": "text_completion",
+        "created": data.get("created") or int(time.time()),
+        "model": model_name or data.get("model"),
+        "choices": [
+            {
+                "text": text,
+                "index": 0,
+                "logprobs": None,
+                "finish_reason": choice.get("finish_reason") or "stop",
+            }
+        ],
+        "usage": data.get("usage") or {},
+    }
+
+
+def openai_completion_sse_from_chat(data, model_name):
+    completion = openai_completion_from_chat(data, model_name)
+    chunk_id = completion["id"]
+    created = completion["created"]
+    model = completion["model"]
+    text = completion["choices"][0]["text"]
+    yield "data: " + json.dumps(
+        {
+            "id": chunk_id,
+            "object": "text_completion",
+            "created": created,
+            "model": model,
+            "choices": [{"text": text, "index": 0, "logprobs": None, "finish_reason": None}],
+        },
+        ensure_ascii=False,
+    ) + "\n\n"
+    yield "data: " + json.dumps(
+        {
+            "id": chunk_id,
+            "object": "text_completion",
+            "created": created,
+            "model": model,
+            "choices": [{"text": "", "index": 0, "logprobs": None, "finish_reason": completion["choices"][0]["finish_reason"]}],
+        },
+        ensure_ascii=False,
+    ) + "\n\n"
+    yield "data: [DONE]\n\n"
+
+
+def response_input_item_to_openai_message(item):
+    if isinstance(item, str):
+        return {"role": "user", "content": item}
+    if not isinstance(item, dict):
+        return {"role": "user", "content": "" if item is None else str(item)}
+
+    role = item.get("role") or item.get("type") or "user"
+    content = item.get("content")
+    if isinstance(content, str):
+        return {"role": role, "content": content}
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            block_type = block.get("type")
+            if block_type in ("input_text", "text", "output_text"):
+                parts.append({"type": "text", "text": str(block.get("text") or "")})
+            elif block_type in ("input_image", "image_url"):
+                image_url = block.get("image_url") or block.get("url")
+                if isinstance(image_url, dict):
+                    image_url = image_url.get("url")
+                if image_url:
+                    parts.append({"type": "image_url", "image_url": {"url": str(image_url)}})
+        return {"role": role, "content": parts or ""}
+    if item.get("input_text"):
+        return {"role": role, "content": str(item.get("input_text"))}
+    return {"role": role, "content": "" if content is None else str(content)}
+
+
+def responses_to_chat_payload(body):
+    messages = []
+    instructions = body.get("instructions")
+    if instructions:
+        messages.append({"role": "system", "content": str(instructions)})
+
+    input_value = body.get("input")
+    if isinstance(input_value, list):
+        for item in input_value:
+            messages.append(response_input_item_to_openai_message(item))
+    elif input_value is not None:
+        messages.append(response_input_item_to_openai_message(input_value))
+
+    payload = {
+        "model": extract_model_name(body),
+        "messages": messages or [{"role": "user", "content": ""}],
+        "stream": False,
+        "max_tokens": coerce_int(body.get("max_output_tokens") or body.get("max_tokens") or 512, 512),
+    }
+    for key in ("temperature", "top_p", "tools", "tool_choice"):
+        if body.get(key) is not None:
+            payload[key] = body.get(key)
+    return payload
+
+
+def responses_from_chat(data, model_name):
+    choice = (data.get("choices") or [{}])[0]
+    message = choice.get("message") or {}
+    text = extract_message_text(message)
+    item_id = "msg_" + uuid.uuid4().hex
+    created = data.get("created") or int(time.time())
+    usage = data.get("usage") or {}
+    output_content = []
+    if text:
+        output_content.append({"type": "output_text", "text": text, "annotations": []})
+    return {
+        "id": "resp_" + uuid.uuid4().hex,
+        "object": "response",
+        "created_at": created,
+        "status": "completed",
+        "model": model_name or data.get("model"),
+        "output": [
+            {
+                "id": item_id,
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": output_content,
+            }
+        ],
+        "output_text": text,
+        "error": None,
+        "incomplete_details": None,
+        "parallel_tool_calls": False,
+        "usage": {
+            "input_tokens": usage.get("prompt_tokens") or 0,
+            "output_tokens": usage.get("completion_tokens") or 0,
+            "total_tokens": usage.get("total_tokens") or ((usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0)),
+        },
+    }
+
+
+def responses_sse_from_chat(data, model_name):
+    response_obj = responses_from_chat(data, model_name)
+    base = dict(response_obj)
+    base["output"] = []
+    base["output_text"] = ""
+    text = response_obj.get("output_text") or ""
+    item = (response_obj.get("output") or [{}])[0]
+    item_id = item.get("id") or ("msg_" + uuid.uuid4().hex)
+    yield "event: response.created\n"
+    yield "data: " + json.dumps({"type": "response.created", "response": base}, ensure_ascii=False) + "\n\n"
+    if text:
+        yield "event: response.output_text.delta\n"
+        yield "data: " + json.dumps({"type": "response.output_text.delta", "delta": text, "item_id": item_id, "output_index": 0, "content_index": 0}, ensure_ascii=False) + "\n\n"
+    yield "event: response.completed\n"
+    yield "data: " + json.dumps({"type": "response.completed", "response": response_obj}, ensure_ascii=False) + "\n\n"
+
+
+def nvidia_openai_chat_json(model_id, model_info, body, source_ip, endpoint_name):
+    if not NVIDIA_API_KEY:
+        return None, proxy_error_response("RED_PROXY_NVIDIA_API_KEY not configured", 503)
+    if model_info.get("kind") == "image":
+        return None, proxy_error_response("modelo NVIDIA de imagem nao suporta " + endpoint_name, 400, "invalid_request_error")
+
+    payload = deepcopy(body)
+    payload["model"] = model_id
+    payload["stream"] = False
+    started = time.time()
+    url = NVIDIA_CHAT_BASE + "/chat/completions"
+    try:
+        upstream = http_session.post(url, headers=nvidia_headers(), json=payload, timeout=180)
+        latency = time.time() - started
+        log_message("INFO", "NVIDIA sync " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, endpoint_name, latency, upstream.status_code)
+        if upstream.status_code >= 400:
+            return None, Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+        return upstream.json(), None
+    except Exception as e:
+        latency = time.time() - started
+        log_message("ERROR", "NVIDIA sync " + model_id + " -> " + str(e)[:100], "nvidia", source_ip, endpoint_name, latency, 500)
+        return None, proxy_error_response(str(e), 500)
+
+
+def universal_openai_chat_json(body, source_ip, endpoint_name):
+    model_id, model_info = normalize_nvidia_model(extract_model_name(body))
+    if model_info:
+        data, error_response = nvidia_openai_chat_json(model_id, model_info, body, source_ip, endpoint_name)
+        model_name = nvidia_display_name(model_id) if data is not None else None
+        return model_name, data, error_response
+
+    data, error_response = upstream_json_request("POST", "/v1/chat/completions", source_ip, body=body)
+    if error_response is not None:
+        return None, None, error_response
+    return extract_model_name(body), data, None
+
+
+def openai_embeddings_to_ollama_payload(body):
+    payload = {
+        "model": extract_model_name(body),
+        "input": body.get("input"),
+    }
+    if body.get("truncate") is not None:
+        payload["truncate"] = body.get("truncate")
+    if body.get("options") is not None:
+        payload["options"] = body.get("options")
+    return payload
+
+
+def openai_embeddings_from_ollama(data, model_name):
+    embeddings = data.get("embeddings")
+    if embeddings is None:
+        single = data.get("embedding")
+        embeddings = [single] if single is not None else []
+    if embeddings and not isinstance(embeddings, list):
+        embeddings = [embeddings]
+    if embeddings and isinstance(embeddings[0], (int, float)):
+        embeddings = [embeddings]
+    return {
+        "object": "list",
+        "data": [
+            {
+                "object": "embedding",
+                "index": index,
+                "embedding": vector,
+            }
+            for index, vector in enumerate(embeddings or [])
+        ],
+        "model": model_name,
+        "usage": {
+            "prompt_tokens": (data.get("prompt_eval_count") or 0),
+            "total_tokens": (data.get("prompt_eval_count") or 0),
+        },
+    }
+
+
+def universal_embeddings_json(body, source_ip):
+    model_id, model_info = normalize_nvidia_model(extract_model_name(body))
+    if model_info:
+        return None, proxy_error_response("modelos NVIDIA configurados neste proxy nao suportam embeddings", 400, "invalid_request_error")
+
+    payload = openai_embeddings_to_ollama_payload(body)
+    resp, error_response = upstream_request("POST", "/api/embed", source_ip, json_body=payload, timeout=180, stream=False)
+    if error_response is not None:
+        return None, error_response
+    if resp is None:
+        return None, proxy_error_response("upstream unavailable", 502)
+    if resp.status_code in (404, 405):
+        legacy_payload = {
+            "model": extract_model_name(body),
+            "prompt": completion_prompt_to_text(body.get("input")),
+        }
+        legacy_resp, legacy_error = upstream_request("POST", "/api/embeddings", source_ip, json_body=legacy_payload, timeout=180, stream=False)
+        if legacy_error is not None:
+            return None, legacy_error
+        resp = legacy_resp
+    if resp is None:
+        return None, proxy_error_response("upstream unavailable", 502)
+    if resp.status_code >= 400:
+        return None, Response(resp.content, status=resp.status_code, content_type=resp.headers.get("Content-Type", "application/json"))
+    try:
+        return resp.json(), None
+    except Exception:
+        return None, Response(resp.content, status=502, content_type=resp.headers.get("Content-Type", "application/json"))
+
+
 def nvidia_openai_chat_request(model_id, model_info, body, source_ip):
     if not NVIDIA_API_KEY:
         return jsonify({"error": "RED_PROXY_NVIDIA_API_KEY not configured"}), 503
@@ -598,8 +1079,9 @@ def anthropic_response_from_openai(data, model_name):
     choice = (data.get("choices") or [{}])[0]
     message = choice.get("message") or {}
     content_blocks = []
-    if message.get("content"):
-        content_blocks.append({"type": "text", "text": message.get("content")})
+    text = extract_message_text(message)
+    if text:
+        content_blocks.append({"type": "text", "text": text})
     for tool_call in message.get("tool_calls") or []:
         fn = tool_call.get("function") or {}
         args = fn.get("arguments") or "{}"
@@ -1229,20 +1711,7 @@ def nvidia_models():
 
 @app.get("/v1/models")
 def openai_models():
-    return jsonify(
-        {
-            "object": "list",
-            "data": [
-                {
-                    "id": nvidia_display_name(model["id"]),
-                    "object": "model",
-                    "created": 1775520000,
-                    "owned_by": "nvidia",
-                }
-                for model in NVIDIA_MODELS
-            ],
-        }
-    )
+    return jsonify({"object": "list", "data": upstream_model_entries(request.remote_addr)})
 
 
 @app.post("/v1/chat/completions")
@@ -1260,7 +1729,82 @@ def anthropic_messages():
     model_id, model_info = normalize_nvidia_model(extract_model_name(body))
     if model_info:
         return nvidia_anthropic_messages_request(model_id, model_info, body, request.remote_addr)
-    return forward_to_upstream()
+    model_name, data, error_response = universal_openai_chat_json(anthropic_to_openai_payload(body, extract_model_name(body)), request.remote_addr, "/v1/messages")
+    if error_response is not None:
+        return error_response
+    message = anthropic_response_from_openai(data, model_name)
+    if body.get("stream"):
+        return Response(anthropic_sse_from_message(message), status=200, content_type="text/event-stream")
+    return jsonify(message)
+
+
+@app.post("/v1/completions")
+def openai_completions():
+    body = request.get_json(silent=True) or {}
+    chat_payload = openai_completion_to_chat_payload(body)
+    model_name, data, error_response = universal_openai_chat_json(chat_payload, request.remote_addr, "/v1/completions")
+    if error_response is not None:
+        return error_response
+    completion = openai_completion_from_chat(data, model_name)
+    original_max = coerce_int(chat_payload.get("max_tokens") or 0, 0)
+    if not completion["choices"][0]["text"] and 0 < original_max < 256:
+        retry_steps = []
+        for candidate in (64, 128, 256):
+            if candidate > original_max:
+                retry_steps.append(candidate)
+        for candidate in retry_steps:
+            retry_payload = deepcopy(chat_payload)
+            retry_payload["max_tokens"] = candidate
+            retry_model_name, retry_data, retry_error = universal_openai_chat_json(retry_payload, request.remote_addr, "/v1/completions.retry")
+            if retry_error is not None:
+                break
+            retry_completion = openai_completion_from_chat(retry_data, retry_model_name)
+            model_name, data, completion = retry_model_name, retry_data, retry_completion
+            if retry_completion["choices"][0]["text"]:
+                break
+    if body.get("stream"):
+        return Response(openai_completion_sse_from_chat(data, model_name), status=200, content_type="text/event-stream")
+    return jsonify(completion)
+
+
+@app.post("/v1/responses")
+def openai_responses():
+    body = request.get_json(silent=True) or {}
+    chat_payload = responses_to_chat_payload(body)
+    model_name, data, error_response = universal_openai_chat_json(chat_payload, request.remote_addr, "/v1/responses")
+    if error_response is not None:
+        return error_response
+    if body.get("stream"):
+        return Response(responses_sse_from_chat(data, model_name), status=200, content_type="text/event-stream")
+    return jsonify(responses_from_chat(data, model_name))
+
+
+@app.post("/v1/embeddings")
+def openai_embeddings():
+    body = request.get_json(silent=True) or {}
+    model_name = extract_model_name(body)
+    data, error_response = universal_embeddings_json(body, request.remote_addr)
+    if error_response is not None:
+        return error_response
+    return jsonify(openai_embeddings_from_ollama(data, model_name))
+
+
+@app.post("/api/embed")
+@app.post("/api/embeddings")
+def ollama_embeddings():
+    body = request.get_json(silent=True) or {}
+    model_id, model_info = normalize_nvidia_model(extract_model_name(body))
+    if model_info:
+        return jsonify({"error": "modelos NVIDIA configurados neste proxy nao suportam embeddings"}), 400
+    resp, error_response = upstream_request("POST", "/api/embed", request.remote_addr, json_body=body, timeout=180, stream=False)
+    if error_response is not None:
+        return error_response
+    if resp is not None and resp.status_code not in (404, 405):
+        return Response(resp.content, status=resp.status_code, content_type=resp.headers.get("Content-Type", "application/json"))
+    legacy_resp, legacy_error = upstream_request("POST", "/api/embeddings", request.remote_addr, json_body=body, timeout=180, stream=False)
+    if legacy_error is not None:
+        return legacy_error
+    return Response(legacy_resp.content, status=legacy_resp.status_code, content_type=legacy_resp.headers.get("Content-Type", "application/json"))
 
 
 @app.post("/api/images/generate")
