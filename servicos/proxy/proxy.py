@@ -5,6 +5,7 @@ import os
 import random
 import time
 import uuid
+import base64
 from threading import Lock, Thread
 from copy import deepcopy
 
@@ -21,6 +22,11 @@ NVIDIA_API_KEY = os.getenv("RED_PROXY_NVIDIA_API_KEY") or os.getenv("NVIDIA_API_
 NVIDIA_CHAT_BASE = os.getenv("RED_PROXY_NVIDIA_CHAT_BASE", "https://integrate.api.nvidia.com/v1").rstrip("/")
 NVIDIA_GENAI_BASE = os.getenv("RED_PROXY_NVIDIA_GENAI_BASE", "https://ai.api.nvidia.com/v1/genai").rstrip("/")
 NVIDIA_SUFFIX = " (NVIDIA)"
+DEFAULT_CHAT_MODEL = (os.getenv("RED_PROXY_DEFAULT_CHAT_MODEL") or "").strip()
+DEFAULT_VISION_MODEL = (os.getenv("RED_PROXY_DEFAULT_VISION_MODEL") or "").strip()
+DEFAULT_IMAGE_MODEL = (os.getenv("RED_PROXY_DEFAULT_IMAGE_MODEL") or "").strip()
+DEFAULT_EMBEDDINGS_MODEL = (os.getenv("RED_PROXY_DEFAULT_EMBEDDINGS_MODEL") or "").strip()
+ENABLE_CAPABILITY_FALLBACK = (os.getenv("RED_PROXY_ENABLE_CAPABILITY_FALLBACK", "1").strip().lower() not in ("0", "false", "no", "off"))
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -237,6 +243,200 @@ def is_nvidia_request_body(raw_body):
     return model_info is not None, body, model_id
 
 
+def ordered_unique(values):
+    out = []
+    seen = set()
+    for value in values or []:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+    return out
+
+
+def nvidia_capabilities(model_info):
+    kind = model_info.get("kind")
+    if kind == "image":
+        return ["image_generation"]
+    if kind == "vision":
+        return ["chat", "vision"]
+    return ["chat"]
+
+
+def infer_upstream_kind_and_capabilities(model_name, item=None):
+    lower = str(model_name or "").strip().lower()
+    embed_markers = ("embed", "embedding", "nomic-embed", "mxbai", "bge", "gte-", "e5")
+    image_markers = ("flux", "stable-diffusion", "sdxl", "sd3", "imagen", "playground", "kolors")
+    audio_markers = ("whisper", "tts", "speech", "audio")
+    vision_markers = ("vision", "-vl", ":vl", "qwen3-vl", "llava", "moondream", "bakllava", "minicpm-v", "vila")
+
+    if any(marker in lower for marker in embed_markers):
+        return "embedding", ["embeddings"]
+    if any(marker in lower for marker in image_markers):
+        return "image", ["image_generation"]
+    if any(marker in lower for marker in audio_markers):
+        return "audio", ["audio"]
+
+    capabilities = ["chat"]
+    kind = "chat"
+    if any(marker in lower for marker in vision_markers):
+        capabilities.append("vision")
+        kind = "vision"
+    return kind, capabilities
+
+
+def model_descriptor(model_name, item=None):
+    model_id, model_info = normalize_nvidia_model(model_name)
+    if model_info:
+        return {
+            "id": nvidia_display_name(model_id),
+            "route_model": model_id,
+            "provider": "nvidia",
+            "kind": model_info.get("kind") or "chat",
+            "family": model_info.get("family") or "nvidia",
+            "capabilities": ordered_unique(nvidia_capabilities(model_info)),
+            "note": model_info.get("note", ""),
+            "owned_by": "nvidia",
+            "created": 1775520000,
+        }
+
+    item = item or {}
+    canonical_id = str(item.get("id") or item.get("name") or model_name or "").strip()
+    kind, capabilities = infer_upstream_kind_and_capabilities(canonical_id, item)
+    return {
+        "id": canonical_id,
+        "route_model": canonical_id,
+        "provider": "upstream",
+        "kind": kind,
+        "family": str((item.get("owned_by") or "upstream")).strip() or "upstream",
+        "capabilities": ordered_unique(capabilities),
+        "note": str(item.get("description") or ""),
+        "owned_by": item.get("owned_by") or "upstream",
+        "created": item.get("created") or 1775520000,
+    }
+
+
+def clone_body_with_model(body, model_name):
+    payload = deepcopy(body or {})
+    if isinstance(payload, dict):
+        payload["model"] = model_name
+        if "name" in payload:
+            payload["name"] = model_name
+    return payload
+
+
+def text_payload_needs_vision(value):
+    if isinstance(value, dict):
+        value_type = str(value.get("type") or "").lower()
+        if value_type in ("image", "image_url", "input_image"):
+            return True
+        if value.get("images"):
+            return True
+        if value.get("image_url") or value.get("url") or value.get("source"):
+            source = value.get("source") or {}
+            if isinstance(source, dict) and (source.get("type") in ("base64", "url") or source.get("data") or source.get("url")):
+                return True
+        for nested in value.values():
+            if text_payload_needs_vision(nested):
+                return True
+        return False
+    if isinstance(value, list):
+        return any(text_payload_needs_vision(item) for item in value)
+    return False
+
+
+def required_capability_for_request(endpoint_name, body):
+    if endpoint_name in ("/v1/embeddings", "/api/embed", "/api/embeddings"):
+        return "embeddings"
+    if endpoint_name == "/api/images/generate":
+        return "image_generation"
+    if endpoint_name in ("/v1/chat/completions", "/v1/messages", "/v1/responses", "/api/chat"):
+        return "vision" if text_payload_needs_vision((body or {}).get("messages") or (body or {}).get("input")) else "chat"
+    if endpoint_name == "/api/generate":
+        return "image_generation" if str(extract_model_name(body) or "").strip().lower().startswith(("flux", "stable-diffusion")) else "chat"
+    return "chat"
+
+
+def fetch_remote_image_as_data_url(url, source_ip, endpoint_name):
+    url = str(url or "").strip()
+    if not url.lower().startswith(("http://", "https://")):
+        return url
+    started = time.time()
+    try:
+        resp = http_session.get(url, timeout=20, stream=False)
+        latency = time.time() - started
+        content_type = str(resp.headers.get("Content-Type") or "image/jpeg").split(";")[0].strip() or "image/jpeg"
+        if resp.status_code >= 400:
+            log_message("WARN", "Falha ao buscar image_url remoto -> HTTP " + str(resp.status_code), "router", source_ip, endpoint_name, latency, resp.status_code)
+            return url
+        if not content_type.startswith("image/"):
+            log_message("WARN", "image_url remoto sem content-type de imagem: " + content_type, "router", source_ip, endpoint_name, latency, 200)
+            return url
+        content = resp.content or b""
+        if len(content) > 8 * 1024 * 1024:
+            log_message("WARN", "image_url remoto excede 8MB; mantendo URL original", "router", source_ip, endpoint_name, latency, 200)
+            return url
+        encoded = base64.b64encode(content).decode("ascii")
+        return "data:" + content_type + ";base64," + encoded
+    except Exception as e:
+        latency = time.time() - started
+        log_message("WARN", "Falha ao converter image_url remoto: " + str(e)[:100], "router", source_ip, endpoint_name, latency, 0)
+        return url
+
+
+def normalize_image_urls_for_upstream(payload, source_ip, endpoint_name):
+    body = deepcopy(payload or {})
+
+    def visit(node):
+        if isinstance(node, dict):
+            node_type = str(node.get("type") or "").lower()
+            if node.get("images") and isinstance(node.get("images"), list):
+                converted = []
+                for image in node.get("images") or []:
+                    normalized = fetch_remote_image_as_data_url(image, source_ip, endpoint_name)
+                    if isinstance(normalized, str) and normalized.startswith("data:") and ";base64," in normalized:
+                        normalized = normalized.split(";base64,", 1)[1]
+                    converted.append(normalized)
+                node["images"] = converted
+            if node_type in ("image_url", "input_image"):
+                image_url = node.get("image_url") or node.get("url")
+                if isinstance(image_url, dict):
+                    image_url = image_url.get("url")
+                normalized = fetch_remote_image_as_data_url(image_url, source_ip, endpoint_name)
+                if "image_url" in node:
+                    if isinstance(node["image_url"], dict):
+                        node["image_url"]["url"] = normalized
+                    else:
+                        node["image_url"] = {"url": normalized}
+                elif "url" in node:
+                    node["url"] = normalized
+            if "source" in node and isinstance(node["source"], dict):
+                source = node["source"]
+                if source.get("type") == "url" and source.get("url"):
+                    normalized = fetch_remote_image_as_data_url(source.get("url"), source_ip, endpoint_name)
+                    if normalized.startswith("data:") and ";base64," in normalized:
+                        media_type, encoded = normalized[5:].split(";base64,", 1)
+                        source["type"] = "base64"
+                        source["media_type"] = media_type
+                        source["data"] = encoded
+                        source.pop("url", None)
+            for key, value in list(node.items()):
+                if isinstance(value, (dict, list)):
+                    node[key] = visit(value)
+            return node
+        if isinstance(node, list):
+            return [visit(item) for item in node]
+        return node
+
+    return visit(body)
+
+
 def augment_tags_body(raw_body):
     try:
         data = json.loads(raw_body.decode("utf-8") if isinstance(raw_body, (bytes, bytearray)) else raw_body)
@@ -273,13 +473,9 @@ def augment_tags_body(raw_body):
 
 
 def nvidia_model_details(model_id, model_info):
+    descriptor = model_descriptor(model_id, {"id": nvidia_display_name(model_id), "owned_by": "nvidia"})
     family = model_info["family"]
     kind = model_info["kind"]
-    capabilities = ["completion"]
-    if kind == "vision":
-        capabilities.append("vision")
-    if kind == "image":
-        capabilities = ["image"]
     return {
         "license": "NVIDIA NIM routed by RED Systems proxy.",
         "modelfile": "FROM " + model_id + "\nPARAMETER provider nvidia\n",
@@ -298,9 +494,11 @@ def nvidia_model_details(model_id, model_info):
             "red.model": model_id,
             "red.kind": kind,
             "red.family": family,
+            "red.route_model": descriptor["route_model"],
+            "red.capabilities": descriptor["capabilities"],
             "red.note": model_info.get("note", ""),
         },
-        "capabilities": capabilities,
+        "capabilities": descriptor["capabilities"],
         "modified_at": "2026-04-07T00:00:00Z",
     }
 
@@ -407,6 +605,26 @@ def response_headers_subset(headers):
         if h in headers:
             selected[h] = headers[h]
     return selected
+
+
+def proxy_response_from_upstream(resp):
+    if resp is None:
+        return Response('{"error":"upstream unavailable"}', status=502, content_type="application/json")
+
+    if not getattr(resp, "raw", None) and not getattr(resp, "headers", None):
+        return Response(str(resp), status=502, content_type="text/plain")
+
+    if resp.request.method == "GET":
+        return Response(resp.content, status=resp.status_code, headers=response_headers_subset(resp.headers))
+
+    content_type = resp.headers.get("Content-Type", "application/json")
+    if "text/event-stream" in content_type.lower():
+        def generate():
+            for chunk in resp.iter_content(chunk_size=8192):
+                if chunk:
+                    yield chunk
+        return Response(generate(), status=resp.status_code, headers=response_headers_subset(resp.headers))
+    return Response(resp.content, status=resp.status_code, headers=response_headers_subset(resp.headers))
 
 
 def upstream_request(method, path, source_ip, *, json_body=None, raw_data=None, timeout=180, stream=False, extra_headers=None):
@@ -553,6 +771,111 @@ def upstream_model_entries(source_ip):
     payload = {"object": "list", "data": merged}
     cache_set(MODEL_CATALOG_CACHE_KEY, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json", 200, 300)
     return merged
+
+
+def model_descriptors(source_ip):
+    return [model_descriptor(item.get("id") or item.get("name"), item) for item in upstream_model_entries(source_ip)]
+
+
+def find_model_descriptor(model_name, source_ip):
+    if not isinstance(model_name, str) or not model_name.strip():
+        return None
+    key = model_name.strip().lower()
+    for descriptor in model_descriptors(source_ip):
+        if descriptor["id"].lower() == key:
+            return descriptor
+        if descriptor["route_model"].lower() == key:
+            return descriptor
+    model_id, model_info = normalize_nvidia_model(model_name)
+    if model_info:
+        return model_descriptor(model_id, {"id": nvidia_display_name(model_id), "owned_by": "nvidia"})
+    return None
+
+
+def fallback_env_model_for_capability(capability):
+    if capability == "chat":
+        return DEFAULT_CHAT_MODEL
+    if capability == "vision":
+        return DEFAULT_VISION_MODEL or DEFAULT_CHAT_MODEL
+    if capability == "image_generation":
+        return DEFAULT_IMAGE_MODEL
+    if capability == "embeddings":
+        return DEFAULT_EMBEDDINGS_MODEL
+    return ""
+
+
+def choose_fallback_model(capability, source_ip, preferred_provider=None):
+    descriptors = model_descriptors(source_ip)
+    explicit = fallback_env_model_for_capability(capability)
+    if explicit:
+        explicit_descriptor = find_model_descriptor(explicit, source_ip)
+        if explicit_descriptor and capability in explicit_descriptor.get("capabilities", []):
+            return explicit_descriptor
+
+    if preferred_provider:
+        same_provider = [item for item in descriptors if item.get("provider") == preferred_provider and capability in item.get("capabilities", [])]
+        if same_provider:
+            return same_provider[0]
+
+    compatible = [item for item in descriptors if capability in item.get("capabilities", [])]
+    if compatible:
+        return compatible[0]
+    return None
+
+
+def resolve_model_for_capability(model_name, capability, source_ip):
+    requested = find_model_descriptor(model_name, source_ip) if model_name else None
+    if requested and capability in requested.get("capabilities", []):
+        return requested, requested, None
+    if not ENABLE_CAPABILITY_FALLBACK:
+        return None, requested, proxy_error_response("modelo nao suporta capability " + capability + " e fallback esta desativado", 400, "invalid_request_error")
+
+    preferred_provider = requested.get("provider") if requested else None
+    fallback = choose_fallback_model(capability, source_ip, preferred_provider=preferred_provider)
+    if fallback:
+        return fallback, requested, None
+
+    if requested:
+        return None, requested, proxy_error_response("modelo " + requested["id"] + " nao suporta capability " + capability + " e nao existe fallback compativel", 400, "invalid_request_error")
+    return None, None, proxy_error_response("nenhum modelo compativel para capability " + capability, 400, "invalid_request_error")
+
+
+def routing_meta(requested, resolved, capability):
+    requested_id = requested["id"] if requested else ""
+    resolved_id = resolved["id"] if resolved else ""
+    return {
+        "capability": capability,
+        "requested_model": requested_id,
+        "resolved_model": resolved_id,
+        "fallback_used": bool(requested_id and resolved_id and requested_id.lower() != resolved_id.lower()),
+        "requested_provider": requested.get("provider") if requested else "",
+        "resolved_provider": resolved.get("provider") if resolved else "",
+    }
+
+
+def route_json_body(body, endpoint_name, source_ip):
+    capability = required_capability_for_request(endpoint_name, body)
+    resolved, requested, error_response = resolve_model_for_capability(extract_model_name(body), capability, source_ip)
+    if error_response is not None:
+        return None, None, error_response
+    return clone_body_with_model(body, resolved["id"]), routing_meta(requested, resolved, capability), None
+
+
+def public_model_entry(descriptor):
+    return {
+        "id": descriptor["id"],
+        "object": "model",
+        "created": descriptor.get("created") or 1775520000,
+        "owned_by": descriptor.get("owned_by") or descriptor.get("provider") or "upstream",
+        "red": {
+            "provider": descriptor.get("provider"),
+            "kind": descriptor.get("kind"),
+            "family": descriptor.get("family"),
+            "capabilities": descriptor.get("capabilities") or [],
+            "route_model": descriptor.get("route_model"),
+            "note": descriptor.get("note") or "",
+        },
+    }
 
 
 def completion_prompt_to_text(prompt):
@@ -802,10 +1125,11 @@ def universal_openai_chat_json(body, source_ip, endpoint_name):
         model_name = nvidia_display_name(model_id) if data is not None else None
         return model_name, data, error_response
 
-    data, error_response = upstream_json_request("POST", "/v1/chat/completions", source_ip, body=body)
+    normalized_body = normalize_image_urls_for_upstream(body, source_ip, endpoint_name)
+    data, error_response = upstream_json_request("POST", "/v1/chat/completions", source_ip, body=normalized_body)
     if error_response is not None:
         return None, None, error_response
-    return extract_model_name(body), data, None
+    return extract_model_name(normalized_body), data, None
 
 
 def openai_embeddings_to_ollama_payload(body):
@@ -1651,6 +1975,7 @@ MAX_RETRIES = 2  # Tenta ate 2 keys diferentes em caso de 429/404/5xx
 @app.get("/admin/stats")
 def admin_stats():
     keys = key_pool.get_stats()
+    descriptors = model_descriptors(request.remote_addr)
     return jsonify(
         {
             "status": "ok",
@@ -1665,6 +1990,22 @@ def admin_stats():
             "port": PROXY_PORT,
             "keys": keys,
             "summary": summarize_keys(keys),
+            "router": {
+                "fallback_enabled": ENABLE_CAPABILITY_FALLBACK,
+                "defaults": {
+                    "chat": DEFAULT_CHAT_MODEL,
+                    "vision": DEFAULT_VISION_MODEL,
+                    "image_generation": DEFAULT_IMAGE_MODEL,
+                    "embeddings": DEFAULT_EMBEDDINGS_MODEL,
+                },
+                "catalog_size": len(descriptors),
+                "capabilities": {
+                    "chat": sum(1 for descriptor in descriptors if "chat" in descriptor.get("capabilities", [])),
+                    "vision": sum(1 for descriptor in descriptors if "vision" in descriptor.get("capabilities", [])),
+                    "image_generation": sum(1 for descriptor in descriptors if "image_generation" in descriptor.get("capabilities", [])),
+                    "embeddings": sum(1 for descriptor in descriptors if "embeddings" in descriptor.get("capabilities", [])),
+                },
+            },
             "cache": cache_stats(),
             "files": {
                 "keys_file": KEYS_FILE,
@@ -1673,6 +2014,34 @@ def admin_stats():
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
     )
+
+
+@app.get("/api/router/models")
+def router_models():
+    return jsonify(
+        {
+            "status": "ok",
+            "fallback_enabled": ENABLE_CAPABILITY_FALLBACK,
+            "defaults": {
+                "chat": DEFAULT_CHAT_MODEL,
+                "vision": DEFAULT_VISION_MODEL,
+                "image_generation": DEFAULT_IMAGE_MODEL,
+                "embeddings": DEFAULT_EMBEDDINGS_MODEL,
+            },
+            "models": model_descriptors(request.remote_addr),
+        }
+    )
+
+
+@app.post("/api/router/resolve")
+def router_resolve():
+    body = request.get_json(silent=True) or {}
+    capability = str(body.get("capability") or "chat").strip() or "chat"
+    model_name = extract_model_name(body) or body.get("requested_model")
+    resolved, requested, error_response = resolve_model_for_capability(model_name, capability, request.remote_addr)
+    if error_response is not None:
+        return error_response
+    return jsonify({"status": "ok", "routing": routing_meta(requested, resolved, capability), "resolved": resolved, "requested": requested})
 
 
 @app.post("/admin/reload")
@@ -1695,45 +2064,53 @@ def nvidia_models():
             "status": "ok",
             "configured": bool(NVIDIA_API_KEY),
             "suffix": NVIDIA_SUFFIX,
-            "models": [
-                {
-                    "id": model["id"],
-                    "name": nvidia_display_name(model["id"]),
-                    "kind": model["kind"],
-                    "family": model["family"],
-                    "note": model.get("note", ""),
-                }
-                for model in NVIDIA_MODELS
-            ],
+            "models": [model_descriptor(model["id"], {"id": nvidia_display_name(model["id"]), "owned_by": "nvidia"}) for model in NVIDIA_MODELS],
         }
     )
 
 
 @app.get("/v1/models")
 def openai_models():
-    return jsonify({"object": "list", "data": upstream_model_entries(request.remote_addr)})
+    return jsonify({"object": "list", "data": [public_model_entry(descriptor) for descriptor in model_descriptors(request.remote_addr)]})
 
 
 @app.post("/v1/chat/completions")
 def openai_chat_completions():
     body = request.get_json(silent=True) or {}
-    model_id, model_info = normalize_nvidia_model(extract_model_name(body))
+    routed_body, _routing, error_response = route_json_body(body, "/v1/chat/completions", request.remote_addr)
+    if error_response is not None:
+        return error_response
+    model_id, model_info = normalize_nvidia_model(extract_model_name(routed_body))
     if model_info:
-        return nvidia_openai_chat_request(model_id, model_info, body, request.remote_addr)
-    return forward_to_upstream()
+        return nvidia_openai_chat_request(model_id, model_info, routed_body, request.remote_addr)
+    routed_body = normalize_image_urls_for_upstream(routed_body, request.remote_addr, "/v1/chat/completions")
+    upstream, error_response = upstream_request(
+        "POST",
+        "/v1/chat/completions",
+        request.remote_addr,
+        json_body=routed_body,
+        timeout=180,
+        stream=bool(routed_body.get("stream")),
+    )
+    if error_response is not None:
+        return error_response
+    return proxy_response_from_upstream(upstream)
 
 
 @app.post("/v1/messages")
 def anthropic_messages():
     body = request.get_json(silent=True) or {}
-    model_id, model_info = normalize_nvidia_model(extract_model_name(body))
+    routed_body, _routing, error_response = route_json_body(body, "/v1/messages", request.remote_addr)
+    if error_response is not None:
+        return error_response
+    model_id, model_info = normalize_nvidia_model(extract_model_name(routed_body))
     if model_info:
-        return nvidia_anthropic_messages_request(model_id, model_info, body, request.remote_addr)
-    model_name, data, error_response = universal_openai_chat_json(anthropic_to_openai_payload(body, extract_model_name(body)), request.remote_addr, "/v1/messages")
+        return nvidia_anthropic_messages_request(model_id, model_info, routed_body, request.remote_addr)
+    model_name, data, error_response = universal_openai_chat_json(anthropic_to_openai_payload(routed_body, extract_model_name(routed_body)), request.remote_addr, "/v1/messages")
     if error_response is not None:
         return error_response
     message = anthropic_response_from_openai(data, model_name)
-    if body.get("stream"):
+    if routed_body.get("stream"):
         return Response(anthropic_sse_from_message(message), status=200, content_type="text/event-stream")
     return jsonify(message)
 
@@ -1741,7 +2118,10 @@ def anthropic_messages():
 @app.post("/v1/completions")
 def openai_completions():
     body = request.get_json(silent=True) or {}
-    chat_payload = openai_completion_to_chat_payload(body)
+    routed_body, _routing, error_response = route_json_body(body, "/v1/completions", request.remote_addr)
+    if error_response is not None:
+        return error_response
+    chat_payload = openai_completion_to_chat_payload(routed_body)
     model_name, data, error_response = universal_openai_chat_json(chat_payload, request.remote_addr, "/v1/completions")
     if error_response is not None:
         return error_response
@@ -1762,7 +2142,7 @@ def openai_completions():
             model_name, data, completion = retry_model_name, retry_data, retry_completion
             if retry_completion["choices"][0]["text"]:
                 break
-    if body.get("stream"):
+    if routed_body.get("stream"):
         return Response(openai_completion_sse_from_chat(data, model_name), status=200, content_type="text/event-stream")
     return jsonify(completion)
 
@@ -1770,11 +2150,14 @@ def openai_completions():
 @app.post("/v1/responses")
 def openai_responses():
     body = request.get_json(silent=True) or {}
-    chat_payload = responses_to_chat_payload(body)
+    routed_body, _routing, error_response = route_json_body(body, "/v1/responses", request.remote_addr)
+    if error_response is not None:
+        return error_response
+    chat_payload = responses_to_chat_payload(routed_body)
     model_name, data, error_response = universal_openai_chat_json(chat_payload, request.remote_addr, "/v1/responses")
     if error_response is not None:
         return error_response
-    if body.get("stream"):
+    if routed_body.get("stream"):
         return Response(responses_sse_from_chat(data, model_name), status=200, content_type="text/event-stream")
     return jsonify(responses_from_chat(data, model_name))
 
@@ -1782,8 +2165,11 @@ def openai_responses():
 @app.post("/v1/embeddings")
 def openai_embeddings():
     body = request.get_json(silent=True) or {}
-    model_name = extract_model_name(body)
-    data, error_response = universal_embeddings_json(body, request.remote_addr)
+    routed_body, _routing, error_response = route_json_body(body, "/v1/embeddings", request.remote_addr)
+    if error_response is not None:
+        return error_response
+    model_name = extract_model_name(routed_body)
+    data, error_response = universal_embeddings_json(routed_body, request.remote_addr)
     if error_response is not None:
         return error_response
     return jsonify(openai_embeddings_from_ollama(data, model_name))
@@ -1793,15 +2179,18 @@ def openai_embeddings():
 @app.post("/api/embeddings")
 def ollama_embeddings():
     body = request.get_json(silent=True) or {}
-    model_id, model_info = normalize_nvidia_model(extract_model_name(body))
+    routed_body, _routing, error_response = route_json_body(body, "/api/embed", request.remote_addr)
+    if error_response is not None:
+        return error_response
+    model_id, model_info = normalize_nvidia_model(extract_model_name(routed_body))
     if model_info:
         return jsonify({"error": "modelos NVIDIA configurados neste proxy nao suportam embeddings"}), 400
-    resp, error_response = upstream_request("POST", "/api/embed", request.remote_addr, json_body=body, timeout=180, stream=False)
+    resp, error_response = upstream_request("POST", "/api/embed", request.remote_addr, json_body=routed_body, timeout=180, stream=False)
     if error_response is not None:
         return error_response
     if resp is not None and resp.status_code not in (404, 405):
         return Response(resp.content, status=resp.status_code, content_type=resp.headers.get("Content-Type", "application/json"))
-    legacy_resp, legacy_error = upstream_request("POST", "/api/embeddings", request.remote_addr, json_body=body, timeout=180, stream=False)
+    legacy_resp, legacy_error = upstream_request("POST", "/api/embeddings", request.remote_addr, json_body=routed_body, timeout=180, stream=False)
     if legacy_error is not None:
         return legacy_error
     return Response(legacy_resp.content, status=legacy_resp.status_code, content_type=legacy_resp.headers.get("Content-Type", "application/json"))
@@ -1810,12 +2199,15 @@ def ollama_embeddings():
 @app.post("/api/images/generate")
 def nvidia_images_generate():
     body = request.get_json(silent=True) or {}
-    model_id, model_info = normalize_nvidia_model(extract_model_name(body))
+    routed_body, _routing, error_response = route_json_body(body, "/api/images/generate", request.remote_addr)
+    if error_response is not None:
+        return error_response
+    model_id, model_info = normalize_nvidia_model(extract_model_name(routed_body))
     if not model_info:
         return jsonify({"error": "modelo NVIDIA invalido; use um nome com sufixo " + NVIDIA_SUFFIX}), 400
     if model_info.get("kind") != "image":
         return jsonify({"error": "modelo NVIDIA nao e de imagem", "kind": model_info.get("kind")}), 400
-    return nvidia_image_request(model_id, model_info, body, request.remote_addr)
+    return nvidia_image_request(model_id, model_info, routed_body, request.remote_addr)
 
 
 @app.route('/', defaults={'path': ''}, methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'])
@@ -1844,16 +2236,36 @@ def catch_all(path):
     ttl = CACHEABLE_GETS.get(base_path) if request.method == "GET" else None
 
     if request.method == "POST" and base_path in ("/api/show", "/api/chat", "/api/generate") and req_data:
-        is_nvidia, nvidia_body, model_id = is_nvidia_request_body(req_data)
-        if is_nvidia:
-            model_info = NVIDIA_MODEL_MAP.get(model_id.lower())
+        try:
+            incoming_body = json.loads(req_data.decode("utf-8") if isinstance(req_data, (bytes, bytearray)) else req_data)
+        except Exception:
+            incoming_body = None
+
+        if isinstance(incoming_body, dict):
             if base_path == "/api/show":
-                return nvidia_show_request(model_id, model_info, source_ip)
-            if model_info and model_info.get("kind") == "image":
-                if base_path == "/api/generate":
-                    return nvidia_image_request(model_id, model_info, nvidia_body, source_ip, as_ollama_generate=True)
-                return jsonify({"error": "modelo NVIDIA de imagem deve usar /api/generate ou /api/images/generate"}), 400
-            return nvidia_chat_request(model_id, nvidia_body, base_path, source_ip)
+                descriptor = find_model_descriptor(extract_model_name(incoming_body), source_ip)
+                if descriptor and descriptor.get("provider") == "nvidia":
+                    model_id, model_info = normalize_nvidia_model(descriptor["id"])
+                    return nvidia_show_request(model_id, model_info, source_ip)
+                if descriptor:
+                    incoming_body = clone_body_with_model(incoming_body, descriptor["id"])
+                    req_data = json.dumps(incoming_body, ensure_ascii=False).encode("utf-8")
+            else:
+                capability = required_capability_for_request(base_path, incoming_body)
+                resolved, _requested, error_response = resolve_model_for_capability(extract_model_name(incoming_body), capability, source_ip)
+                if error_response is not None:
+                    return error_response
+                incoming_body = clone_body_with_model(incoming_body, resolved["id"])
+                if resolved.get("provider") == "nvidia":
+                    model_id, model_info = normalize_nvidia_model(resolved["id"])
+                    if model_info and model_info.get("kind") == "image":
+                        if base_path == "/api/generate":
+                            return nvidia_image_request(model_id, model_info, incoming_body, source_ip, as_ollama_generate=True)
+                        return jsonify({"error": "modelo NVIDIA de imagem deve usar /api/generate ou /api/images/generate"}), 400
+                    return nvidia_chat_request(model_id, incoming_body, base_path, source_ip)
+                if base_path == "/api/chat":
+                    incoming_body = normalize_image_urls_for_upstream(incoming_body, source_ip, base_path)
+                req_data = json.dumps(incoming_body, ensure_ascii=False).encode("utf-8")
 
     # --- Request com retry ---
     last_error = None
