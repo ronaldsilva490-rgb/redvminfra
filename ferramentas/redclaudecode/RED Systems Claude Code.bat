@@ -2,23 +2,25 @@
 setlocal
 
 set "SCRIPT_DIR=%~dp0"
-set "LAUNCHER_PS1=%SCRIPT_DIR%RED Systems Claude Code.ps1"
+set "REPO_ROOT=%SCRIPT_DIR%..\.."
 
-if not exist "%LAUNCHER_PS1%" (
-    echo.
-    echo ERRO: launcher PowerShell nao encontrado.
-    echo Caminho esperado: "%LAUNCHER_PS1%"
-    echo.
-    pause
-    exit /b 1
+pushd "%REPO_ROOT%" >nul
+
+where pythonw >nul 2>nul
+if %ERRORLEVEL%==0 (
+    set "PYTHON_CMD=pythonw"
+) else (
+    set "PYTHON_CMD=python"
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%LAUNCHER_PS1%"
+%PYTHON_CMD% -m ferramentas.redclaudecode
 set "EXIT_CODE=%ERRORLEVEL%"
+
+popd >nul
 
 if not "%EXIT_CODE%"=="0" (
     echo.
-    echo Launcher encerrado com codigo %EXIT_CODE%.
+    echo Falha ao abrir o launcher RED Claude Code.
     echo.
     pause
 )

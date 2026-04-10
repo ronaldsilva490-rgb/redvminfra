@@ -1,0 +1,1 @@
+"""RED Claude Code launcher."""
