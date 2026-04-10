@@ -218,6 +218,25 @@ REPO_BLUEPRINT = [
         ],
     },
 ]
+
+DASHBOARD_VIEW_ROUTES = {
+    "overview": {"path": "", "aliases": ["overview", "visao-geral"]},
+    "services": {"path": "servicos", "aliases": ["services"]},
+    "docker": {"path": "docker", "aliases": []},
+    "proxy": {"path": "proxyia", "aliases": ["proxy"]},
+    "redia": {"path": "redia", "aliases": []},
+    "projects": {"path": "projetos", "aliases": ["projects"]},
+    "logs": {"path": "logs", "aliases": []},
+    "terminal": {"path": "terminal", "aliases": []},
+    "files": {"path": "arquivos", "aliases": ["files"]},
+    "firewall": {"path": "firewall", "aliases": []},
+    "processes": {"path": "processos", "aliases": ["processes"]},
+}
+
+DASHBOARD_ROUTE_TO_VIEW: dict[str, str] = {}
+for _view_id, _route_meta in DASHBOARD_VIEW_ROUTES.items():
+    for _route in [_route_meta["path"], *(_route_meta.get("aliases") or [])]:
+        DASHBOARD_ROUTE_TO_VIEW[str(_route or "").strip("/")] = _view_id
 PROJECT_PORT_BASE = int(os.getenv("RED_PROJECT_PORT_BASE", "3000") or 3000)
 PROJECT_PORT_STEP = int(os.getenv("RED_PROJECT_PORT_STEP", "20") or 20)
 PROJECT_WEBHOOK_BASE_PATH = os.getenv("RED_PROJECT_WEBHOOK_BASE_PATH", "/hooks/github").rstrip("/")
@@ -5090,6 +5109,24 @@ def public_path(request: Request, path: str) -> str:
     return f"{prefix}{path}" if prefix else path
 
 
+def resolve_dashboard_view(route_path: str) -> str:
+    normalized = str(route_path or "").strip("/")
+    return DASHBOARD_ROUTE_TO_VIEW.get(normalized, "overview")
+
+
+def dashboard_template_context(request: Request, authenticated: bool) -> dict[str, Any]:
+    app_base_path = public_path(request, "")
+    app_base_href = public_path(request, "/")
+    return {
+        "request": request,
+        "app_title": APP_TITLE,
+        "authenticated": authenticated,
+        "app_base_path": app_base_path,
+        "app_base_href": app_base_href,
+        "current_view": resolve_dashboard_view(request.url.path),
+    }
+
+
 async def emit_snapshot(include_heavy: bool = False) -> None:
     payload: dict[str, Any] = {
         "system": system_summary(),
@@ -5205,14 +5242,7 @@ async def on_startup() -> None:
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
     authenticated = is_authenticated_token(request.cookies.get(COOKIE_NAME))
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "app_title": APP_TITLE,
-            "authenticated": authenticated,
-        },
-    )
+    return templates.TemplateResponse("index.html", dashboard_template_context(request, authenticated))
 
 
 @app.post("/login")
@@ -6036,6 +6066,15 @@ async def evolution_webhook(request: Request) -> JSONResponse:
     thread = threading.Thread(target=whatsapp_process_webhook_payload, args=(payload,), daemon=True)
     thread.start()
     return JSONResponse({"accepted": True})
+
+
+@app.get("/{dashboard_path:path}", response_class=HTMLResponse)
+async def dashboard_client_route(dashboard_path: str, request: Request) -> HTMLResponse:
+    normalized = str(dashboard_path or "").strip("/")
+    if normalized in DASHBOARD_ROUTE_TO_VIEW:
+        authenticated = is_authenticated_token(request.cookies.get(COOKIE_NAME))
+        return templates.TemplateResponse("index.html", dashboard_template_context(request, authenticated))
+    raise HTTPException(status_code=404, detail="Pagina nao encontrada")
 
 
 @app.websocket("/ws")

@@ -69,9 +69,34 @@ const VM_ASSISTANT_STORAGE_KEY = "redvm.vmAssistant.v1";
 const PROJECT_WIZARD_MODE_KEY = "redvm.projects.mode.v1";
 const WHATSAPP_TAB_STORAGE_KEY = "redvm.whatsapp.tab.v1";
 const REDIA_TAB_STORAGE_KEY = "redvm.redia.tab.v1";
-const APP_BASE_PATH = window.location.pathname === "/dashboard" || window.location.pathname.startsWith("/dashboard/")
-    ? "/dashboard"
-    : "";
+const APP_BASE_PATH = (() => {
+    const explicit = String(window.REDVM_APP_BASE_PATH || document.documentElement.dataset.appBasePath || "").trim();
+    if (explicit) {
+        return explicit === "/" ? "" : explicit.replace(/\/$/, "");
+    }
+    return window.location.pathname === "/dashboard" || window.location.pathname.startsWith("/dashboard/")
+        ? "/dashboard"
+        : "";
+})();
+const DASHBOARD_VIEW_CONFIG = {
+    overview: { label: "Visão geral", path: "", aliases: ["overview", "visao-geral"] },
+    services: { label: "Serviços", path: "servicos", aliases: ["services"] },
+    docker: { label: "Docker", path: "docker", aliases: [] },
+    proxy: { label: "Proxy IA", path: "proxyia", aliases: ["proxy"] },
+    redia: { label: "RED I.A", path: "redia", aliases: [] },
+    projects: { label: "Projetos", path: "projetos", aliases: ["projects"] },
+    logs: { label: "Logs", path: "logs", aliases: [] },
+    terminal: { label: "Terminal", path: "terminal", aliases: [] },
+    files: { label: "Arquivos", path: "arquivos", aliases: ["files"] },
+    firewall: { label: "Firewall", path: "firewall", aliases: [] },
+    processes: { label: "Processos", path: "processos", aliases: ["processes"] },
+};
+const DASHBOARD_ROUTE_TO_VIEW = Object.entries(DASHBOARD_VIEW_CONFIG).reduce((acc, [view, config]) => {
+    [config.path, ...(config.aliases || [])].forEach((route) => {
+        acc[String(route || "").replace(/^\/+|\/+$/g, "")] = view;
+    });
+    return acc;
+}, {});
 const IMPORTANT_SERVICES = [
     "nginx.service",
     "docker.service",
@@ -285,6 +310,27 @@ function renderWhatsAppConfigState() {
 
 function appPath(path) {
     return `${APP_BASE_PATH}${path}`;
+}
+
+function normalizeDashboardRoute(path) {
+    return String(path || "").replace(/^\/+|\/+$/g, "");
+}
+
+function dashboardViewUrl(view) {
+    const config = DASHBOARD_VIEW_CONFIG[view] || DASHBOARD_VIEW_CONFIG.overview;
+    const route = normalizeDashboardRoute(config.path);
+    if (APP_BASE_PATH) {
+        return route ? `${APP_BASE_PATH}/${route}` : `${APP_BASE_PATH}/`;
+    }
+    return route ? `/${route}` : "/";
+}
+
+function dashboardViewFromLocation(pathname = window.location.pathname) {
+    let path = String(pathname || "");
+    if (APP_BASE_PATH && path.startsWith(APP_BASE_PATH)) {
+        path = path.slice(APP_BASE_PATH.length);
+    }
+    return DASHBOARD_ROUTE_TO_VIEW[normalizeDashboardRoute(path)] || window.REDVM_INITIAL_VIEW || "overview";
 }
 
 async function api(path, options = {}) {
@@ -3864,6 +3910,10 @@ function sendTerminalInput(data) {
 function wireAuthenticatedUi() {
     hydrateProxyChatState();
     hydrateVmAssistantState();
+    setView(dashboardViewFromLocation(), { syncHistory: false });
+    window.addEventListener("popstate", () => {
+        setView(dashboardViewFromLocation(), { syncHistory: false });
+    });
 
     qsa(".nav-item").forEach((item) => {
         item.addEventListener("click", () => setView(item.dataset.view));
@@ -4305,6 +4355,7 @@ function wireAuthenticatedUi() {
         syncProjectManagedCheckoutUi();
         resizeProxyChatInput();
         openDirectory("/");
+        setView(dashboardViewFromLocation(), { syncHistory: false });
         if (state.selectedProjectId) {
             fillProjectForm(projectSelected());
         }
@@ -4330,11 +4381,17 @@ function wireLoginUi() {
 }
 
 const baseSetView = setView;
-setView = function(view) {
-    baseSetView(view);
-    if (view === "redia") {
-        const title = qs("#pageTitle");
-        if (title) title.textContent = "RED I.A";
+setView = function(view, options = {}) {
+    const nextView = DASHBOARD_VIEW_CONFIG[view] ? view : "overview";
+    baseSetView(nextView);
+    const config = DASHBOARD_VIEW_CONFIG[nextView] || DASHBOARD_VIEW_CONFIG.overview;
+    const title = qs("#pageTitle");
+    if (title) title.textContent = config.label || DASHBOARD_VIEW_CONFIG.overview.label;
+    if (options.syncHistory === false) return;
+    const targetPath = dashboardViewUrl(nextView);
+    if (window.location.pathname !== targetPath) {
+        const method = options.replaceHistory ? "replaceState" : "pushState";
+        window.history[method]({ view: nextView }, "", targetPath);
     }
 };
 

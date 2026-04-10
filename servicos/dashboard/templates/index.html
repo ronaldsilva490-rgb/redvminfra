@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ app_title }}</title>
+    <base href="{{ app_base_href }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
@@ -12,11 +13,13 @@
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
     <link rel="icon" href="static/favicon.ico" sizes="any">
     <link rel="shortcut icon" href="static/favicon.ico">
-    <link rel="stylesheet" href="static/styles.css?v=20260409-redia">
+    <link rel="stylesheet" href="static/styles.css?v=20260409-routes">
 </head>
 <body>
     <script>
         window.REDVM_AUTHENTICATED = {{ "true" if authenticated else "false" }};
+        window.REDVM_APP_BASE_PATH = {{ app_base_path | tojson }};
+        window.REDVM_INITIAL_VIEW = {{ current_view | tojson }};
     </script>
 
     {% if not authenticated %}
@@ -64,7 +67,7 @@
                     <span class="status-dot"></span>
                     <span>Conectando</span>
                 </div>
-                <form action="logout" method="post">
+                <form action="{{ app_base_path }}/logout" method="post">
                     <button class="ghost-button" type="submit">Sair</button>
                 </form>
             </div>
@@ -1323,6 +1326,6 @@
     <div id="toastStack" class="toast-stack"></div>
     {% endif %}
 
-    <script src="static/app.js?v=20260409-redia"></script>
+    <script src="static/app.js?v=20260409-routes"></script>
 </body>
 </html>
