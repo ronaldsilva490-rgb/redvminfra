@@ -115,6 +115,16 @@ function activityTone(event) {
 
 function activityTitle(event) {
   const titles = {
+    "whatsapp:start": "WhatsApp iniciando",
+    "whatsapp:connection": "Atualizacao de conexao",
+    "whatsapp:qr": "QR Code gerado",
+    "whatsapp:connected": "WhatsApp conectado",
+    "whatsapp:disconnected": "WhatsApp desconectado",
+    "whatsapp:reconnecting": "Reconexao agendada",
+    "whatsapp:session_reset": "Sessao limpa",
+    "whatsapp:stopped": "WhatsApp parado",
+    "whatsapp:error": "Falha no WhatsApp",
+    "whatsapp:restart_error": "Reconexao falhou",
     "model:start": "Modelo pensando",
     "model:stream": "Resposta em streaming",
     "model:done": "Modelo respondeu",
@@ -345,6 +355,12 @@ function renderConfig() {
 function renderStatus() {
   const wa = statusPayload?.whatsapp || {};
   qs("#waStatus").textContent = `WhatsApp: ${wa.status || "desconhecido"}`;
+  qs("#waPhone").textContent = wa.phone || "-";
+  qs("#waCode").textContent = wa.last_disconnect_code ? String(wa.last_disconnect_code) : "-";
+  qs("#waRetries").textContent = String(wa.reconnect_attempts || 0);
+  qs("#waUpdatedAt").textContent = wa.last_update_at ? new Date(wa.last_update_at).toLocaleTimeString("pt-BR") : "-";
+  qs("#waHint").textContent = wa.hint || "Aguardando estado da sessao.";
+  qs("#waLastError").textContent = wa.last_error || "-";
   const proxyError = statusPayload?.proxy?.error || "";
   qs("#proxyStatus").textContent = proxyError ? "erro" : "online";
   qs("#modelCount").textContent = String((statusPayload?.proxy?.models || []).length);
@@ -444,6 +460,18 @@ function wire() {
       releaseButton();
     }
   });
+  qs("#reconnectBtn").addEventListener("click", async () => {
+    const releaseButton = setButtonBusy("reconnectBtn", "Reconectando...");
+    try {
+      await api("/api/whatsapp/reconnect", { method: "POST", body: JSON.stringify({ reset: false }) });
+      toast("Reconexao iniciada. Se precisar, o QR aparece aqui.", "success");
+      await refreshAll();
+    } catch (err) {
+      toast(err.message || "Falha ao reconectar WhatsApp.", "error");
+    } finally {
+      releaseButton();
+    }
+  });
   qs("#stopBtn").addEventListener("click", async () => {
     const releaseButton = setButtonBusy("stopBtn", "Parando...");
     try {
@@ -452,6 +480,18 @@ function wire() {
       await refreshAll();
     } catch (err) {
       toast(err.message || "Falha ao parar WhatsApp.", "error");
+    } finally {
+      releaseButton();
+    }
+  });
+  qs("#resetBtn").addEventListener("click", async () => {
+    const releaseButton = setButtonBusy("resetBtn", "Limpando...");
+    try {
+      await api("/api/whatsapp/reconnect", { method: "POST", body: JSON.stringify({ reset: true }) });
+      toast("Sessao limpa. Aguardando novo QR Code.", "success");
+      await refreshAll();
+    } catch (err) {
+      toast(err.message || "Falha ao resetar a sessao.", "error");
     } finally {
       releaseButton();
     }

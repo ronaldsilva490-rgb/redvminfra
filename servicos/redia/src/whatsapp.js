@@ -1,6 +1,7 @@
 const fs = require("fs");
 const pino = require("pino");
 const QRCode = require("qrcode");
+const activity = require("./activity");
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -18,10 +19,16 @@ const runtime = {
   phone: "",
   last_error: "",
   started_at: "",
+  reconnect_attempts: 0,
+  reconnect_scheduled_at: "",
+  last_disconnect_code: 0,
+  last_update_at: "",
+  hint: "",
 };
 
 let sock = null;
 let connecting = false;
+let reconnectTimer = null;
 const ignoredOutbound = new Map();
 
 function outboundKey(chatId, id) {
@@ -51,6 +58,68 @@ function shouldIgnoreOutbound(chatId, id) {
 
 function getRuntime() {
   return { ...runtime };
+}
+
+function touchRuntime(patch = {}) {
+  Object.assign(runtime, patch, { last_update_at: new Date().toISOString() });
+  return getRuntime();
+}
+
+function clearReconnectTimer() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
+
+function disconnectLabel(code, message = "") {
+  const map = {
+    [DisconnectReason.loggedOut]: "Sessao desconectada do WhatsApp",
+    [DisconnectReason.badSession]: "Sessao invalida",
+    [DisconnectReason.connectionClosed]: "Conexao fechada",
+    [DisconnectReason.connectionLost]: "Conexao perdida",
+    [DisconnectReason.connectionReplaced]: "Sessao substituida por outro login",
+    [DisconnectReason.restartRequired]: "Reconexao necessaria",
+    [DisconnectReason.timedOut]: "Tempo de conexao esgotado",
+    [DisconnectReason.multideviceMismatch]: "Sessao multidevice invalida",
+    [DisconnectReason.forbidden]: "WhatsApp recusou a sessao",
+    [DisconnectReason.unavailableService]: "Servico do WhatsApp indisponivel",
+  };
+  return map[code] || message || "Falha de conexao";
+}
+
+function authDirFromConfig(config) {
+  return authPath(config?.whatsapp?.auth_dir || "");
+}
+
+function clearAuthDir(config) {
+  const dir = authDirFromConfig(config);
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+}
+
+function scheduleReconnect(config, { delayMs = 2500, resetAuth = false, reason = "" } = {}) {
+  clearReconnectTimer();
+  const when = new Date(Date.now() + delayMs).toISOString();
+  touchRuntime({
+    reconnect_attempts: Number(runtime.reconnect_attempts || 0) + 1,
+    reconnect_scheduled_at: when,
+    hint: resetAuth
+      ? "Sessao antiga foi descartada; aguardando novo QR."
+      : "Tentando reconectar automaticamente.",
+  });
+  activity.publish("whatsapp:reconnecting", {
+    delay_ms: delayMs,
+    reconnect_attempts: runtime.reconnect_attempts,
+    reset_auth: resetAuth,
+    reason,
+  });
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    startWhatsApp(config, { resetAuth, source: "auto-reconnect" }).catch((err) => {
+      touchRuntime({ status: "error", last_error: err.message, hint: "Falha ao reconectar automaticamente." });
+      activity.publish("whatsapp:restart_error", { error: err.message, source: "auto-reconnect" });
+    });
+  }, delayMs);
 }
 
 async function sendImageToChat(chatId, image, caption = "") {
@@ -95,14 +164,27 @@ async function sendTextNotification(to, text) {
   };
 }
 
-async function startWhatsApp(config) {
-  if (connecting || runtime.status === "authenticated" || runtime.status === "connecting") return getRuntime();
+async function startWhatsApp(config, options = {}) {
+  const resetAuth = !!options.resetAuth;
+  const source = String(options.source || "manual").trim();
+  if (connecting || (runtime.status === "authenticated" && !resetAuth) || runtime.status === "connecting") return getRuntime();
   connecting = true;
-  runtime.status = "connecting";
-  runtime.started_at = new Date().toISOString();
-  runtime.last_error = "";
+  clearReconnectTimer();
+  touchRuntime({
+    status: "connecting",
+    started_at: new Date().toISOString(),
+    last_error: "",
+    reconnect_scheduled_at: "",
+    hint: resetAuth ? "Criando nova sessao e aguardando QR." : "Conectando ao WhatsApp...",
+  });
+  activity.publish("whatsapp:start", { source, reset_auth: resetAuth });
   try {
-    const authDir = authPath(config.whatsapp?.auth_dir || "");
+    if (resetAuth) {
+      clearAuthDir(config);
+      touchRuntime({ phone: "", qr: "", last_disconnect_code: 0 });
+      activity.publish("whatsapp:session_reset", { source });
+    }
+    const authDir = authDirFromConfig(config);
     fs.mkdirSync(authDir, { recursive: true });
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
     let version;
@@ -115,7 +197,6 @@ async function startWhatsApp(config) {
     sock = makeWASocket({
       version,
       auth: state,
-      printQRInTerminal: true,
       browser: Browsers.macOS("Desktop"),
       logger: pino({ level: process.env.REDIA_BAILEYS_LOG_LEVEL || "error" }),
       connectTimeoutMs: 60000,
@@ -128,40 +209,90 @@ async function startWhatsApp(config) {
     sock.ev.on("creds.update", saveCreds);
     sock.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect, qr } = update;
+      const code = lastDisconnect?.error?.output?.statusCode || 0;
+      const message = lastDisconnect?.error?.message || "";
+      if (connection || qr || code) {
+        activity.publish("whatsapp:connection", {
+          connection: connection || "",
+          has_qr: !!qr,
+          disconnect_code: code || 0,
+          error: message,
+        });
+      }
       if (qr) {
-        runtime.qr = await QRCode.toDataURL(qr);
-        runtime.status = "qrcode";
+        touchRuntime({
+          qr: await QRCode.toDataURL(qr),
+          status: "qrcode",
+          last_error: "",
+          reconnect_scheduled_at: "",
+          hint: "Escaneie o QR Code com o WhatsApp do celular.",
+        });
+        activity.publish("whatsapp:qr", { reconnect_attempts: runtime.reconnect_attempts });
       }
       if (connection === "open") {
-        runtime.status = "authenticated";
-        runtime.qr = "";
-        runtime.phone = sock.user?.id || "";
+        clearReconnectTimer();
+        touchRuntime({
+          status: "authenticated",
+          qr: "",
+          phone: sock.user?.id || "",
+          last_error: "",
+          last_disconnect_code: 0,
+          reconnect_attempts: 0,
+          reconnect_scheduled_at: "",
+          hint: "Sessao conectada e pronta.",
+        });
+        activity.publish("whatsapp:connected", { phone: runtime.phone });
       }
       if (connection === "close") {
-        const code = lastDisconnect?.error?.output?.statusCode;
-        runtime.status = "disconnected";
-        runtime.qr = "";
-        runtime.last_error = lastDisconnect?.error?.message || "";
+        const friendly = disconnectLabel(code, message);
+        touchRuntime({
+          status: "disconnected",
+          qr: "",
+          last_error: friendly,
+          last_disconnect_code: code || 0,
+          hint: code === DisconnectReason.loggedOut || code === DisconnectReason.badSession || code === DisconnectReason.multideviceMismatch
+            ? "Sessao invalida. Vamos limpar e gerar um novo QR."
+            : "Conexao caiu. Tentando retomar automaticamente.",
+        });
         sock = null;
-        if (code === DisconnectReason.loggedOut) {
+        activity.publish("whatsapp:disconnected", {
+          disconnect_code: code || 0,
+          error: friendly,
+        });
+        if (code === DisconnectReason.connectionReplaced) {
+          touchRuntime({ hint: "Outra sessao assumiu o WhatsApp. Reconecte quando quiser retomar." });
           return;
         }
-        setTimeout(() => startWhatsApp(config).catch(() => {}), 2500);
+        if (code === DisconnectReason.loggedOut || code === DisconnectReason.badSession || code === DisconnectReason.multideviceMismatch) {
+          scheduleReconnect(config, { delayMs: 1800, resetAuth: true, reason: friendly });
+          return;
+        }
+        scheduleReconnect(config, { delayMs: 2500, resetAuth: false, reason: friendly });
       }
     });
 
     setupMessageHandler(sock, { shouldIgnoreOutbound });
     return getRuntime();
   } catch (err) {
-    runtime.status = "error";
-    runtime.last_error = err.message;
+    touchRuntime({
+      status: "error",
+      last_error: err.message,
+      hint: "Falha ao iniciar a sessao do WhatsApp.",
+    });
+    activity.publish("whatsapp:error", { error: err.message, source });
     throw err;
   } finally {
     connecting = false;
   }
 }
 
-async function stopWhatsApp({ reset = false } = {}) {
+async function restartWhatsApp(config, { reset = false, source = "manual-restart" } = {}) {
+  await stopWhatsApp({ reset, config });
+  return startWhatsApp(config, { resetAuth: false, source });
+}
+
+async function stopWhatsApp({ reset = false, config = null } = {}) {
+  clearReconnectTimer();
   if (sock) {
     try {
       await sock.logout();
@@ -174,13 +305,19 @@ async function stopWhatsApp({ reset = false } = {}) {
     }
   }
   sock = null;
-  runtime.status = "stopped";
-  runtime.qr = "";
+  touchRuntime({
+    status: "stopped",
+    qr: "",
+    reconnect_scheduled_at: "",
+    hint: reset ? "Sessao apagada. Gere um novo QR para conectar." : "Sessao parada manualmente.",
+  });
   if (reset) {
-    const dir = authPath("");
-    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    clearAuthDir(config || { whatsapp: { auth_dir: "" } });
+    touchRuntime({ phone: "", last_disconnect_code: 0, reconnect_attempts: 0 });
+    activity.publish("whatsapp:session_reset", { source: "manual-stop" });
   }
+  activity.publish("whatsapp:stopped", { reset });
   return getRuntime();
 }
 
-module.exports = { startWhatsApp, stopWhatsApp, getRuntime, sendImageToChat, sendTextNotification };
+module.exports = { startWhatsApp, restartWhatsApp, stopWhatsApp, getRuntime, sendImageToChat, sendTextNotification };

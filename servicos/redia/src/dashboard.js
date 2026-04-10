@@ -440,8 +440,14 @@ function startDashboard({ whatsapp }) {
     res.json(await whatsapp.startWhatsApp(config));
   });
 
+  app.post("/api/whatsapp/reconnect", async (req, res) => {
+    const config = store.getConfig();
+    res.json(await whatsapp.restartWhatsApp(config, { reset: !!req.body?.reset, source: "dashboard" }));
+  });
+
   app.post("/api/whatsapp/stop", async (req, res) => {
-    res.json(await whatsapp.stopWhatsApp({ reset: !!req.body?.reset }));
+    const config = store.getConfig();
+    res.json(await whatsapp.stopWhatsApp({ reset: !!req.body?.reset, config }));
   });
 
   app.get("/api/conversations", (_req, res) => {

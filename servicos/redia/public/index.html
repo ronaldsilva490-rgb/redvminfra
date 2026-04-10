@@ -32,8 +32,30 @@
           <strong id="waStatus">carregando</strong>
           <div class="button-row">
             <button id="startBtn" type="button">Conectar</button>
+            <button id="reconnectBtn" class="secondary" type="button">Reconectar</button>
             <button id="stopBtn" class="secondary" type="button">Parar</button>
+            <button id="resetBtn" class="danger" type="button">Resetar sessão</button>
           </div>
+          <div class="status-grid compact">
+            <article>
+              <span>Telefone</span>
+              <strong id="waPhone">-</strong>
+            </article>
+            <article>
+              <span>Código</span>
+              <strong id="waCode">-</strong>
+            </article>
+            <article>
+              <span>Retries</span>
+              <strong id="waRetries">0</strong>
+            </article>
+            <article>
+              <span>Último update</span>
+              <strong id="waUpdatedAt">-</strong>
+            </article>
+          </div>
+          <p id="waHint" class="support-text">Aguardando estado da sessão.</p>
+          <p id="waLastError" class="support-text muted">-</p>
         </section>
       </aside>
 

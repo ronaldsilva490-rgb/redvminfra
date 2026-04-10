@@ -152,6 +152,11 @@ textarea {
   gap: 10px;
 }
 
+.button-row .danger {
+  border-color: rgba(227, 34, 45, 0.75);
+  background: linear-gradient(180deg, #c22630, #7e131b);
+}
+
 .button-row.tight {
   display: flex;
   align-items: center;
@@ -250,6 +255,10 @@ h2 {
   gap: 10px;
 }
 
+.status-grid.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .status-grid article {
   min-width: 120px;
   padding: 14px;
@@ -272,6 +281,16 @@ h2 {
   font-size: 18px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.support-text {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.support-text.muted {
+  color: var(--subtle);
 }
 
 .panel {
@@ -622,6 +641,10 @@ pre {
   .form-grid.two,
   .toggle-stack.inline,
   .status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .status-grid.compact {
     grid-template-columns: 1fr;
   }
 
