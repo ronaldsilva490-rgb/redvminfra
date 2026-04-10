@@ -33,14 +33,14 @@ PAYOUT = float(os.getenv("GALE_BENCH_PAYOUT", "0.85"))
 TIMEOUT = float(os.getenv("GALE_BENCH_TIMEOUT", "55"))
 
 DESIRED_MODELS = [
-    "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)",
-    "openai/gpt-oss-20b (NVIDIA)",
-    "openai/gpt-oss-120b (NVIDIA)",
-    "meta/llama-4-maverick-17b-128e-instruct (NVIDIA)",
-    "mistralai/devstral-2-123b-instruct-2512 (NVIDIA)",
-    "mistralai/mistral-small-4-119b-2603 (NVIDIA)",
-    "nvidia/nemotron-3-nano-30b-a3b (NVIDIA)",
-    "qwen/qwen3-coder-480b-a35b-instruct (NVIDIA)",
+    "NIM - qwen/qwen3-next-80b-a3b-instruct",
+    "NIM - openai/gpt-oss-20b",
+    "NIM - openai/gpt-oss-120b",
+    "NIM - meta/llama-4-maverick-17b-128e-instruct",
+    "NIM - mistralai/devstral-2-123b-instruct-2512",
+    "NIM - mistralai/mistral-small-4-119b-2603",
+    "NIM - nvidia/nemotron-3-super-120b-a12b",
+    "NIM - qwen/qwen3-coder-480b-a35b-instruct",
     "qwen3-next:80b",
     "qwen3-coder-next",
     "gpt-oss:20b",

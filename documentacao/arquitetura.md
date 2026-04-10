@@ -16,7 +16,7 @@ GitHub webhook -> deploy-agent/dashboard -> Docker/systemd/Nginx
 - `POST /api/generate`
 - `POST /api/images/generate`
 
-Modelos com sufixo `(NVIDIA)` sao roteados para NVIDIA. Os demais seguem para o upstream Ollama.
+Modelos com prefixo `NIM - ` sao roteados para NVIDIA NIM. O alias legado com sufixo `(NVIDIA)` continua aceito por compatibilidade. Os demais seguem para o upstream Ollama.
 
 ## Dashboard
 

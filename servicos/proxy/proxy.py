@@ -8,6 +8,7 @@ import uuid
 import base64
 from threading import Lock, Thread
 from copy import deepcopy
+from pathlib import Path
 
 app = Flask(__name__)
 
@@ -21,12 +22,14 @@ PROXY_PORT = int(os.getenv("RED_PROXY_PORT", "8080"))
 NVIDIA_API_KEY = os.getenv("RED_PROXY_NVIDIA_API_KEY") or os.getenv("NVIDIA_API_KEY", "")
 NVIDIA_CHAT_BASE = os.getenv("RED_PROXY_NVIDIA_CHAT_BASE", "https://integrate.api.nvidia.com/v1").rstrip("/")
 NVIDIA_GENAI_BASE = os.getenv("RED_PROXY_NVIDIA_GENAI_BASE", "https://ai.api.nvidia.com/v1/genai").rstrip("/")
-NVIDIA_SUFFIX = " (NVIDIA)"
+NVIDIA_PREFIX = "NIM - "
+NVIDIA_LEGACY_SUFFIX = " (NVIDIA)"
 DEFAULT_CHAT_MODEL = (os.getenv("RED_PROXY_DEFAULT_CHAT_MODEL") or "").strip()
 DEFAULT_VISION_MODEL = (os.getenv("RED_PROXY_DEFAULT_VISION_MODEL") or "").strip()
 DEFAULT_IMAGE_MODEL = (os.getenv("RED_PROXY_DEFAULT_IMAGE_MODEL") or "").strip()
 DEFAULT_EMBEDDINGS_MODEL = (os.getenv("RED_PROXY_DEFAULT_EMBEDDINGS_MODEL") or "").strip()
 ENABLE_CAPABILITY_FALLBACK = (os.getenv("RED_PROXY_ENABLE_CAPABILITY_FALLBACK", "1").strip().lower() not in ("0", "false", "no", "off"))
+NVIDIA_CHAT_MODELS_FILE = Path(__file__).resolve().with_name("nvidia_nim_chat_models.txt")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -35,74 +38,56 @@ http_session = requests.Session()
 http_session.headers.update({"Accept": "application/json"})
 
 
-NVIDIA_TEXT_MODELS = [
-    {
-        "id": "qwen/qwen3-next-80b-a3b-instruct",
-        "kind": "chat",
-        "family": "nvidia-chat",
-        "note": "Melhor default geral para REDIA: contexto, JSON e baixa alucinacao.",
-    },
-    {
-        "id": "meta/llama-4-maverick-17b-128e-instruct",
-        "kind": "chat",
-        "family": "nvidia-chat",
-        "note": "Fallback rapido para papo simples.",
-    },
-    {
-        "id": "openai/gpt-oss-20b",
-        "kind": "chat",
-        "family": "nvidia-chat",
-        "note": "Bom em conversa comum; pode retornar reasoning_content separado.",
-    },
-    {
-        "id": "openai/gpt-oss-120b",
-        "kind": "chat",
-        "family": "nvidia-chat",
-        "note": "Fallback analitico; mais lento e verboso.",
-    },
-    {
-        "id": "mistralai/devstral-2-123b-instruct-2512",
-        "kind": "chat",
-        "family": "nvidia-chat",
-        "note": "Boa nuance em alguns cenarios; observar acentos em PT-BR.",
-    },
-    {
-        "id": "mistralai/mistral-small-4-119b-2603",
-        "kind": "chat",
-        "family": "nvidia-chat",
-        "note": "Muito rapido; nao usar para policy/memoria sem validacao.",
-    },
-    {
-        "id": "nvidia/nemotron-3-nano-30b-a3b",
-        "kind": "chat",
-        "family": "nvidia-chat",
-        "note": "Rapido; pode gastar tokens em reasoning.",
-    },
-    {
-        "id": "qwen/qwen3-coder-480b-a35b-instruct",
-        "kind": "chat",
-        "family": "nvidia-chat",
-        "note": "Coder grande; usar sob demanda.",
-    },
-    {
-        "id": "meta/llama-3.2-90b-vision-instruct",
-        "kind": "vision",
-        "family": "nvidia-vision",
-        "note": "Melhor visao na rodada curta.",
-    },
-    {
-        "id": "meta/llama-3.2-11b-vision-instruct",
-        "kind": "vision",
-        "family": "nvidia-vision",
-        "note": "Visao rapida.",
-    },
-    {
-        "id": "nvidia/nemotron-nano-12b-v2-vl",
-        "kind": "vision",
-        "family": "nvidia-vision",
-        "note": "Visao e avaliador de imagem.",
-    },
-]
+NVIDIA_MODEL_NOTES = {
+    "qwen/qwen3-next-80b-a3b-instruct": "Melhor default geral para REDIA: contexto, JSON e baixa alucinacao.",
+    "meta/llama-4-maverick-17b-128e-instruct": "Fallback rapido para papo simples.",
+    "openai/gpt-oss-20b": "Bom em conversa comum; pode retornar reasoning_content separado.",
+    "openai/gpt-oss-120b": "Fallback analitico; mais lento e verboso.",
+    "mistralai/devstral-2-123b-instruct-2512": "Boa nuance em alguns cenarios; observar acentos em PT-BR.",
+    "mistralai/mistral-small-4-119b-2603": "Muito rapido; nao usar para policy/memoria sem validacao.",
+    "qwen/qwen3-coder-480b-a35b-instruct": "Coder grande; usar sob demanda.",
+    "meta/llama-3.2-90b-vision-instruct": "Melhor visao na rodada curta.",
+    "meta/llama-3.2-11b-vision-instruct": "Visao rapida.",
+    "nvidia/nemotron-nano-12b-v2-vl": "Visao e avaliador de imagem.",
+}
+
+
+def nvidia_kind_for_model_id(model_id):
+    lower = str(model_id or "").strip().lower()
+    vision_markers = ("vision", "-vl", ":vl", "multimodal", "gemma-3n")
+    if any(marker in lower for marker in vision_markers):
+        return "vision"
+    return "chat"
+
+
+def load_nvidia_text_models():
+    models = []
+    seen = set()
+    try:
+        lines = NVIDIA_CHAT_MODELS_FILE.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        lines = []
+    for line in lines:
+        model_id = str(line or "").strip()
+        if not model_id or model_id.startswith("#"):
+            continue
+        key = model_id.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        kind = nvidia_kind_for_model_id(model_id)
+        models.append(
+            {
+                "id": model_id,
+                "kind": kind,
+                "family": "nvidia-vision" if kind == "vision" else "nvidia-chat",
+                "note": NVIDIA_MODEL_NOTES.get(model_id, ""),
+            }
+        )
+    return models
+
+
+NVIDIA_TEXT_MODELS = load_nvidia_text_models()
 
 
 NVIDIA_IMAGE_MODELS = [
@@ -211,7 +196,7 @@ def utc_created_at():
 
 
 def nvidia_display_name(model_id):
-    return model_id + NVIDIA_SUFFIX
+    return NVIDIA_PREFIX + str(model_id or "").strip()
 
 
 def extract_model_name(body):
@@ -224,9 +209,17 @@ def normalize_nvidia_model(model_name):
     if not isinstance(model_name, str):
         return None, None
     raw = model_name.strip()
-    suffix = NVIDIA_SUFFIX.lower()
-    if raw.lower().endswith(suffix):
-        model_id = raw[: -len(NVIDIA_SUFFIX)].strip()
+    lowered = raw.lower()
+    prefix = NVIDIA_PREFIX.lower()
+    legacy_suffix = NVIDIA_LEGACY_SUFFIX.lower()
+    if lowered.startswith(prefix):
+        model_id = raw[len(NVIDIA_PREFIX):].strip()
+        canonical = NVIDIA_MODEL_MAP.get(model_id.lower())
+        if canonical:
+            return canonical["id"], canonical
+        return model_id, None
+    if lowered.endswith(legacy_suffix):
+        model_id = raw[: -len(NVIDIA_LEGACY_SUFFIX)].strip()
         return model_id, NVIDIA_MODEL_MAP.get(model_id.lower())
     model_info = NVIDIA_MODEL_MAP.get(raw.lower())
     if model_info:
@@ -359,7 +352,10 @@ def required_capability_for_request(endpoint_name, body):
     if endpoint_name in ("/v1/chat/completions", "/v1/messages", "/v1/responses", "/api/chat"):
         return "vision" if text_payload_needs_vision((body or {}).get("messages") or (body or {}).get("input")) else "chat"
     if endpoint_name == "/api/generate":
-        return "image_generation" if str(extract_model_name(body) or "").strip().lower().startswith(("flux", "stable-diffusion")) else "chat"
+        model_name = str(extract_model_name(body) or "").strip()
+        model_id, _model_info = normalize_nvidia_model(model_name)
+        normalized = str(model_id or model_name).strip().lower()
+        return "image_generation" if normalized.startswith(("flux", "stable-diffusion")) else "chat"
     return "chat"
 
 
@@ -1098,7 +1094,7 @@ def nvidia_openai_chat_json(model_id, model_info, body, source_ip, endpoint_name
     if not NVIDIA_API_KEY:
         return None, proxy_error_response("RED_PROXY_NVIDIA_API_KEY not configured", 503)
     if model_info.get("kind") == "image":
-        return None, proxy_error_response("modelo NVIDIA de imagem nao suporta " + endpoint_name, 400, "invalid_request_error")
+        return None, proxy_error_response("modelo NIM de imagem nao suporta " + endpoint_name, 400, "invalid_request_error")
 
     payload = deepcopy(body)
     payload["model"] = model_id
@@ -1174,7 +1170,7 @@ def openai_embeddings_from_ollama(data, model_name):
 def universal_embeddings_json(body, source_ip):
     model_id, model_info = normalize_nvidia_model(extract_model_name(body))
     if model_info:
-        return None, proxy_error_response("modelos NVIDIA configurados neste proxy nao suportam embeddings", 400, "invalid_request_error")
+        return None, proxy_error_response("modelos NIM configurados neste proxy nao suportam embeddings", 400, "invalid_request_error")
 
     payload = openai_embeddings_to_ollama_payload(body)
     resp, error_response = upstream_request("POST", "/api/embed", source_ip, json_body=payload, timeout=180, stream=False)
@@ -1205,7 +1201,7 @@ def nvidia_openai_chat_request(model_id, model_info, body, source_ip):
     if not NVIDIA_API_KEY:
         return jsonify({"error": "RED_PROXY_NVIDIA_API_KEY not configured"}), 503
     if model_info.get("kind") == "image":
-        return jsonify({"error": "modelo NVIDIA de imagem nao suporta /v1/chat/completions"}), 400
+        return jsonify({"error": "modelo NIM de imagem nao suporta /v1/chat/completions"}), 400
 
     payload = deepcopy(body)
     payload["model"] = model_id
@@ -1476,7 +1472,7 @@ def nvidia_anthropic_messages_request(model_id, model_info, body, source_ip):
     if not NVIDIA_API_KEY:
         return jsonify({"error": {"message": "RED_PROXY_NVIDIA_API_KEY not configured", "type": "red_proxy_error"}}), 503
     if model_info.get("kind") == "image":
-        return jsonify({"error": {"message": "modelo NVIDIA de imagem nao suporta /v1/messages", "type": "invalid_request_error"}}), 400
+        return jsonify({"error": {"message": "modelo NIM de imagem nao suporta /v1/messages", "type": "invalid_request_error"}}), 400
 
     payload = anthropic_to_openai_payload(body, model_id)
     started = time.time()
@@ -2063,7 +2059,8 @@ def nvidia_models():
         {
             "status": "ok",
             "configured": bool(NVIDIA_API_KEY),
-            "suffix": NVIDIA_SUFFIX,
+            "prefix": NVIDIA_PREFIX,
+            "legacy_suffix": NVIDIA_LEGACY_SUFFIX,
             "models": [model_descriptor(model["id"], {"id": nvidia_display_name(model["id"]), "owned_by": "nvidia"}) for model in NVIDIA_MODELS],
         }
     )
@@ -2184,7 +2181,7 @@ def ollama_embeddings():
         return error_response
     model_id, model_info = normalize_nvidia_model(extract_model_name(routed_body))
     if model_info:
-        return jsonify({"error": "modelos NVIDIA configurados neste proxy nao suportam embeddings"}), 400
+        return jsonify({"error": "modelos NIM configurados neste proxy nao suportam embeddings"}), 400
     resp, error_response = upstream_request("POST", "/api/embed", request.remote_addr, json_body=routed_body, timeout=180, stream=False)
     if error_response is not None:
         return error_response
@@ -2204,9 +2201,9 @@ def nvidia_images_generate():
         return error_response
     model_id, model_info = normalize_nvidia_model(extract_model_name(routed_body))
     if not model_info:
-        return jsonify({"error": "modelo NVIDIA invalido; use um nome com sufixo " + NVIDIA_SUFFIX}), 400
+        return jsonify({"error": "modelo NIM invalido; use um nome com prefixo " + NVIDIA_PREFIX + "ou o alias legado " + NVIDIA_LEGACY_SUFFIX}), 400
     if model_info.get("kind") != "image":
-        return jsonify({"error": "modelo NVIDIA nao e de imagem", "kind": model_info.get("kind")}), 400
+        return jsonify({"error": "modelo NIM nao e de imagem", "kind": model_info.get("kind")}), 400
     return nvidia_image_request(model_id, model_info, routed_body, request.remote_addr)
 
 
@@ -2261,7 +2258,7 @@ def catch_all(path):
                     if model_info and model_info.get("kind") == "image":
                         if base_path == "/api/generate":
                             return nvidia_image_request(model_id, model_info, incoming_body, source_ip, as_ollama_generate=True)
-                        return jsonify({"error": "modelo NVIDIA de imagem deve usar /api/generate ou /api/images/generate"}), 400
+                        return jsonify({"error": "modelo NIM de imagem deve usar /api/generate ou /api/images/generate"}), 400
                     return nvidia_chat_request(model_id, incoming_body, base_path, source_ip)
                 if base_path == "/api/chat":
                     incoming_body = normalize_image_urls_for_upstream(incoming_body, source_ip, base_path)

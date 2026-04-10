@@ -16,6 +16,8 @@ const HIDDEN_ACTIVITY_TYPES = new Set([
   "whatsapp:restart_error",
 ]);
 const APP_BASE_PATH = location.pathname === "/redia" || location.pathname.startsWith("/redia/") ? "/redia" : "";
+const NIM_PREFIX = "NIM - ";
+const NVIDIA_LEGACY_SUFFIX = " (NVIDIA)";
 const uiState = {
   testModel: "",
   benchmarkModels: [],
@@ -28,6 +30,16 @@ let adminToken = window.localStorage.getItem("redia_admin_token") || "";
 
 function appPath(path) {
   return `${APP_BASE_PATH}${path}`;
+}
+
+function normalizeProxyModelValue(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (text.startsWith(NIM_PREFIX)) return text;
+  if (text.endsWith(NVIDIA_LEGACY_SUFFIX)) {
+    return `${NIM_PREFIX}${text.slice(0, -NVIDIA_LEGACY_SUFFIX.length).trim()}`;
+  }
+  return text;
 }
 
 async function api(path, options = {}) {
@@ -274,7 +286,14 @@ function setSelectOptions(id, rows, selectedValue, options = {}) {
   const sourceRows = Array.isArray(rows) ? rows : [];
   const normalizedRows = sourceRows
     .filter((row) => row !== undefined && row !== null)
-    .map((row) => ({ value: String(getValueForRow(row) || "").trim(), label: String(getLabelForRow(row) || "").trim() }))
+    .map((row) => {
+      const originalValue = String(getValueForRow(row) || "").trim();
+      const normalizedValue = normalizeProxyModelValue(originalValue);
+      let label = String(getLabelForRow(row) || "").trim();
+      if (label === originalValue) label = normalizedValue;
+      if (label === `${originalValue} (configurado)`) label = `${normalizedValue} (configurado)`;
+      return { value: normalizedValue, label };
+    })
     .filter((row) => row.value);
   const seen = new Set();
   const uniqueRows = normalizedRows.filter((row) => {
@@ -283,8 +302,8 @@ function setSelectOptions(id, rows, selectedValue, options = {}) {
     return true;
   });
   const selectedValues = Array.isArray(selectedValue)
-    ? selectedValue.map((item) => String(item || "").trim()).filter(Boolean)
-    : [String(selectedValue || "").trim()].filter(Boolean);
+    ? selectedValue.map((item) => normalizeProxyModelValue(item)).filter(Boolean)
+    : [normalizeProxyModelValue(selectedValue)].filter(Boolean);
   for (const selected of selectedValues) {
     if (allowCustom && selected && !seen.has(selected)) {
       uniqueRows.unshift({ value: selected, label: `${selected} (configurado)` });

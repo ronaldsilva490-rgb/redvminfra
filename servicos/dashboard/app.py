@@ -84,7 +84,8 @@ PROXY_DATA_DIR = Path(os.getenv("RED_PROXY_DATA_DIR", "/var/lib/redvm-proxy"))
 PROXY_KEYS_FILE = PROXY_DATA_DIR / "keys.json"
 PROXY_LOG_FILE = PROXY_DATA_DIR / "proxy.log"
 PROXY_MODEL_CACHE_TTL = int(os.getenv("RED_PROXY_MODEL_CACHE_TTL", "300") or 300)
-PROXY_NVIDIA_SUFFIX = " (NVIDIA)"
+PROXY_NIM_PREFIX = "NIM - "
+PROXY_NVIDIA_LEGACY_SUFFIX = " (NVIDIA)"
 PROXY_IMAGE_MODEL_HINTS = ("flux", "stable-diffusion")
 REDIA_URL = os.getenv("REDIA_URL", "http://127.0.0.1:3099").rstrip("/")
 REDIA_ADMIN_TOKEN = os.getenv("REDIA_ADMIN_TOKEN", "").strip()
@@ -127,7 +128,7 @@ STACK_BLUEPRINT = [
     {
         "id": "proxy",
         "name": "Proxy IA",
-        "summary": "Gateway Ollama-compatible central para Ollama local e upstreams NVIDIA.",
+        "summary": "Gateway Ollama-compatible central para Ollama local e upstreams NIM.",
         "unit": "red-ollama-proxy.service",
         "route": "/proxy/api/tags",
         "runtime_path": "/opt/redvm-proxy",
@@ -731,7 +732,8 @@ def proxy_force_reload() -> tuple[int, Any]:
 def proxy_is_image_model(model: str) -> bool:
     normalized = str(model or "").strip()
     lowered = normalized.lower()
-    return PROXY_NVIDIA_SUFFIX.lower() in lowered and any(hint in lowered for hint in PROXY_IMAGE_MODEL_HINTS)
+    uses_nim_naming = lowered.startswith(PROXY_NIM_PREFIX.lower()) or lowered.endswith(PROXY_NVIDIA_LEGACY_SUFFIX.lower())
+    return uses_nim_naming and any(hint in lowered for hint in PROXY_IMAGE_MODEL_HINTS)
 
 
 def proxy_image_models() -> list[str]:
@@ -771,9 +773,9 @@ def proxy_generate_image(payload: dict[str, Any]) -> dict[str, Any]:
     model = str(payload.get("model", "") or "").strip()
     prompt = str(payload.get("prompt", "") or "").strip()
     if not model:
-        raise HTTPException(status_code=400, detail="Escolha um modelo NVIDIA de imagem.")
+        raise HTTPException(status_code=400, detail="Escolha um modelo NIM de imagem.")
     if not proxy_is_image_model(model):
-        raise HTTPException(status_code=400, detail="Este modelo nao parece ser um gerador de imagem NVIDIA.")
+        raise HTTPException(status_code=400, detail="Este modelo nao parece ser um gerador de imagem NIM.")
     if not prompt:
         raise HTTPException(status_code=400, detail="Digite um prompt para gerar a imagem.")
     if len(prompt) > 6000:

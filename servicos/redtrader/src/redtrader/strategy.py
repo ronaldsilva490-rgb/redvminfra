@@ -2,6 +2,32 @@ import json
 from typing import Any
 
 
+NIM_PREFIX = "NIM - "
+NVIDIA_LEGACY_SUFFIX = " (NVIDIA)"
+NIM_DECISION_MODEL_ID = "qwen/qwen3-next-80b-a3b-instruct"
+NIM_FAST_FILTER_MODEL_ID = "meta/llama-4-maverick-17b-128e-instruct"
+NIM_CRITIC_MODEL_ID = "mistralai/mistral-small-4-119b-2603"
+
+
+def nim_display_name(model_id: str) -> str:
+    return f"{NIM_PREFIX}{str(model_id or '').strip()}"
+
+
+def nim_model_id(value: str | None) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith(NIM_PREFIX):
+        return text[len(NIM_PREFIX):].strip()
+    if text.endswith(NVIDIA_LEGACY_SUFFIX):
+        return text[: -len(NVIDIA_LEGACY_SUFFIX)].strip()
+    return text
+
+
+def nim_matches(value: str | None, raw_id: str) -> bool:
+    return nim_model_id(value).lower() == str(raw_id or "").strip().lower()
+
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "auto_enabled": True,
     "risk_profile": "aggressive",
@@ -44,7 +70,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "interval_seconds": 150,
         "recent_limit": 40,
         "max_lessons": 12,
-        "model": "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)",
+        "model": nim_display_name(NIM_DECISION_MODEL_ID),
     },
     "iqoption_techniques": {
         "multi_timeframe_confluence": True,
@@ -84,12 +110,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_drawdown_pct": 8,
     },
     "models": {
-        "fast_filter": "meta/llama-4-maverick-17b-128e-instruct (NVIDIA)",
-        "decision": "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)",
-        "critic": "mistralai/mistral-small-4-119b-2603 (NVIDIA)",
+        "fast_filter": nim_display_name(NIM_FAST_FILTER_MODEL_ID),
+        "decision": nim_display_name(NIM_DECISION_MODEL_ID),
+        "critic": nim_display_name(NIM_CRITIC_MODEL_ID),
         "premium_4": "ministral-3:8b",
         "premium_5": "ministral-3:3b",
-        "report": "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)",
+        "report": nim_display_name(NIM_DECISION_MODEL_ID),
     },
     "platforms": {
         "binance_spot": {

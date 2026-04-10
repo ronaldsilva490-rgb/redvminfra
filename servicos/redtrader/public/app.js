@@ -105,6 +105,7 @@ function directionLabel(value) {
 
 function shortModel(model) {
   return String(model || "")
+    .replace("NIM - ", "")
     .replace(" (NVIDIA)", "")
     .replace(" (GROQ)", "")
     .replace("mistralai/", "")

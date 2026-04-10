@@ -16,12 +16,17 @@ from .news import NewsClient
 from .platforms import PlatformRegistry
 from .strategy import (
     DEFAULT_CONFIG,
+    NIM_CRITIC_MODEL_ID,
+    NIM_DECISION_MODEL_ID,
+    NIM_FAST_FILTER_MODEL_ID,
     RISK_PROFILES,
     available_risk_profiles,
     build_candidates,
     build_critic_prompt,
     build_decision_prompt,
     deep_merge,
+    nim_display_name,
+    nim_matches,
     normalize_confidence,
 )
 
@@ -915,7 +920,7 @@ class TraderRuntime:
 
     async def reflect_iq_learning(self, config: dict[str, Any], trades: list[dict[str, Any]], state: dict[str, Any]) -> None:
         learning = config.get("iqoption_learning") or {}
-        model = str(learning.get("model") or (config.get("models") or {}).get("report") or "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)")
+        model = str(learning.get("model") or (config.get("models") or {}).get("report") or nim_display_name(NIM_DECISION_MODEL_ID))
         compact_trades = []
         for trade in trades:
             metadata = trade.get("metadata") or {}
@@ -1142,9 +1147,9 @@ class TraderRuntime:
 
     async def polish_trade_notification(self, config: dict[str, Any], event: str, payload: dict[str, Any], fallback: str) -> str:
         default_notification_model = (
-            "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)"
+            nim_display_name(NIM_DECISION_MODEL_ID)
             if "summary" in event
-            else "mistralai/mistral-small-4-119b-2603 (NVIDIA)"
+            else nim_display_name(NIM_CRITIC_MODEL_ID)
         )
         model = (
             (config.get("models") or {}).get("notification")
@@ -2435,24 +2440,24 @@ class TraderRuntime:
         chain = [primary]
         if role == "fast_filter" and primary == "nemotron-3-super":
             chain.append("gemma3:4b")
-        if role == "fast_filter" and primary == "meta/llama-4-maverick-17b-128e-instruct (NVIDIA)":
+        if role == "fast_filter" and nim_matches(primary, NIM_FAST_FILTER_MODEL_ID):
             chain.append("gemma3:4b")
         if role == "decision" and primary == "gemma3:4b":
-            chain.append("qwen/qwen3-next-80b-a3b-instruct (NVIDIA)")
+            chain.append(nim_display_name(NIM_DECISION_MODEL_ID))
         if role == "critic" and primary == "ministral-3:3b":
             chain.append("gemma3:4b")
-        if role == "critic" and primary == "mistralai/mistral-small-4-119b-2603 (NVIDIA)":
+        if role == "critic" and nim_matches(primary, NIM_CRITIC_MODEL_ID):
             chain.append("ministral-3:8b")
         if role == "premium_4" and primary == "ministral-3:8b":
             chain.append("qwen3-coder-next")
         if role == "premium_5" and primary == "ministral-3:3b":
             chain.append("qwen3-coder-next")
-        if role == "decision" and primary == "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)":
-            chain.append("meta/llama-4-maverick-17b-128e-instruct (NVIDIA)")
-        elif primary == "qwen/qwen3-next-80b-a3b-instruct (NVIDIA)":
+        if role == "decision" and nim_matches(primary, NIM_DECISION_MODEL_ID):
+            chain.append(nim_display_name(NIM_FAST_FILTER_MODEL_ID))
+        elif nim_matches(primary, NIM_DECISION_MODEL_ID):
             chain.append("qwen3-coder-next")
         elif primary == "qwen3-coder-next":
-            chain.append("qwen/qwen3-next-80b-a3b-instruct (NVIDIA)")
+            chain.append(nim_display_name(NIM_DECISION_MODEL_ID))
         deduped: list[str] = []
         for item in chain:
             if item and item not in deduped:

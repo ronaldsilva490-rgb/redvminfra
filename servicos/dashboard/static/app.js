@@ -83,6 +83,8 @@ const REDIA_HIDDEN_ACTIVITY_TYPES = new Set([
     "whatsapp:error",
     "whatsapp:restart_error",
 ]);
+const NIM_PREFIX = "NIM - ";
+const NVIDIA_LEGACY_SUFFIX = " (NVIDIA)";
 const APP_BASE_PATH = (() => {
     const explicit = String(window.REDVM_APP_BASE_PATH || document.documentElement.dataset.appBasePath || "").trim();
     if (explicit) {
@@ -324,6 +326,16 @@ function renderWhatsAppConfigState() {
 
 function appPath(path) {
     return `${APP_BASE_PATH}${path}`;
+}
+
+function normalizeProxyModelValue(value) {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    if (text.startsWith(NIM_PREFIX)) return text;
+    if (text.endsWith(NVIDIA_LEGACY_SUFFIX)) {
+        return `${NIM_PREFIX}${text.slice(0, -NVIDIA_LEGACY_SUFFIX.length).trim()}`;
+    }
+    return text;
 }
 
 function normalizeDashboardRoute(path) {
@@ -1134,7 +1146,7 @@ function renderProxyImageGenerator() {
     if (select) {
         select.innerHTML = models.length
             ? models.map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`).join("")
-            : `<option value="">Nenhum modelo NVIDIA de imagem encontrado</option>`;
+            : `<option value="">Nenhum modelo NIM de imagem encontrado</option>`;
         select.value = image.model || "";
         select.disabled = image.generating || !models.length;
     }
@@ -1166,12 +1178,12 @@ function renderProxyImageGenerator() {
     const status = qs("#proxyImageStatus");
     if (status) {
         status.textContent = image.generating
-            ? "Gerando imagem pelo proxy NVIDIA..."
+            ? "Gerando imagem pelo proxy NIM..."
             : image.error
                 ? image.error
                 : image.imageBase64
                     ? `Imagem gerada em ${formatMilliseconds(image.durationMs || 0)}.`
-                    : (models.length ? "Escolha um modelo e gere uma imagem de teste." : "Nenhum modelo de imagem NVIDIA apareceu em /api/tags.");
+                    : (models.length ? "Escolha um modelo e gere uma imagem de teste." : "Nenhum modelo de imagem NIM apareceu em /api/tags.");
         status.classList.toggle("active", image.generating);
     }
 
@@ -1185,7 +1197,7 @@ function renderProxyImageGenerator() {
     const preview = qs("#proxyImagePreview");
     if (preview) {
         preview.innerHTML = image.imageBase64
-            ? `<img src="data:${escapeHtml(image.mimeType || "image/jpeg")};base64,${image.imageBase64}" alt="Imagem gerada pelo proxy NVIDIA" />`
+            ? `<img src="data:${escapeHtml(image.mimeType || "image/jpeg")};base64,${image.imageBase64}" alt="Imagem gerada pelo proxy NIM" />`
             : `<div class="empty">A imagem gerada vai aparecer aqui.</div>`;
     }
 }
@@ -2322,10 +2334,13 @@ function renderWhatsApp() {
 
     const modelSelect = qs("#whatsappDefaultModelSelect");
     if (modelSelect) {
-        const currentValue = dirty ? modelSelect.value : (config.default_model || "");
+        const currentValue = normalizeProxyModelValue(dirty ? modelSelect.value : (config.default_model || ""));
         if (models.length) {
             modelSelect.innerHTML = [`<option value="">Selecionar modelo</option>`]
-                .concat(models.map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`))
+                .concat(models.map((model) => {
+                    const normalized = normalizeProxyModelValue(model);
+                    return `<option value="${escapeHtml(normalized)}">${escapeHtml(normalized)}</option>`;
+                }))
                 .join("");
             modelSelect.value = currentValue || "";
         } else {
@@ -2932,7 +2947,7 @@ function renderRediaKpis() {
         </article>
         <article class="metric-card compact">
             <div class="metric-label">Modelo padr?o</div>
-            <div class="metric-value">${escapeHtml(state.redia?.config?.chat?.default_model || "auto")}</div>
+            <div class="metric-value">${escapeHtml(normalizeProxyModelValue(state.redia?.config?.chat?.default_model || "auto"))}</div>
             <div class="metric-meta">${Number(proxy.models?.length || 0)} modelos no proxy</div>
         </article>
         <article class="metric-card compact">
@@ -3047,7 +3062,7 @@ function renderRediaActivity() {
     replaceScrollableContent(host, rows.slice().reverse().map((row) => {
         const meta = [
             row.role,
-            row.model,
+            normalizeProxyModelValue(row.model),
             row.mode,
             row.context_policy,
             row.chat_name || row.chat_id,
@@ -3082,10 +3097,12 @@ function renderRediaConfig() {
     function fillSelect(selector, value, options, placeholder = "Selecione") {
         const el = qs(selector);
         if (!el) return;
+        const normalizedOptions = [...new Set((options || []).map((item) => normalizeProxyModelValue(item)).filter(Boolean))];
+        const normalizedValue = normalizeProxyModelValue(value);
         const rows = [`<option value="">${escapeHtml(placeholder)}</option>`]
-            .concat(options.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`));
+            .concat(normalizedOptions.map((item) => `<option value="${escapeHtml(item)}">${escapeHtml(item)}</option>`));
         el.innerHTML = rows.join("");
-        el.value = value || "";
+        el.value = normalizedValue || "";
     }
 
     fillSelect("#rediaDefaultModelSelect", chat.default_model || "", models, "Usar modelo padrão");
@@ -3141,7 +3158,7 @@ function renderRediaConversations() {
             <div class="stack-head">
                 <div>
                     <strong>${escapeHtml(item.name || item.chat_id || "Sem nome")}</strong>
-                    <small>${escapeHtml(item.kind || "private")} • ${escapeHtml(item.model || state.redia?.config?.chat?.default_model || "auto")}</small>
+                    <small>${escapeHtml(item.kind || "private")} • ${escapeHtml(normalizeProxyModelValue(item.model || state.redia?.config?.chat?.default_model || "auto"))}</small>
                 </div>
                 <button class="ghost-button" type="button" data-redia-conversation="${escapeHtml(item.chat_id)}">Abrir</button>
             </div>
@@ -3160,7 +3177,7 @@ function renderRediaConversations() {
     meta.innerHTML = `
         <div class="kv-item"><span>Chat</span><strong>${escapeHtml(selected.name || selected.chat_id)}</strong></div>
         <div class="kv-item"><span>Tipo</span><strong>${escapeHtml(selected.kind || "private")}</strong></div>
-        <div class="kv-item"><span>Modelo</span><strong>${escapeHtml(selected.model || state.redia?.config?.chat?.default_model || "auto")}</strong></div>
+        <div class="kv-item"><span>Modelo</span><strong>${escapeHtml(normalizeProxyModelValue(selected.model || state.redia?.config?.chat?.default_model || "auto"))}</strong></div>
         <div class="kv-item"><span>Vibe</span><strong>${escapeHtml(selected.vibe || "n/d")}</strong></div>
         <div class="kv-item"><span>Tópicos</span><strong>${escapeHtml(selected.topics || "n/d")}</strong></div>
         <div class="kv-item"><span>Última atividade</span><strong>${escapeHtml(formatDate(selected.last_message_at || selected.updated_at))}</strong></div>
@@ -3191,7 +3208,7 @@ function renderRediaSchedules() {
             <div class="stack-copy">${escapeHtml(item.mode === "ai" ? (item.prompt || "Sem prompt") : (item.text || "Sem texto"))}</div>
             <div class="stack-meta">
                 ${escapeHtml(formatDate(item.send_at))}<br>
-                ${item.last_error ? `Erro: ${escapeHtml(item.last_error)}` : `Modelo: ${escapeHtml(item.model || state.redia?.config?.proactive?.model || state.redia?.config?.chat?.default_model || "auto")}`}
+                ${item.last_error ? `Erro: ${escapeHtml(item.last_error)}` : `Modelo: ${escapeHtml(normalizeProxyModelValue(item.model || state.redia?.config?.proactive?.model || state.redia?.config?.chat?.default_model || "auto"))}`}
             </div>
         </article>
     `).join("") || `<div class="empty">Nenhum agendamento criado ainda.</div>`);
@@ -3212,7 +3229,7 @@ function renderRediaLab() {
             <article class="stack-card">
                 <div class="stack-head">
                     <div>
-                        <strong>${escapeHtml(row.model || "modelo")}</strong>
+                        <strong>${escapeHtml(normalizeProxyModelValue(row.model || "modelo"))}</strong>
                         <small>${row.ok ? "ok" : "falhou"}</small>
                     </div>
                     <span class="pill ${row.ok ? "active" : "failed"}">${escapeHtml(formatMilliseconds(row.latency_ms || 0))}</span>
@@ -3840,7 +3857,7 @@ async function generateProxyImage() {
     proxySyncImageFromControls();
     const image = state.proxyImage;
     if (!image.model) {
-        showToast("Escolha um modelo NVIDIA de imagem.", "error");
+        showToast("Escolha um modelo NIM de imagem.", "error");
         return;
     }
     if (!image.prompt.trim()) {

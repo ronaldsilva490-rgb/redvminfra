@@ -108,7 +108,7 @@ Papel:
 
 - catalogar modelos;
 - aceitar chamadas Ollama-like;
-- rotear NVIDIA por sufixo `(NVIDIA)`;
+- rotear NVIDIA por prefixo `NIM - `;
 - gerar imagens via NVIDIA.
 
 Endpoints:
@@ -124,11 +124,11 @@ GET  /api/nvidia/models
 Modelos de imagem validados:
 
 ```text
-flux.1-dev (NVIDIA)
-flux.1-schnell (NVIDIA)
-flux.2-klein-4b (NVIDIA)
-stable-diffusion-3-medium (NVIDIA)
-stable-diffusion-xl (NVIDIA)
+NIM - flux.1-dev
+NIM - flux.1-schnell
+NIM - flux.2-klein-4b
+NIM - stable-diffusion-3-medium
+NIM - stable-diffusion-xl
 ```
 
 Nota: modelos Stable Diffusion da NVIDIA precisam de `steps >= 5`. O proxy e o dashboard ja protegem esse minimo.
@@ -161,7 +161,7 @@ Payload:
 
 ```json
 {
-  "model": "flux.1-schnell (NVIDIA)",
+  "model": "NIM - flux.1-schnell",
   "prompt": "red robot mascot, dark neon dashboard, no text",
   "width": 1024,
   "height": 1024,

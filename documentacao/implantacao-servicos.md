@@ -56,7 +56,7 @@ Responsabilidade:
 
 - expor API compativel com Ollama;
 - rotear modelos comuns para upstream Ollama;
-- rotear modelos com `(NVIDIA)` para NVIDIA NIM;
+- rotear modelos com prefixo `NIM - ` para NVIDIA NIM;
 - expor geracao de imagem em `/api/images/generate`.
 
 Instalacao:
@@ -102,7 +102,7 @@ Teste de imagem NVIDIA:
 ```bash
 curl -s -X POST http://127.0.0.1:8080/api/images/generate \
   -H 'Content-Type: application/json' \
-  -d '{"model":"flux.1-schnell (NVIDIA)","prompt":"red robot mascot, dark neon dashboard, no text","width":1024,"height":1024,"steps":4}'
+  -d '{"model":"NIM - flux.1-schnell","prompt":"red robot mascot, dark neon dashboard, no text","width":1024,"height":1024,"steps":4}'
 ```
 
 ## 2. Dashboard RED Systems
