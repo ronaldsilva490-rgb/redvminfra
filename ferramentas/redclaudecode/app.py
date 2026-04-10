@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -534,28 +535,36 @@ class MainWindow(QMainWindow):
         if not folder:
             QMessageBox.information(self, APP_NAME, "Escolha uma pasta de trabalho.")
             return
+        normalized_folder = str(Path(folder).resolve())
+        if not Path(normalized_folder).exists():
+            QMessageBox.warning(self, APP_NAME, "A pasta escolhida nao existe mais.")
+            return
 
         base_url = self.current_base_url()
+        env = os.environ.copy()
+        env["ANTHROPIC_AUTH_TOKEN"] = "ollama"
+        env["ANTHROPIC_API_KEY"] = ""
+        env["ANTHROPIC_BASE_URL"] = base_url
+
+        claude_command = subprocess.list2cmdline(["claude", "--model", self.selected_model.id])
         command = (
-            f'cd /d "{folder}" '
-            f'&& set "ANTHROPIC_AUTH_TOKEN=ollama" '
-            f'&& set "ANTHROPIC_API_KEY=" '
-            f'&& set "ANTHROPIC_BASE_URL={base_url}" '
-            f'&& title RED Claude Code - {self.selected_model.id} '
-            f'&& cls '
-            f'&& echo RED Systems Claude Code '
-            f'&& echo Modelo: {self.selected_model.id} '
-            f'&& echo Pasta : {folder} '
-            f'&& echo. '
-            f'&& claude --model "{self.selected_model.id}"'
+            f"title RED Claude Code - {self.selected_model.id} "
+            f"&& cls "
+            f"&& echo RED Systems Claude Code "
+            f"&& echo Modelo: {self.selected_model.id} "
+            f"&& echo Pasta : {normalized_folder} "
+            f"&& echo. "
+            f"&& {claude_command}"
         )
         try:
             subprocess.Popen(
                 ["cmd.exe", "/k", command],
+                cwd=normalized_folder,
+                env=env,
                 creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
             )
             self.workspace_hint.setText(
-                f"Claude aberto com {self.selected_model.id} em {folder}."
+                f"Claude aberto com {self.selected_model.id} em {normalized_folder}."
             )
         except Exception as exc:
             QMessageBox.critical(self, APP_NAME, f"Nao foi possivel abrir o Claude Code.\n\n{exc}")
