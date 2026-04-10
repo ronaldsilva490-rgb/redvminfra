@@ -5141,6 +5141,7 @@ async def emit_snapshot(include_heavy: bool = False) -> None:
         payload["processes"] = await asyncio.to_thread(process_snapshot)
         payload["firewall"] = await asyncio.to_thread(firewall_snapshot)
         payload["proxy"] = await asyncio.to_thread(proxy_snapshot_safe)
+        payload["redia"] = await asyncio.to_thread(redia_snapshot)
         payload["projects"] = await asyncio.to_thread(project_present_all, None)
         payload["whatsapp"] = await asyncio.to_thread(whatsapp_snapshot, None)
     await app.state.hub.broadcast({"type": "snapshot", "payload": payload})
@@ -5285,6 +5286,7 @@ async def api_bootstrap(request: Request) -> JSONResponse:
         "processes": await asyncio.to_thread(process_snapshot),
         "firewall": await asyncio.to_thread(firewall_snapshot),
         "proxy": await asyncio.to_thread(proxy_snapshot_safe),
+        "redia": await asyncio.to_thread(redia_snapshot),
         "journal": list(app.state.journal_lines),
         "proxy_logs": list(app.state.proxy_log_lines),
         "projects": projects_payload,

@@ -49,12 +49,126 @@
 
 .redia-conversation-stream,
 .redia-activity-stream {
-    min-height: 280px;
-    max-height: 420px;
+    min-height: 320px;
+    max-height: 560px;
+    overflow: auto;
+    padding-right: 0.35rem;
 }
 
 .redia-test-output {
     min-height: 220px;
+}
+
+.redia-hero-panel {
+    gap: 1rem;
+}
+
+.redia-hero-head {
+    align-items: flex-start;
+}
+
+.redia-live-grid {
+    align-items: start;
+}
+
+.redia-runtime-panel,
+.redia-activity-panel {
+    background:
+        radial-gradient(circle at top, rgba(238, 77, 49, 0.08), transparent 14rem),
+        linear-gradient(180deg, rgba(20, 2, 2, 0.96), rgba(24, 3, 3, 0.99));
+}
+
+.redia-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.redia-status-grid .kv-item {
+    min-height: 5.2rem;
+}
+
+.redia-runtime-actions {
+    margin-top: 0.75rem;
+}
+
+.redia-runtime-actions .ghost-button,
+.redia-runtime-actions .danger-button {
+    min-width: 10rem;
+}
+
+.redia-activity-head {
+    align-items: center;
+}
+
+.redia-activity-stream.empty::before {
+    content: "Aguardando eventos recentes da RED I.A.";
+    display: block;
+    padding: 1rem;
+    border-radius: 1rem;
+    background: rgba(25, 3, 3, 0.66);
+    border: 1px solid rgba(232, 68, 44, 0.12);
+    color: var(--muted);
+}
+
+.redia-activity-item {
+    display: grid;
+    gap: 0.75rem;
+    padding: 1rem 1.05rem;
+    border-radius: 1rem;
+    background: rgba(25, 3, 3, 0.66);
+    border: 1px solid rgba(232, 68, 44, 0.12);
+    border-left: 3px solid rgba(232, 228, 227, 0.2);
+    box-shadow: 0 12px 28px rgba(8, 1, 1, 0.16);
+}
+
+.redia-activity-item + .redia-activity-item {
+    margin-top: 0.8rem;
+}
+
+.redia-activity-item.success {
+    border-left-color: rgba(52, 211, 153, 0.9);
+}
+
+.redia-activity-item.warning {
+    border-left-color: rgba(251, 191, 36, 0.95);
+}
+
+.redia-activity-item.error {
+    border-left-color: rgba(238, 77, 49, 0.95);
+}
+
+.redia-activity-top,
+.redia-activity-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.7rem;
+}
+
+.redia-activity-top strong {
+    font-size: 1.02rem;
+}
+
+.redia-activity-top time,
+.redia-activity-meta {
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
+.redia-activity-meta {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+}
+
+.redia-activity-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.redia-activity-item p {
+    margin: 0;
+    color: var(--text);
+    line-height: 1.6;
 }
 
 .redia-qr-card {
@@ -87,6 +201,10 @@
 
 @media (max-width: 900px) {
     .redia-search-row {
+        grid-template-columns: 1fr;
+    }
+
+    .redia-status-grid {
         grid-template-columns: 1fr;
     }
 }

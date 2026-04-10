@@ -59,6 +59,8 @@ const state = {
         activeTab: "overview",
         benchmarkRows: [],
         testResult: null,
+        configDirty: false,
+        lastSyncAt: "",
     },
     selectedRediaConversationId: "",
     rediaConversationMessages: [],
@@ -69,6 +71,18 @@ const VM_ASSISTANT_STORAGE_KEY = "redvm.vmAssistant.v1";
 const PROJECT_WIZARD_MODE_KEY = "redvm.projects.mode.v1";
 const WHATSAPP_TAB_STORAGE_KEY = "redvm.whatsapp.tab.v1";
 const REDIA_TAB_STORAGE_KEY = "redvm.redia.tab.v1";
+const REDIA_HIDDEN_ACTIVITY_TYPES = new Set([
+    "whatsapp:start",
+    "whatsapp:connection",
+    "whatsapp:qr",
+    "whatsapp:connected",
+    "whatsapp:disconnected",
+    "whatsapp:reconnecting",
+    "whatsapp:session_reset",
+    "whatsapp:stopped",
+    "whatsapp:error",
+    "whatsapp:restart_error",
+]);
 const APP_BASE_PATH = (() => {
     const explicit = String(window.REDVM_APP_BASE_PATH || document.documentElement.dataset.appBasePath || "").trim();
     if (explicit) {
@@ -2875,18 +2889,20 @@ function renderRediaSummary() {
         <div class="kv-item"><span>Modelos</span><strong>${Number(proxy.models?.length || 0)}</strong></div>
         <div class="kv-item"><span>Conversas</span><strong>${Number(counts.conversations || 0)}</strong></div>
         <div class="kv-item"><span>Agendamentos</span><strong>${Number(counts.schedules_pending || 0)} pendentes</strong></div>
-        <div class="kv-item"><span>Código</span><strong>${escapeHtml(runtime.last_disconnect_code ? String(runtime.last_disconnect_code) : "-")}</strong></div>
+        <div class="kv-item"><span>C?digo</span><strong>${escapeHtml(runtime.last_disconnect_code ? String(runtime.last_disconnect_code) : "-")}</strong></div>
         <div class="kv-item"><span>Retries</span><strong>${Number(runtime.reconnect_attempts || 0)}</strong></div>
-        <div class="kv-item"><span>Último update</span><strong>${escapeHtml(formatDate(runtime.last_update_at) || "n/d")}</strong></div>
+        <div class="kv-item"><span>?ltimo update</span><strong>${escapeHtml(formatDate(runtime.last_update_at) || "n/d")}</strong></div>
         <div class="kv-item"><span>QR</span><strong>${runtime.qr ? "pronto" : "oculto"}</strong></div>
     `;
+    renderRediaLiveState();
+    renderRediaConfigState();
     const hintEl = qs("#rediaRuntimeHint");
-    if (hintEl) hintEl.textContent = runtime.hint || "Aguardando estado da sessão da RED I.A.";
+    if (hintEl) hintEl.textContent = runtime.hint || "Aguardando estado da sess?o da RED I.A.";
     const errorEl = qs("#rediaRuntimeError");
     if (errorEl) {
-        const text = String(runtime.last_error || "").trim();
-        errorEl.textContent = text || "-";
-        errorEl.classList.toggle("hidden", !text);
+        const textValue = String(runtime.last_error || "").trim();
+        errorEl.textContent = textValue || "-";
+        errorEl.classList.toggle("hidden", !textValue);
     }
     const qrPanel = qs("#rediaQrPanel");
     const qrImage = qs("#rediaQrImage");
@@ -2912,10 +2928,10 @@ function renderRediaKpis() {
         <article class="metric-card compact">
             <div class="metric-label">WhatsApp</div>
             <div class="metric-value">${escapeHtml(runtime.status || "offline")}</div>
-            <div class="metric-meta">${escapeHtml(runtime.phone || "sem número conectado")}</div>
+            <div class="metric-meta">${escapeHtml(runtime.phone || "sem n?mero conectado")}</div>
         </article>
         <article class="metric-card compact">
-            <div class="metric-label">Modelo padrão</div>
+            <div class="metric-label">Modelo padr?o</div>
             <div class="metric-value">${escapeHtml(state.redia?.config?.chat?.default_model || "auto")}</div>
             <div class="metric-meta">${Number(proxy.models?.length || 0)} modelos no proxy</div>
         </article>
@@ -2927,22 +2943,129 @@ function renderRediaKpis() {
         <article class="metric-card compact">
             <div class="metric-label">Agenda</div>
             <div class="metric-value">${Number(counts.schedules_pending || 0)}</div>
-            <div class="metric-meta">${schedules.filter((item) => String(item.status).toLowerCase() === "completed").length} concluídos</div>
+            <div class="metric-meta">${schedules.filter((item) => String(item.status).toLowerCase() === "completed").length} conclu?dos</div>
         </article>
     `;
+}
+
+function setRediaConfigDirty(value) {
+    state.rediaUi.configDirty = Boolean(value);
+    renderRediaConfigState();
+}
+
+function renderRediaConfigState() {
+    const el = qs("#rediaConfigState");
+    if (!el) return;
+    if (state.rediaUi.configDirty) {
+        el.textContent = "H? altera??es locais na configura??o. Salve para persistir sem perder o que voc? est? editando.";
+        el.classList.add("active");
+        return;
+    }
+    const when = state.rediaUi.lastSyncAt ? formatDate(state.rediaUi.lastSyncAt) : "agora";
+    el.textContent = `Sincroniza??o autom?tica ativa. ?ltimo refresh: ${when}.`;
+    el.classList.remove("active");
+}
+
+function renderRediaLiveState() {
+    const runtime = state.redia?.status?.whatsapp || {};
+    const live = qs("#rediaLiveStatus");
+    const activity = qs("#rediaActivityStatus");
+    const status = String(runtime.status || "desconhecido").toLowerCase();
+    const label = {
+        authenticated: "Conectada",
+        qrcode: "QR ativo",
+        connecting: "Conectando",
+        disconnected: "Desconectada",
+    }[status] || (runtime.status || "Sincronizando");
+    const tone = status === "authenticated" ? "active" : (status === "qrcode" || status === "connecting" ? "warning" : "");
+    [live, activity].forEach((el) => {
+        if (!el) return;
+        el.textContent = label;
+        el.className = `chat-status-pill${tone ? ` ${tone}` : ""}`;
+    });
+    const start = qs("#rediaStartButton");
+    const reconnect = qs("#rediaReconnectButton");
+    if (start) {
+        start.textContent = status === "authenticated" ? "Conectado" : (status === "qrcode" ? "Gerar novo QR" : "Conectar");
+        start.disabled = status === "authenticated";
+    }
+    if (reconnect) {
+        reconnect.disabled = status === "connecting";
+    }
+}
+
+function rediaActivityTone(event) {
+    if (String(event?.type || "").includes("error")) return "error";
+    if (["model:done", "whatsapp:sent", "learning:done", "media:image:done", "media:audio:done", "schedule:sent"].includes(event?.type)) return "success";
+    if (["model:start", "model:stream", "queue:drain", "proactive:start", "proactive:scheduled", "schedule:sending"].includes(event?.type)) return "warning";
+    return "";
+}
+
+function rediaActivityTitle(event) {
+    const titles = {
+        "model:start": "Modelo pensando",
+        "model:stream": "Resposta em streaming",
+        "model:done": "Modelo respondeu",
+        "model:error": "Modelo falhou",
+        "chat:attempt": "Tentando responder conversa",
+        "chat:error": "Tentativa falhou",
+        "whatsapp:message": "Mensagem recebida",
+        "whatsapp:decision": "RED I.A decidiu responder",
+        "whatsapp:ignored": "RED I.A ignorou a mensagem",
+        "whatsapp:sent": "Resposta enviada",
+        "queue:drain": "Fila processada",
+        "learning:start": "Aprendizado iniciado",
+        "learning:done": "Mem?ria atualizada",
+        "learning:error": "Aprendizado falhou",
+        "proactive:start": "Proativo analisando",
+        "proactive:decision": "Proativo decidiu",
+        "proactive:scheduled": "Proativo agendado",
+        "proactive:error": "Proativo falhou",
+        "media:image:start": "Analisando imagem",
+        "media:image:done": "Imagem analisada",
+        "media:image:error": "Imagem falhou",
+        "media:audio:start": "Transcrevendo ?udio",
+        "media:audio:done": "?udio transcrito",
+        "media:audio:error": "?udio falhou",
+        "schedule:sending": "Agendamento em execu??o",
+        "schedule:sent": "Agendamento enviado",
+        "schedule:error": "Agendamento falhou",
+    };
+    return titles[event?.type] || event?.type || "Atividade";
+}
+
+function rediaActivityPreview(event) {
+    return event?.error || event?.response_preview || event?.text_preview || event?.prompt_preview || event?.summary_preview || event?.caption_preview || "";
 }
 
 function renderRediaActivity() {
     const host = qs("#rediaActivityStream");
     if (!host) return;
-    const rows = Array.isArray(state.redia?.activity) ? state.redia.activity : [];
-    replaceScrollableContent(host, rows.map((row) => {
-        const meta = [formatDate(row.at), row.type].filter(Boolean).join(" • ");
-        const payload = Object.entries(row || {})
-            .filter(([key]) => !["id", "at", "type"].includes(key))
-            .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
-            .join(" | ");
-        return `<div><strong>${escapeHtml(meta)}</strong>${payload ? `<br>${escapeHtml(payload)}` : ""}</div>`;
+    const rows = (Array.isArray(state.redia?.activity) ? state.redia.activity : [])
+        .filter((item) => !REDIA_HIDDEN_ACTIVITY_TYPES.has(String(item?.type || "")));
+    host.classList.toggle("empty", !rows.length);
+    replaceScrollableContent(host, rows.slice().reverse().map((row) => {
+        const meta = [
+            row.role,
+            row.model,
+            row.mode,
+            row.context_policy,
+            row.chat_name || row.chat_id,
+            row.sender_name,
+            row.latency_ms ? `${row.latency_ms}ms` : "",
+            row.response_chars ? `${row.response_chars} chars` : "",
+        ].filter(Boolean);
+        const preview = rediaActivityPreview(row);
+        return `
+            <article class="redia-activity-item ${rediaActivityTone(row)}">
+                <div class="redia-activity-top">
+                    <strong>${escapeHtml(rediaActivityTitle(row))}</strong>
+                    <time>${escapeHtml(formatDate(row.at))}</time>
+                </div>
+                <div class="redia-activity-meta">${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join("<span>?</span>")}</div>
+                ${preview ? `<p>${escapeHtml(preview)}</p>` : ""}
+            </article>
+        `;
     }).join("") || `<div class="empty">Sem atividade recente da RED I.A.</div>`);
 }
 
@@ -3103,14 +3226,16 @@ function renderRediaLab() {
 function renderRedia() {
     if (!qs("#view-redia")) return;
     if (!state.redia) {
-        renderRediaSummary();
+        renderRediaConfigState();
         renderRediaActivity();
         return;
     }
     renderRediaKpis();
     renderRediaSummary();
     renderRediaActivity();
-    renderRediaConfig();
+    if (!state.rediaUi.configDirty) {
+        renderRediaConfig();
+    }
     renderRediaConversations();
     renderRediaSchedules();
     renderRediaLab();
@@ -3120,6 +3245,7 @@ function renderRedia() {
 async function refreshRedia(showMessage = true) {
     const payload = await api("/api/redia");
     state.redia = payload;
+    state.rediaUi.lastSyncAt = new Date().toISOString();
     renderRedia();
     if (showMessage) {
         showToast("RED I.A atualizada.", "success");
@@ -3421,8 +3547,12 @@ function connectSocket() {
             state.processes = payload.processes || state.processes;
             state.firewall = payload.firewall || state.firewall;
             state.proxy = payload.proxy || state.proxy;
+            state.redia = payload.redia || state.redia;
             state.whatsapp = payload.whatsapp || state.whatsapp;
             state.projects = payload.projects || state.projects;
+            if (payload.redia) {
+                state.rediaUi.lastSyncAt = new Date().toISOString();
+            }
             if (payload.journal) {
                 state.journal = payload.journal.slice(-400);
                 renderJournal();
@@ -3623,10 +3753,12 @@ async function loadBootstrap() {
     state.processes = payload.processes;
     state.firewall = payload.firewall;
     state.proxy = payload.proxy;
+    state.redia = payload.redia || null;
     state.whatsapp = payload.whatsapp || null;
     state.projects = payload.projects || [];
     state.proxyLogs = (payload.proxy_logs || []).map(normalizeProxyLog).filter(Boolean);
     state.journal = payload.journal || [];
+    state.rediaUi.lastSyncAt = payload.redia ? new Date().toISOString() : "";
     renderAll();
     renderJournal();
     renderProxyLogs();
@@ -3998,11 +4130,9 @@ function wireAuthenticatedUi() {
     });
     qs("#whatsappTargetsSearchInput")?.addEventListener("input", renderWhatsAppTargets);
     qs("#whatsappConversationsSearchInput")?.addEventListener("input", renderWhatsAppConversations);
-    qs("#rediaRefreshButton")?.addEventListener("click", () => runUiTask(() => refreshRedia()));
     qs("#rediaSaveConfigButton")?.addEventListener("click", () => runUiTask(() => saveRediaConfig()));
     qs("#rediaStartButton")?.addEventListener("click", () => runUiTask(() => startRediaRuntime()));
     qs("#rediaReconnectButton")?.addEventListener("click", () => runUiTask(() => reconnectRediaRuntime(false)));
-    qs("#rediaStopButton")?.addEventListener("click", () => runUiTask(() => stopRediaRuntime()));
     qs("#rediaResetSessionButton")?.addEventListener("click", () => runUiTask(() => reconnectRediaRuntime(true)));
     qs("#rediaManualSendButton")?.addEventListener("click", () => runUiTask(() => sendRediaManualMessage()));
     qs("#rediaConversationSendButton")?.addEventListener("click", () => runUiTask(() => sendRediaConversationMessage()));
@@ -4012,6 +4142,26 @@ function wireAuthenticatedUi() {
     qs("#rediaConversationsSearchInput")?.addEventListener("input", renderRediaConversations);
     qsa("[data-redia-tab]").forEach((button) => {
         button.addEventListener("click", () => setRediaTab(button.dataset.rediaTab));
+    });
+    [
+        "#rediaDefaultModelSelect",
+        "#rediaLearningModelSelect",
+        "#rediaProactiveModelSelect",
+        "#rediaVoiceSelect",
+        "#rediaGroupPrefixInput",
+        "#rediaTemperatureInput",
+        "#rediaPrivateModeSelect",
+        "#rediaGroupModeSelect",
+        "#rediaTtsEnabledInput",
+        "#rediaLearningEnabledInput",
+        "#rediaProactiveEnabledInput",
+        "#rediaImageEnabledInput",
+        "#rediaSystemPromptInput",
+    ].forEach((selector) => {
+        const field = qs(selector);
+        if (!field) return;
+        field.addEventListener("input", () => setRediaConfigDirty(true));
+        field.addEventListener("change", () => setRediaConfigDirty(true));
     });
 
     qs("#serviceSearch").addEventListener("input", renderServices);
@@ -4399,6 +4549,10 @@ function wireAuthenticatedUi() {
     });
     updateClock();
     setInterval(updateClock, 1000);
+    setInterval(() => {
+        if (state.currentView !== "redia") return;
+        refreshRedia(false).catch(() => {});
+    }, 8000);
 }
 
 function wireLoginUi() {
