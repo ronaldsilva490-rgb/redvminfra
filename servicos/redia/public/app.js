@@ -3,6 +3,18 @@ let statusPayload = null;
 let voicesPayload = { voices: [] };
 let activitySource = null;
 let activityRows = [];
+const HIDDEN_ACTIVITY_TYPES = new Set([
+  "whatsapp:start",
+  "whatsapp:connection",
+  "whatsapp:qr",
+  "whatsapp:connected",
+  "whatsapp:disconnected",
+  "whatsapp:reconnecting",
+  "whatsapp:session_reset",
+  "whatsapp:stopped",
+  "whatsapp:error",
+  "whatsapp:restart_error",
+]);
 const APP_BASE_PATH = location.pathname === "/redia" || location.pathname.startsWith("/redia/") ? "/redia" : "";
 const uiState = {
   testModel: "",
@@ -188,7 +200,8 @@ function renderActivityEvent(event) {
 function renderActivity() {
   const el = qs("#activityLog");
   if (!el) return;
-  el.innerHTML = activityRows.slice().reverse().map(renderActivityEvent).join("");
+  const visibleRows = activityRows.filter((item) => !HIDDEN_ACTIVITY_TYPES.has(String(item?.type || "")));
+  el.innerHTML = visibleRows.slice().reverse().map(renderActivityEvent).join("");
 }
 
 function appendActivity(event) {

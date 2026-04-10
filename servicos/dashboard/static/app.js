@@ -2875,7 +2875,30 @@ function renderRediaSummary() {
         <div class="kv-item"><span>Modelos</span><strong>${Number(proxy.models?.length || 0)}</strong></div>
         <div class="kv-item"><span>Conversas</span><strong>${Number(counts.conversations || 0)}</strong></div>
         <div class="kv-item"><span>Agendamentos</span><strong>${Number(counts.schedules_pending || 0)} pendentes</strong></div>
+        <div class="kv-item"><span>Código</span><strong>${escapeHtml(runtime.last_disconnect_code ? String(runtime.last_disconnect_code) : "-")}</strong></div>
+        <div class="kv-item"><span>Retries</span><strong>${Number(runtime.reconnect_attempts || 0)}</strong></div>
+        <div class="kv-item"><span>Último update</span><strong>${escapeHtml(formatDate(runtime.last_update_at) || "n/d")}</strong></div>
+        <div class="kv-item"><span>QR</span><strong>${runtime.qr ? "pronto" : "oculto"}</strong></div>
     `;
+    const hintEl = qs("#rediaRuntimeHint");
+    if (hintEl) hintEl.textContent = runtime.hint || "Aguardando estado da sessão da RED I.A.";
+    const errorEl = qs("#rediaRuntimeError");
+    if (errorEl) {
+        const text = String(runtime.last_error || "").trim();
+        errorEl.textContent = text || "-";
+        errorEl.classList.toggle("hidden", !text);
+    }
+    const qrPanel = qs("#rediaQrPanel");
+    const qrImage = qs("#rediaQrImage");
+    if (qrPanel && qrImage) {
+        if (runtime.qr) {
+            qrPanel.classList.remove("hidden");
+            qrImage.src = runtime.qr;
+        } else {
+            qrPanel.classList.add("hidden");
+            qrImage.removeAttribute("src");
+        }
+    }
 }
 
 function renderRediaKpis() {
@@ -3150,6 +3173,18 @@ async function startRediaRuntime() {
     }
     await refreshRedia(false);
     showToast("Runtime da RED I.A iniciado.", "success");
+}
+
+async function reconnectRediaRuntime(reset = false) {
+    const response = await api("/api/redia/whatsapp/reconnect", {
+        method: "POST",
+        body: JSON.stringify({ reset }),
+    });
+    if (response.status_code && response.status_code >= 400) {
+        throw new Error(response.payload?.error || response.payload?.detail || `Falha ${response.status_code}`);
+    }
+    await refreshRedia(false);
+    showToast(reset ? "Sessão da RED I.A resetada. Aguardando novo QR." : "Reconexão da RED I.A iniciada.", "success");
 }
 
 async function stopRediaRuntime() {
@@ -3966,7 +4001,9 @@ function wireAuthenticatedUi() {
     qs("#rediaRefreshButton")?.addEventListener("click", () => runUiTask(() => refreshRedia()));
     qs("#rediaSaveConfigButton")?.addEventListener("click", () => runUiTask(() => saveRediaConfig()));
     qs("#rediaStartButton")?.addEventListener("click", () => runUiTask(() => startRediaRuntime()));
+    qs("#rediaReconnectButton")?.addEventListener("click", () => runUiTask(() => reconnectRediaRuntime(false)));
     qs("#rediaStopButton")?.addEventListener("click", () => runUiTask(() => stopRediaRuntime()));
+    qs("#rediaResetSessionButton")?.addEventListener("click", () => runUiTask(() => reconnectRediaRuntime(true)));
     qs("#rediaManualSendButton")?.addEventListener("click", () => runUiTask(() => sendRediaManualMessage()));
     qs("#rediaConversationSendButton")?.addEventListener("click", () => runUiTask(() => sendRediaConversationMessage()));
     qs("#rediaCreateScheduleButton")?.addEventListener("click", () => runUiTask(() => createRediaSchedule()));

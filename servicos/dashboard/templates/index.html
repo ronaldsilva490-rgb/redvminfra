@@ -945,7 +945,9 @@
                         <div class="inline-actions">
                             <button class="primary-button" id="rediaSaveConfigButton" type="button">Salvar configuração</button>
                             <button class="ghost-button" id="rediaStartButton" type="button">Ligar WhatsApp</button>
+                            <button class="ghost-button" id="rediaReconnectButton" type="button">Reconectar</button>
                             <button class="ghost-button" id="rediaStopButton" type="button">Parar runtime</button>
+                            <button class="danger-button" id="rediaResetSessionButton" type="button">Resetar sessão</button>
                             <button class="ghost-button" id="rediaRefreshButton" type="button">Atualizar</button>
                         </div>
                     </div>
@@ -959,6 +961,16 @@
                                 </div>
                             </div>
                             <div class="kv-grid" id="rediaSummary"></div>
+                            <div class="chat-hint" id="rediaRuntimeHint">Aguardando status da sessão da RED I.A.</div>
+                            <div class="chat-hint danger hidden" id="rediaRuntimeError">-</div>
+                            <div class="redia-qr-card hidden" id="rediaQrPanel">
+                                <div>
+                                    <div class="eyebrow">Pareamento</div>
+                                    <h3>Novo QR Code</h3>
+                                    <div class="panel-subtitle">Escaneie o código direto por aqui quando a sessão precisar ser refeita.</div>
+                                </div>
+                                <img id="rediaQrImage" alt="QR Code da RED I.A" />
+                            </div>
                         </section>
                         <section class="panel">
                             <div class="panel-head slim">

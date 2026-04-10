@@ -5747,6 +5747,20 @@ async def api_redia_start_whatsapp(request: Request) -> JSONResponse:
     return JSONResponse({"status_code": status_code, "payload": payload})
 
 
+@app.post("/api/redia/whatsapp/reconnect")
+async def api_redia_reconnect_whatsapp(request: Request) -> JSONResponse:
+    ensure_authenticated(request)
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    status_code, payload = await asyncio.to_thread(
+        redia_request_json,
+        "/api/whatsapp/reconnect",
+        method="POST",
+        payload=body or {},
+        timeout=90,
+    )
+    return JSONResponse({"status_code": status_code, "payload": payload})
+
+
 @app.post("/api/redia/whatsapp/stop")
 async def api_redia_stop_whatsapp(request: Request) -> JSONResponse:
     ensure_authenticated(request)
