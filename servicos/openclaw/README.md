@@ -27,15 +27,15 @@ Ele fica por cima da stack para:
 
 ## Curadoria atual de modelos
 
-- texto/tools principal: `ollama/minimax-m2.1`
+- texto/tools principal: `ollama/gemini-3-flash-preview`
 - fallbacks de texto:
+  - `ollama/minimax-m2.1`
   - `ollama/minimax-m2.7`
-  - `ollama/kimi-k2.5`
   - `red/qwen3-next:80b`
-- visao principal: `red/NIM - meta/llama-3.2-11b-vision-instruct`
+- visao principal: `ollama/qwen3-vl:235b-instruct`
 - fallbacks de visao:
+  - `red/NIM - meta/llama-3.2-11b-vision-instruct`
   - `red/NIM - nvidia/nemotron-nano-12b-v2-vl`
-  - `red/qwen3-vl:235b-instruct`
 
 ### Observacao sobre imagem
 
@@ -45,11 +45,39 @@ O OpenClaw hoje usa o nosso proxy RED muito bem para:
 - tools
 - visao / multimodal
 
-Mas **geracao de imagem** dentro do `openclaw capability image generate` ainda
-nao ficou plug-and-play via proxy RED. O runtime do OpenClaw continua tratando
-geracao como providers dedicados (`openai`, `google`, `fal`, `minimax`,
-`comfy`, `vydra`), e isso precisa ser configurado de forma nativa no proprio
-OpenClaw ou por um provedor externo compativel.
+Para **geracao de imagem**, o caminho operacional adotado na RED e um helper de
+host que usa o endpoint oficial do proxy RED:
+
+- script: `servicos/openclaw/scripts/red_openclaw_generate_image.py`
+- endpoint usado: `http://127.0.0.1:8080/api/images/generate`
+- modelo padrao: `NIM - flux.2-klein-4b`
+
+Esse helper:
+
+- gera a imagem via proxy RED
+- salva o arquivo em disco
+- opcionalmente envia direto pelo WhatsApp do OpenClaw
+
+Exemplo:
+
+```bash
+python3 /opt/red-openclaw/helpers/red_openclaw_generate_image.py \
+  --prompt "um caranguejo vermelho minimalista em fundo escuro" \
+  --output /home/openclaw/.openclaw/media/red-crab.jpg \
+  --send-whatsapp +5511999999999 \
+  --caption "Teste RED Systems" \
+  --json
+```
+
+### Comportamento de canal recomendado
+
+- DM do WhatsApp: `open`
+- grupos: manter fechados/allowlist por padrao
+- tools: `full`
+- exec policy: `yolo`
+
+Assim o OpenClaw opera como uma **RED I.A privada**, com acesso amplo ao host,
+sem abrir espaco para responder em todo grupo de WhatsApp por acidente.
 
 ## Exposicao
 
