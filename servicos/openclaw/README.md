@@ -25,18 +25,31 @@ Ele fica por cima da stack para:
 - gateway local: `127.0.0.1:18789`
 - rota publica via nginx: `/openclaw/`
 
-## Curadoria inicial de modelos
+## Curadoria atual de modelos
 
-- texto/tools principal: `red/qwen3-next:80b`
+- texto/tools principal: `ollama/minimax-m2.1`
 - fallbacks de texto:
-  - `red/deepseek-v3.2`
-  - `red/glm-5.1`
-  - `red/kimi-k2.5`
-- visao principal: `red/qwen3-vl:235b-instruct`
+  - `ollama/minimax-m2.7`
+  - `ollama/kimi-k2.5`
+  - `red/qwen3-next:80b`
+- visao principal: `red/NIM - meta/llama-3.2-11b-vision-instruct`
 - fallbacks de visao:
-  - `red/NIM - meta/llama-3.2-11b-vision-instruct`
   - `red/NIM - nvidia/nemotron-nano-12b-v2-vl`
-  - `red/NIM - microsoft/phi-4-multimodal-instruct`
+  - `red/qwen3-vl:235b-instruct`
+
+### Observacao sobre imagem
+
+O OpenClaw hoje usa o nosso proxy RED muito bem para:
+
+- texto
+- tools
+- visao / multimodal
+
+Mas **geracao de imagem** dentro do `openclaw capability image generate` ainda
+nao ficou plug-and-play via proxy RED. O runtime do OpenClaw continua tratando
+geracao como providers dedicados (`openai`, `google`, `fal`, `minimax`,
+`comfy`, `vydra`), e isso precisa ser configurado de forma nativa no proprio
+OpenClaw ou por um provedor externo compativel.
 
 ## Exposicao
 
