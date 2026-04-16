@@ -1,0 +1,23 @@
+[Unit]
+Description=RED OpenClaw Gateway
+After=network-online.target red-ollama-proxy.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+Group=openclaw
+WorkingDirectory=/home/openclaw
+Environment=HOME=/home/openclaw
+Environment=OPENCLAW_CONFIG_PATH=/home/openclaw/.openclaw/openclaw.json
+Environment=PATH=/opt/red-openclaw/node/bin:/opt/red-openclaw/npm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+EnvironmentFile=-/etc/red-openclaw.env
+ExecStart=/opt/red-openclaw/npm/bin/openclaw gateway run
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

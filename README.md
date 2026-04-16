@@ -34,6 +34,7 @@ Servicos publicos:
 - `/trader/` -> RED Trader
 - `/proxy-lab/` -> laboratorio de benchmark
 - `/iq-bridge/` -> bridge da extensao IQ demo
+- `/openclaw/` -> assistente operacional privado OpenClaw
 
 ### Dashboard com rotas reais por aba
 
@@ -63,6 +64,7 @@ servicos/
   proxy-lab/             Laboratorio pago/experimental para benchmark de modelos
   redia/                 Runtime da RED I.A com Baileys, memoria, audio e imagem
   redtrader/             Trading demo/paper com IQ e comite/modelos
+  openclaw/              Assistente operacional privado da stack
   extensao-iq-demo/      Extensao Chrome MV3 e bridge de telemetria/comandos
   deploy-agent/          Legado
 
@@ -99,6 +101,7 @@ documentacao/
 | RED Trader | `servicos/redtrader` | Ambiente demo/paper de trading com IA. |
 | Proxy Lab | `servicos/proxy-lab` | Laboratorio separado para benchmark pago e testes de modelos. |
 | IQ Bridge | `servicos/extensao-iq-demo/bridge` | Bridge da extensao Chrome para snapshots, logs e comandos da IQ demo. |
+| OpenClaw | `servicos/openclaw` | Assistente operacional privado via gateway, usando o proxy RED como backend. |
 | Deploy Agent | `servicos/deploy-agent` | Legado, mantido so por compatibilidade. |
 
 ---
@@ -206,4 +209,3 @@ git status --short --ignored
 ```
 
 Se a documentacao do repo e a realidade da VM divergirem, considere isso um bug e alinhe os dois lados.
-

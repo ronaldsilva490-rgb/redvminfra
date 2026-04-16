@@ -45,6 +45,9 @@ Hoje a RED Systems roda consolidada em **uma VM principal**.
 - `servicos/redtrader`
   - trading demo/paper
   - rota: `/trader/`
+- `servicos/openclaw`
+  - assistente operacional privado / chatops
+  - rota: `/openclaw/`
 - `servicos/proxy-lab`
   - laboratorio pago de benchmark
   - rota: `/proxy-lab/`
@@ -79,6 +82,7 @@ servicos/
   proxy-lab/             Laboratorio Groq/Mistral/NVIDIA
   redia/                 Runtime da RED I.A
   redtrader/             Trader demo/paper
+  openclaw/              Assistente operacional privado OpenClaw
   extensao-iq-demo/      Extensao Chrome e bridge
   deploy-agent/          Legado
 
@@ -222,6 +226,7 @@ Use estes caminhos como referencia operacional:
 - proxy: `/opt/redvm-proxy`
 - redia: `/opt/redia`
 - redtrader: `/opt/redtrader`
+- openclaw: `/opt/red-openclaw`
 - proxy-lab: `/opt/red-proxy-lab`
 - iq bridge: `/opt/red-iq-vision-bridge`
 - portal: `/var/www/red-portal`
@@ -252,6 +257,7 @@ Atalhos importantes:
 - `/trader/`
 - `/proxy-lab/`
 - `/iq-bridge/`
+- `/openclaw/`
 
 ### Rotas internas do dashboard
 
@@ -505,4 +511,3 @@ Dizer sempre:
 - Evolution nao e mais eixo principal.
 - O usuario prefere progresso real com validacao, nao promessa.
 - Sempre que houver duvida entre “parece” e “eu testei”, escolha testar.
-

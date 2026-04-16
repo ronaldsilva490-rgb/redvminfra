@@ -29,6 +29,7 @@ Na VM principal, `infraestrutura/nginx/red-friendly-paths.nginx.conf` expoe:
 /trader/      RED Trader
 /proxy-lab/   Proxy Lab
 /iq-bridge/   IQ Bridge
+/openclaw/    OpenClaw
 ```
 
 ## Dashboard com subrotas
