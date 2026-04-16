@@ -16,6 +16,7 @@ from urllib import request as urllib_request
 
 DEFAULT_PROXY_URL = "http://127.0.0.1:8080/api/images/generate"
 DEFAULT_MODEL = "NIM - flux.2-klein-4b"
+DEFAULT_FALLBACK_MODELS = ["NIM - flux.1-schnell"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -25,6 +26,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prompt", required=True, help="Prompt da imagem.")
     parser.add_argument("--output", required=True, help="Arquivo de saida.")
     parser.add_argument("--model", default=DEFAULT_MODEL, help="Modelo de imagem do proxy RED.")
+    parser.add_argument(
+        "--fallback-model",
+        action="append",
+        dest="fallback_models",
+        default=None,
+        help="Modelo de fallback. Pode ser repetido.",
+    )
     parser.add_argument("--size", default="1024x1024", help="Tamanho alvo, ex.: 1024x1024.")
     parser.add_argument("--steps", type=int, default=4, help="Steps de inferencia.")
     parser.add_argument("--proxy-url", default=DEFAULT_PROXY_URL, help="Endpoint de imagem do proxy.")
@@ -55,10 +63,10 @@ def parse_size(size_text: str) -> tuple[int, int]:
         raise SystemExit(f"Tamanho invalido: {size_text}") from exc
 
 
-def generate_image(args: argparse.Namespace) -> dict:
+def _request_image(args: argparse.Namespace, model_name: str) -> dict:
     width, height = parse_size(args.size)
     payload = {
-        "model": args.model,
+        "model": model_name,
         "prompt": args.prompt,
         "width": width,
         "height": height,
@@ -86,11 +94,27 @@ def generate_image(args: argparse.Namespace) -> dict:
     mime_type = image.get("mime_type") or mimetypes.guess_type(str(output_path))[0] or "image/jpeg"
     return {
         "path": str(output_path),
-        "model": data.get("model") or args.model,
+        "model": data.get("model") or model_name,
         "seed": data.get("seed"),
         "duration_ms": data.get("duration_ms"),
         "mime_type": mime_type,
     }
+
+
+def generate_image(args: argparse.Namespace) -> dict:
+    models_to_try = [args.model]
+    fallback_models = args.fallback_models if args.fallback_models is not None else DEFAULT_FALLBACK_MODELS
+    models_to_try.extend(model for model in fallback_models if model and model not in models_to_try)
+    failures: list[dict] = []
+    for model_name in models_to_try:
+        try:
+            result = _request_image(args, model_name)
+            if failures:
+                result["fallback_failures"] = failures
+            return result
+        except Exception as exc:  # noqa: BLE001
+            failures.append({"model": model_name, "error": str(exc)})
+    raise SystemExit("Falha ao gerar imagem: " + json.dumps(failures, ensure_ascii=False))
 
 
 def send_whatsapp(openclaw_bin: str, target: str, media_path: str, caption: str) -> None:

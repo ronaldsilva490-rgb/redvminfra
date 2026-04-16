@@ -27,15 +27,16 @@ Ele fica por cima da stack para:
 
 ## Curadoria atual de modelos
 
-- texto/tools principal: `ollama/gemini-3-flash-preview`
-- fallbacks de texto:
+- texto/tools principal: `red/NIM - nvidia/llama-3.1-nemotron-nano-8b-v1`
+- fallback operacional de texto/tools:
+  - `red/NIM - nvidia/nemotron-mini-4b-instruct`
+- fallback de seguranca:
   - `ollama/minimax-m2.1`
-  - `ollama/minimax-m2.7`
-  - `red/qwen3-next:80b`
-- visao principal: `ollama/qwen3-vl:235b-instruct`
-- fallbacks de visao:
-  - `red/NIM - meta/llama-3.2-11b-vision-instruct`
+- visao principal: `red/NIM - meta/llama-3.2-11b-vision-instruct`
+- fallback rapido de visao:
   - `red/NIM - nvidia/nemotron-nano-12b-v2-vl`
+- fallback pesado de visao:
+  - `red/qwen3-vl:235b-instruct`
 
 ### Observacao sobre imagem
 
@@ -51,12 +52,15 @@ host que usa o endpoint oficial do proxy RED:
 - script: `servicos/openclaw/scripts/red_openclaw_generate_image.py`
 - endpoint usado: `http://127.0.0.1:8080/api/images/generate`
 - modelo padrao: `NIM - flux.2-klein-4b`
+- fallback automatico: `NIM - flux.1-schnell`
 
 Esse helper:
 
 - gera a imagem via proxy RED
 - salva o arquivo em disco
 - opcionalmente envia direto pelo WhatsApp do OpenClaw
+- tenta primeiro o modelo mais detalhado
+- se ele falhar, cai no fallback rapido automaticamente
 
 Exemplo:
 
@@ -75,6 +79,21 @@ python3 /opt/red-openclaw/helpers/red_openclaw_generate_image.py \
 - grupos: manter fechados/allowlist por padrao
 - tools: `full`
 - exec policy: `yolo`
+
+## Leitura pratica da curadoria
+
+- `llama-3.1-nemotron-nano-8b-v1`
+  - melhor equilibrio real para OpenClaw quando o assunto e **texto + tools + baixa latencia**
+- `nemotron-mini-4b-instruct`
+  - fallback que ainda faz tool call direito, mas pode demorar bastante mais
+- `llama-3.2-11b-vision-instruct`
+  - melhor NIM de visao no equilibrio **precisao + tempo**
+- `nemotron-nano-12b-v2-vl`
+  - visao mais rapida, boa para fallback
+- `flux.2-klein-4b`
+  - melhor NIM de imagem para detalhe/qualidade geral
+- `flux.1-schnell`
+  - melhor fallback de imagem quando a prioridade e responder logo
 
 Assim o OpenClaw opera como uma **RED I.A privada**, com acesso amplo ao host,
 sem abrir espaco para responder em todo grupo de WhatsApp por acidente.

@@ -433,6 +433,47 @@ def normalize_image_urls_for_upstream(payload, source_ip, endpoint_name):
     return visit(body)
 
 
+def collapse_text_only_content_arrays(payload):
+    body = deepcopy(payload or {})
+
+    def normalize_content(value):
+        if isinstance(value, list):
+            if all(isinstance(item, dict) and str(item.get("type") or "").lower() == "text" for item in value):
+                parts = [str(item.get("text") or "").strip() for item in value]
+                return "\n".join(part for part in parts if part)
+            return [visit(item) for item in value]
+        if isinstance(value, dict):
+            return visit(value)
+        return value
+
+    def visit(node):
+        if isinstance(node, dict):
+            updated = {}
+            for key, value in node.items():
+                if key == "content":
+                    updated[key] = normalize_content(value)
+                elif isinstance(value, (dict, list)):
+                    updated[key] = visit(value)
+                else:
+                    updated[key] = value
+            return updated
+        if isinstance(node, list):
+            return [visit(item) for item in node]
+        return node
+
+    return visit(body)
+
+
+def normalize_openai_payload_for_upstream(payload, source_ip, endpoint_name):
+    body = collapse_text_only_content_arrays(normalize_image_urls_for_upstream(payload, source_ip, endpoint_name))
+    if isinstance(body, dict):
+        if body.get("max_completion_tokens") is not None and body.get("max_tokens") is None:
+            body["max_tokens"] = body.get("max_completion_tokens")
+        body.pop("max_completion_tokens", None)
+        body.pop("store", None)
+    return body
+
+
 def augment_tags_body(raw_body):
     try:
         data = json.loads(raw_body.decode("utf-8") if isinstance(raw_body, (bytes, bytearray)) else raw_body)
@@ -1117,11 +1158,11 @@ def nvidia_openai_chat_json(model_id, model_info, body, source_ip, endpoint_name
 def universal_openai_chat_json(body, source_ip, endpoint_name):
     model_id, model_info = normalize_nvidia_model(extract_model_name(body))
     if model_info:
-        data, error_response = nvidia_openai_chat_json(model_id, model_info, body, source_ip, endpoint_name)
+        data, error_response = nvidia_openai_chat_json(model_id, model_info, normalize_openai_payload_for_upstream(body, source_ip, endpoint_name), source_ip, endpoint_name)
         model_name = nvidia_display_name(model_id) if data is not None else None
         return model_name, data, error_response
 
-    normalized_body = normalize_image_urls_for_upstream(body, source_ip, endpoint_name)
+    normalized_body = normalize_openai_payload_for_upstream(body, source_ip, endpoint_name)
     data, error_response = upstream_json_request("POST", "/v1/chat/completions", source_ip, body=normalized_body)
     if error_response is not None:
         return None, None, error_response
@@ -1203,7 +1244,7 @@ def nvidia_openai_chat_request(model_id, model_info, body, source_ip):
     if model_info.get("kind") == "image":
         return jsonify({"error": "modelo NIM de imagem nao suporta /v1/chat/completions"}), 400
 
-    payload = deepcopy(body)
+    payload = normalize_openai_payload_for_upstream(body, source_ip, "/v1/chat/completions")
     payload["model"] = model_id
     started = time.time()
     url = NVIDIA_CHAT_BASE + "/chat/completions"
@@ -2080,7 +2121,7 @@ def openai_chat_completions():
     model_id, model_info = normalize_nvidia_model(extract_model_name(routed_body))
     if model_info:
         return nvidia_openai_chat_request(model_id, model_info, routed_body, request.remote_addr)
-    routed_body = normalize_image_urls_for_upstream(routed_body, request.remote_addr, "/v1/chat/completions")
+    routed_body = normalize_openai_payload_for_upstream(routed_body, request.remote_addr, "/v1/chat/completions")
     upstream, error_response = upstream_request(
         "POST",
         "/v1/chat/completions",
