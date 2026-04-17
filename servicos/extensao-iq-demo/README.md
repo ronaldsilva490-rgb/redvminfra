@@ -6,21 +6,24 @@ Extensao Chrome Manifest V3 para acompanhar a IQ Option demo em tempo real, com 
 
 Hoje a extensao ja faz:
 
-- captura de `WebSocket`, `fetch`, `XHR` e eventos derivados da pagina;
-- resolucao de ativo por `active_id`, com dicionario alimentado pelo proprio fluxo da IQ;
-- leitura de ativo atual, mercado, preco, payout, hints de countdown e portfolio;
-- overlay com sparkline e diagnosticos;
-- envio de snapshots e logs brutos para a VM;
-- canal remoto bridge -> extensao para inspecao, clique assistido e tentativa de trade.
+- captura de `WebSocket`, `fetch`, `XHR` e eventos derivados da pagina
+- resolucao de ativo por `active_id`, com dicionario alimentado pelo proprio fluxo da IQ
+- leitura de ativo atual, mercado, preco, payout, hints de countdown e portfolio
+- overlay com sparkline e diagnosticos
+- envio de snapshots e logs para a VM
+- canal remoto bridge -> extensao para inspecao, clique assistido e tentativa de trade
 
-## Limites atuais
+## Dependencias
 
-Ainda estamos refinando:
+No navegador:
 
-- sincronismo fino de payout em mudancas rapidas de ativo;
-- resolucao perfeita entre par normal e OTC em todos os casos;
-- confirmacao de ordem nativa sem falso positivo;
-- fallback visual sem risco de missclick.
+- Google Chrome ou Chromium com suporte a Manifest V3
+
+No lado da VM:
+
+- Python 3.11+
+- `python3-venv`
+- acesso HTTP ao bridge
 
 ## Fluxo tecnico
 
@@ -53,47 +56,58 @@ servicos/extensao-iq-demo/
 
 ## Motor Lab secundario
 
-Quando o objetivo for iterar comportamento muito rapido, sem rebuild constante da extensao principal, use a extensao separada:
+Quando o objetivo for iterar comportamento muito rapido, sem rebuild constante da extensao principal, use a extensao separada `servicos/extensao-iq-motor-lab`.
 
-- `servicos/extensao-iq-motor-lab`
+## Instalacao em qualquer VM
 
-Ela puxa um JSON vivo do bridge por canal (`spy` por padrao) e executa acoes de laboratorio. O fluxo certo e:
+### 1. Bridge
 
-1. validar a ideia no `motor-lab`;
-2. observar resultado no bridge;
-3. portar so o que prestou para `extensao-iq-demo`.
+```bash
+mkdir -p /opt/red-iq-vision-bridge
+rsync -a servicos/extensao-iq-demo/bridge/ /opt/red-iq-vision-bridge/
+python3 -m venv /opt/red-iq-vision-bridge/.venv
+/opt/red-iq-vision-bridge/.venv/bin/pip install -r /opt/red-iq-vision-bridge/requirements.txt
+cp /opt/red-iq-vision-bridge/.env.example /etc/red-iq-vision-bridge.env
+cp infraestrutura/systemd/red-iq-vision-bridge.service /etc/systemd/system/red-iq-vision-bridge.service
+systemctl daemon-reload
+systemctl enable --now red-iq-vision-bridge
+```
 
-## Bridge para a VM
+Exponha `/iq-bridge/` pelo nginx se a extensao for falar com o host por rota publica.
 
-O projeto ja vem com um bridge HTTP em `bridge/`.
-
-Ele recebe snapshots, logs e comandos, salvando tudo em SQLite para comparar:
-
-- o que a extensao viu;
-- quando viu;
-- qual era o ativo;
-- o que a IQ respondeu ao socket;
-- o que apareceu no portfolio;
-- se a ordem foi enviada, recusada ou confirmada.
-
-## Como carregar no Chrome
+### 2. Extensao
 
 1. Abra `chrome://extensions`
 2. Ative `Modo do desenvolvedor`
 3. Clique em `Carregar sem compactacao`
-4. Selecione a pasta `servicos/extensao-iq-demo`
+4. Selecione `servicos/extensao-iq-demo`
+5. Abra a IQ demo no navegador
 
-## Fluxo esperado
+## Validacao recomendada
 
-1. Abrir a IQ Option logada na demo.
-2. A extensao injeta o overlay e comeca a escutar o transporte.
-3. O worker envia o estado para o bridge.
-4. A VM pode inspecionar o estado vivo, disparar comandos remotos e comparar snapshots com o portfolio.
+Bridge:
 
-## Progresso recente
+```bash
+python3 -m py_compile /opt/red-iq-vision-bridge/app.py
+systemctl is-active red-iq-vision-bridge
+curl http://127.0.0.1:3115/healthz
+```
 
-- `v0.1.18+`: primeiros comandos de trade e controle de superficie.
-- `v0.1.20+`: prioridade para caminho nativo da IQ antes de fallback visual.
-- `v0.1.23+`: confirmacao de trade exige evidencia real no portfolio.
-- `v0.1.24+`: captura de `user_balance_id` para abrir ordem nativa.
-- `v0.1.25`: ajuste automatico de payout quando a IQ rejeita por mudanca de lucro (`status 4117`).
+Navegador:
+
+- confirmar que o overlay aparece
+- confirmar que snapshots e logs chegam ao bridge
+- testar pelo menos um comando remoto controlado
+
+## Runtime oficial na RED
+
+- bridge: `/opt/red-iq-vision-bridge`
+- data: `/opt/red-iq-vision-bridge/data`
+- env: `/etc/red-iq-vision-bridge.env`
+- service: `red-iq-vision-bridge.service`
+- publicacao: `/iq-bridge/`
+
+## Observacoes
+
+- Trate transporte e portfolio como fonte principal de verdade.
+- OCR e DOM superficial sao apoio, nao base operacional.

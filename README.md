@@ -2,43 +2,186 @@
   <img src="identidade/logo/logo.png" alt="RED Systems" width="150" />
 </p>
 
-<h1 align="center">RED Systems Infra Lab</h1>
+<h1 align="center">RED Systems Unified VM</h1>
 
 <p align="center">
-  <strong>Portal, dashboard, RED I.A, proxy IA, RED Trader, proxy-lab e IQ bridge organizados para uma VM unica.</strong>
-</p>
-
-<p align="center">
-  <img alt="Python" src="https://img.shields.io/badge/Python-3.12-BB1D13?style=for-the-badge&labelColor=140202">
-  <img alt="Node" src="https://img.shields.io/badge/Node.js-20-EE4D31?style=for-the-badge&labelColor=140202">
-  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-dashboard-DB2315?style=for-the-badge&labelColor=140202">
-  <img alt="NVIDIA" src="https://img.shields.io/badge/NVIDIA-NIM-76B900?style=for-the-badge&labelColor=140202">
-</p>
-
-<p align="center">
-  <em>O repo e a VM principal precisam contar a mesma historia: uma stack unificada, observavel e operavel sem pular entre maquinas.</em>
+  <strong>Repositorio oficial da stack consolidada em uma VM unica: portal, dashboard, proxy IA, RED I.A, RED Trader, OpenClaw, Proxy Lab e bridge da extensao IQ.</strong>
 </p>
 
 ---
 
-## Visao Atual
+## Visao geral
 
-Hoje a RED Systems roda consolidada em **uma VM principal**.
+Hoje a RED Systems roda com uma arquitetura de VM unica. O objetivo deste repositorio e manter codigo, infra, documentacao e rotina operacional contando a mesma historia.
 
-Servicos publicos:
+### Rotas publicas atuais
 
 - `/` -> portal
 - `/dashboard/` -> painel principal
 - `/proxy/` -> proxy IA oficial
-- `/redia/` -> runtime da RED I.A
+- `/ollama/` -> alias do proxy IA
+- `/redia/` -> runtime standalone da RED I.A
 - `/trader/` -> RED Trader
 - `/proxy-lab/` -> laboratorio de benchmark
-- `/iq-bridge/` -> bridge da extensao IQ demo
-- `/openclaw/` -> assistente operacional privado OpenClaw
+- `/iq-bridge/` -> bridge da extensao IQ
+- `/openclaw/` -> assistente operacional privado
 
-### Dashboard com rotas reais por aba
+### Servicos principais
 
-O dashboard principal nao depende mais so de abas locais em JS. Cada area importante tem caminho proprio:
+| Servico | Caminho | Runtime oficial na VM | Service |
+|---|---|---|---|
+| Portal | `servicos/portal` | `/var/www/red-portal` | nginx |
+| Dashboard | `servicos/dashboard` | `/opt/redvm-dashboard` | `red-dashboard.service` |
+| Proxy IA | `servicos/proxy` | `/opt/redvm-proxy` | `red-ollama-proxy.service` |
+| RED I.A | `servicos/redia` | `/opt/redia` | `redia.service` |
+| RED Trader | `servicos/redtrader` | `/opt/redtrader` | `redtrader.service` |
+| OpenClaw | `servicos/openclaw` | `/opt/red-openclaw` | `red-openclaw.service` |
+| Proxy Lab | `servicos/proxy-lab` | `/opt/red-proxy-lab` | `red-proxy-lab.service` |
+| IQ Bridge | `servicos/extensao-iq-demo/bridge` | `/opt/red-iq-vision-bridge` | `red-iq-vision-bridge.service` |
+| Deploy Agent | `servicos/deploy-agent` | legado | `red-webhook.service` |
+
+---
+
+## Mapa do repositorio
+
+```text
+servicos/
+  portal/                Home publica
+  dashboard/             Painel principal da VM unica
+  proxy/                 Proxy IA oficial
+  proxy-lab/             Laboratorio pago e experimental
+  redia/                 Runtime da RED I.A
+  redtrader/             Trader demo e paper
+  openclaw/              Assistente operacional privado
+  extensao-iq-demo/      Extensao Chrome e IQ Bridge
+  extensao-iq-motor-lab/ Motor de laboratorio remoto para IQ
+  deploy-agent/          Legado
+
+infraestrutura/
+  nginx/                 Friendly paths e reverse proxy
+  systemd/               Units oficiais
+  scripts/               Apoio de infra
+  docker/                Artefatos auxiliares e legados
+
+ferramentas/
+  vm/                    Paramiko, execucao remota e migracao
+  iq_vision_benchmark/   Benchmarks visuais da IQ
+  red_model_studio/      App desktop para testar modelos
+  redclaudecode/         Launcher do Claude Code
+
+documentacao/
+  arquitetura.md
+  implantacao-servicos.md
+  manual-completo.md
+  preparacao-vm.md
+```
+
+---
+
+## Como instalar a stack em uma VM nova
+
+### 1. Dependencias base da VM
+
+Em uma VM Ubuntu ou Debian limpa, comece com:
+
+```bash
+apt-get update
+apt-get install -y \
+  git curl rsync nginx ufw \
+  python3 python3-venv python3-pip \
+  nodejs npm ffmpeg \
+  sqlite3 jq
+```
+
+Se a VM for usar OpenClaw no mesmo desenho da RED, instale tambem um runtime Node 24 dedicado para ele.
+
+### 2. Clone o repositorio
+
+```bash
+git clone <repo-url> /srv/redvm
+cd /srv/redvm
+```
+
+### 3. Instale servico por servico
+
+Cada servico agora tem um guia proprio de instalacao em qualquer VM:
+
+- [servicos/portal/README.md](servicos/portal/README.md)
+- [servicos/dashboard/README.md](servicos/dashboard/README.md)
+- [servicos/proxy/README.md](servicos/proxy/README.md)
+- [servicos/proxy-lab/README.md](servicos/proxy-lab/README.md)
+- [servicos/redia/README.md](servicos/redia/README.md)
+- [servicos/redtrader/README.md](servicos/redtrader/README.md)
+- [servicos/openclaw/README.md](servicos/openclaw/README.md)
+- [servicos/extensao-iq-demo/README.md](servicos/extensao-iq-demo/README.md)
+- [servicos/extensao-iq-motor-lab/README.md](servicos/extensao-iq-motor-lab/README.md)
+- [servicos/deploy-agent/README.md](servicos/deploy-agent/README.md)
+
+Regra pratica:
+
+1. instalar dependencias do servico
+2. copiar para o runtime oficial em `/opt/...` ou `/var/www/...`
+3. criar `.env` ou `EnvironmentFile`
+4. instalar a unit systemd quando houver
+5. publicar no nginx quando houver rota publica
+6. validar por sintaxe, `systemctl` e HTTP ou UI
+
+---
+
+## Runtime paths oficiais
+
+### Codigo
+
+- dashboard: `/opt/redvm-dashboard`
+- proxy: `/opt/redvm-proxy`
+- redia: `/opt/redia`
+- redtrader: `/opt/redtrader`
+- openclaw: `/opt/red-openclaw`
+- proxy-lab: `/opt/red-proxy-lab`
+- iq bridge: `/opt/red-iq-vision-bridge`
+- portal: `/var/www/red-portal`
+
+### Dados
+
+- dashboard: `/opt/redvm-dashboard/data`
+- proxy: `/var/lib/redvm-proxy`
+- redia: `/opt/redia/data`
+- redtrader: `/opt/redtrader/data`
+- proxy-lab: `/opt/red-proxy-lab/data`
+- iq bridge: `/opt/red-iq-vision-bridge/data`
+
+---
+
+## Nginx
+
+O arquivo central do include publico e `infraestrutura/nginx/red-friendly-paths.nginx.conf`.
+
+Ele concentra as rotas amigaveis:
+
+- `/`
+- `/dashboard/`
+- `/proxy/`
+- `/ollama/`
+- `/redia/`
+- `/trader/`
+- `/proxy-lab/`
+- `/iq-bridge/`
+- `/openclaw/`
+
+Sempre que mexer em nginx:
+
+```bash
+nginx -t
+systemctl reload nginx
+```
+
+---
+
+## Dashboard principal
+
+O dashboard e o centro operacional da stack.
+
+Subrotas canonicas:
 
 - `/dashboard/`
 - `/dashboard/servicos`
@@ -52,160 +195,156 @@ O dashboard principal nao depende mais so de abas locais em JS. Cada area import
 - `/dashboard/firewall`
 - `/dashboard/processos`
 
----
+Se mexer na navegacao dele:
 
-## Mapa do Repositorio
-
-```text
-servicos/
-  portal/                Home publica da RED Systems
-  dashboard/             Painel principal da VM unica
-  proxy/                 Proxy IA oficial, Ollama-compatible com upstream NVIDIA
-  proxy-lab/             Laboratorio pago/experimental para benchmark de modelos
-  redia/                 Runtime da RED I.A com Baileys, memoria, audio e imagem
-  redtrader/             Trading demo/paper com IQ e comite/modelos
-  openclaw/              Assistente operacional privado da stack
-  extensao-iq-demo/      Extensao Chrome MV3 e bridge de telemetria/comandos
-  deploy-agent/          Legado
-
-infraestrutura/
-  systemd/               Units oficiais da VM unica
-  nginx/                 Friendly paths e reverse proxy
-  docker/                Artefatos auxiliares/legados
-  scripts/               Instalacao, sync e apoio de infra
-
-ferramentas/
-  vm/                    Paramiko, execucao remota e migracao
-  implantacao/           Utilitarios de deploy
-  diagnosticos/          Checks reaproveitaveis
-  avaliacoes/            Benchmarks e catalogos
-  nvidia/                Utilitarios NIM/NVCF
-
-documentacao/
-  arquitetura.md
-  implantacao-servicos.md
-  manual-completo.md
-  preparacao-vm.md
-```
+1. alinhe frontend, backend e template
+2. preserve `pushState` e `popstate`
+3. valide login e pelo menos duas subrotas reais
 
 ---
 
-## Servicos
+## RED I.A
 
-| Servico | Caminho | Funcao |
-|---|---|---|
-| Portal | `servicos/portal` | Home publica com atalhos para a stack da VM unica. |
-| Dashboard | `servicos/dashboard` | Painel principal da VM: servicos, terminal, arquivos, proxy, RED I.A, projetos e observabilidade. |
-| Proxy IA | `servicos/proxy` | Gateway Ollama-compatible com roteamento NVIDIA. |
-| RED I.A | `servicos/redia` | Runtime principal de WhatsApp AI com memoria, audio, imagem e automacoes. |
-| RED Trader | `servicos/redtrader` | Ambiente demo/paper de trading com IA. |
-| Proxy Lab | `servicos/proxy-lab` | Laboratorio separado para benchmark pago e testes de modelos. |
-| IQ Bridge | `servicos/extensao-iq-demo/bridge` | Bridge da extensao Chrome para snapshots, logs e comandos da IQ demo. |
-| OpenClaw | `servicos/openclaw` | Assistente operacional privado via gateway, usando o proxy RED como backend. |
-| Deploy Agent | `servicos/deploy-agent` | Legado, mantido so por compatibilidade. |
+A RED I.A continua existindo como runtime proprio em `/redia/`, mas o caminho principal de operacao hoje e o dashboard principal em `/dashboard/redia`.
+
+Ela depende de:
+
+- proxy RED como backend IA
+- token admin correto para o dashboard conversar com o runtime
+- WhatsApp e Baileys quando o canal estiver ativo
 
 ---
 
-## RED I.A no Dashboard Principal
+## RED Trader
 
-A RED I.A nao e mais so “um painel separado”.
+O RED Trader hoje e demo e paper e deve ser tratado assim.
 
-Hoje o caminho principal de operacao e:
+Estado atual importante:
 
-- dashboard principal -> aba/rota **RED I.A**
-- URL: `/dashboard/redia`
-
-Essa area foi portada para dentro do painel principal para concentrar:
-
-- runtime/status
-- conversas
-- memoria
-- envio manual
-- agenda
-- disparos usando IA
-- benchmark/testes
-
-O runtime standalone em `/redia/` continua existindo, mas o centro operacional da stack e o dashboard principal.
+- feed da IQ via extensao e bridge
+- sem depender da API comunitaria antiga como caminho principal
+- painel em `/trader/`
 
 ---
 
 ## Extensao IQ Demo
 
-A extensao e o bridge existem para capturar e comandar a IQ demo com telemetria suficiente para correlacionar:
+O bloco IQ e composto por:
 
+- extensao principal `servicos/extensao-iq-demo`
+- bridge `servicos/extensao-iq-demo/bridge`
+- extensao de laboratorio `servicos/extensao-iq-motor-lab`
+
+Uso recomendado:
+
+1. testar comportamento novo no `motor-lab`
+2. observar resultado no bridge
+3. portar so o que prestou para a principal
+
+Fonte principal de verdade:
+
+- transporte da pagina
 - `active_id`
-- ativo atual
-- payout
-- ticks/candles
-- portfolio/positions
-- comandos remotos
+- payout por id
+- `positions-state` e portfolio
 
-Regra pratica: trate transporte e portfolio como fonte principal de verdade; OCR/DOM superficial e so apoio.
+Nao confiar so em OCR ou DOM superficial.
 
 ---
 
-## Comeco Rapido
+## OpenClaw
 
-```powershell
-git clone <repo-url>
-cd redvminfra
-Copy-Item .env.example .env.local
-```
+OpenClaw roda como assistente operacional privado da RED.
 
-Edite `.env.local` com valores reais. Nunca faça commit desse arquivo.
+Papel esperado:
 
-Para executar comando remoto via Paramiko:
+- chatops
+- operacao de host
+- uso do proxy RED como backend de modelos
+- integracao privada por WhatsApp
 
-```powershell
-$env:REDSYSTEMS_HOST="seu-host"
-$env:REDSYSTEMS_SSH_PORT="22"
-$env:REDSYSTEMS_SSH_USER="root"
-$env:REDSYSTEMS_SSH_PASSWORD="sua-senha"
+Ele nao substitui:
+
+- dashboard
+- RED I.A
+- proxy
+- RED Trader
+
+---
+
+## Fluxo recomendado de trabalho
+
+1. entender o estado atual do repo
+2. entender o estado atual da VM
+3. editar localmente
+4. validar sintaxe e checks
+5. fazer backup remoto
+6. subir o minimo necessario
+7. reiniciar so o servico tocado
+8. validar via `systemctl`, HTTP e UI real quando fizer sentido
+
+---
+
+## Deploy remoto
+
+O helper padrao do repo e:
+
+```bash
 python ferramentas/vm/paramiko_exec.py "systemctl status red-dashboard --no-pager"
 ```
 
----
+Com credenciais por ambiente:
 
-## Fluxo de Deploy
-
-Sempre:
-
-1. editar localmente;
-2. validar sintaxe/checks;
-3. fazer backup remoto;
-4. subir so o que mudou;
-5. reiniciar apenas o servico tocado;
-6. validar por `systemctl`, endpoint e, quando fizer sentido, UI real.
-
-Nunca subir “na fé”.
-
----
-
-## Manuais
-
-- [Implantacao de servicos](documentacao/implantacao-servicos.md)
-- [Manual completo](documentacao/manual-completo.md)
-- [Arquitetura](documentacao/arquitetura.md)
-- [Preparacao de VM](documentacao/preparacao-vm.md)
-
----
-
-## Regras de Seguranca
-
-Segredos reais ficam fora do Git:
-
-```text
-.env.local
-AGENTS.local.md
-.privado/
-artefatos/
+```bash
+export REDSYSTEMS_HOST=redsystems.ddns.net
+export REDSYSTEMS_SSH_PORT=22
+export REDSYSTEMS_SSH_USER=root
+export REDSYSTEMS_SSH_PASSWORD=...
 ```
 
-Antes de qualquer commit:
+Sempre faca backup remoto antes de sobrescrever runtime.
 
-```powershell
+Exemplos:
+
+- `/root/backups/dashboard-YYYYMMDD-HHMMSS.tgz`
+- `/root/backups/proxy-YYYYMMDD-HHMMSS.tgz`
+- `/root/backups/openclaw-YYYYMMDD-HHMMSS.tgz`
+
+---
+
+## Seguranca e segredos
+
+Nunca commite:
+
+- senhas
+- tokens
+- chaves de API
+- cookies
+- QR payloads
+- dumps sensiveis
+
+Locais aceitos para segredo real:
+
+- `.env.local`
+- `AGENTS.local.md`
+- `.privado/`
+
+Checagem recomendada antes de commit:
+
+```bash
 rg -n "(g[h]p_|n[v]api-|g[s]k_|api_key|password|senha|token|secret)" -S .
 git status --short --ignored
 ```
 
-Se a documentacao do repo e a realidade da VM divergirem, considere isso um bug e alinhe os dois lados.
+---
+
+## Documentacao complementar
+
+- [AGENTS.md](AGENTS.md)
+- [servicos/README.md](servicos/README.md)
+- [infraestrutura/README.md](infraestrutura/README.md)
+- [documentacao/preparacao-vm.md](documentacao/preparacao-vm.md)
+- [documentacao/implantacao-servicos.md](documentacao/implantacao-servicos.md)
+- [documentacao/manual-completo.md](documentacao/manual-completo.md)
+
+Se a documentacao e o runtime divergirem, trate isso como bug e alinhe os dois lados.

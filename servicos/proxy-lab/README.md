@@ -1,69 +1,96 @@
 # Proxy Lab
 
-Proxy experimental para benchmark de modelos pagos sem mexer no proxy oficial.
+Laboratorio isolado para benchmark pago e descoberta de modelos sem mexer no proxy oficial.
 
-## Objetivo
+## O que este servico entrega
 
-Laboratorio isolado para testar:
+- rota publica: `/proxy-lab/healthz`
+- superficie Ollama-compatible e OpenAI-compatible para teste
+- discovery de modelos Groq e Mistral
+- estatisticas e admin local
 
-- modelos Groq
-- modelos Mistral
-- combinacoes individuais, duplas e trios
-- latencia, taxa de JSON valido e consistencia
+## Dependencias do host
 
-Sem conectar no RED Trader ao vivo por enquanto.
+- Python 3.11+
+- `python3-venv`
+- chaves validas de Groq e ou Mistral
 
-## Rotas
+## Variaveis de ambiente
 
-- `GET /healthz`
-- `GET /admin/stats`
-- `POST /admin/reload`
-- `POST /admin/discover-models`
-- `GET /api/tags`
-- `POST /api/show`
-- `POST /api/chat`
-- `POST /api/generate`
-- `GET /v1/models`
-- `POST /v1/chat/completions`
-
-`/api/chat` e `/api/generate` seguem o estilo Ollama na pratica.
-`/v1/chat/completions` segue o formato OpenAI-compatible.
-
-## Providers
-
-- ` (GROQ)`
-- ` (MISTRAL)`
-
-O discovery live tenta buscar `/v1/models` de cada provider usando uma key valida.
-Se nao houver discovery ainda, o proxy usa os hints configurados no ambiente.
-
-## Arquivos de key
-
-### `groq_keys.json`
-
-```json
-{
-  "keys": [
-    { "id": "groq-1", "key": "gsk_...", "active": true },
-    { "id": "groq-2", "key": "gsk_...", "active": true }
-  ]
-}
+```bash
+cp .env.example /etc/red-proxy-lab.env
 ```
 
-### `mistral_keys.json`
+Arquivos de key esperados:
 
-```json
-{
-  "keys": [
-    { "id": "mistral-1", "key": "...", "active": true }
-  ]
-}
+- `groq_keys.json`
+- `mistral_keys.json`
+
+Ambos ficam, por padrao, em `/opt/red-proxy-lab/data`.
+
+## Rodar localmente
+
+```bash
+cd servicos/proxy-lab
+python -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+export RED_LAB_PROXY_HOST=127.0.0.1
+export RED_LAB_PROXY_PORT=8090
+python proxy.py
 ```
 
-Tambem aceita lista simples:
+Teste:
 
-```json
-["gsk_xxx", "gsk_yyy"]
+```bash
+curl http://127.0.0.1:8090/healthz
+curl http://127.0.0.1:8090/api/tags
+```
+
+## Instalacao em qualquer VM
+
+1. Instale dependencias:
+
+```bash
+apt-get update
+apt-get install -y python3 python3-venv nginx
+```
+
+2. Copie o runtime:
+
+```bash
+mkdir -p /opt/red-proxy-lab
+rsync -a servicos/proxy-lab/ /opt/red-proxy-lab/
+python3 -m venv /opt/red-proxy-lab/.venv
+/opt/red-proxy-lab/.venv/bin/pip install -r /opt/red-proxy-lab/requirements.txt
+mkdir -p /opt/red-proxy-lab/data
+```
+
+3. Crie o ambiente:
+
+```bash
+cp /opt/red-proxy-lab/.env.example /etc/red-proxy-lab.env
+```
+
+4. Coloque as keys reais em `/opt/red-proxy-lab/data`.
+
+5. Instale a unit:
+
+```bash
+cp infraestrutura/systemd/red-proxy-lab.service /etc/systemd/system/red-proxy-lab.service
+systemctl daemon-reload
+systemctl enable --now red-proxy-lab
+```
+
+6. Exponha `/proxy-lab/` pelo nginx.
+
+## Validacao recomendada
+
+```bash
+python3 -m py_compile /opt/red-proxy-lab/proxy.py
+systemctl is-active red-proxy-lab
+curl http://127.0.0.1:8090/healthz
+curl http://127.0.0.1:8090/api/tags
 ```
 
 ## Fluxo recomendado
@@ -74,10 +101,17 @@ Tambem aceita lista simples:
 4. rodar benchmark individual
 5. depois pares
 6. depois trios
-7. so depois misturar com NVIDIA
+7. so depois promover algo para o proxy oficial
+
+## Runtime oficial na RED
+
+- codigo: `/opt/red-proxy-lab`
+- data: `/opt/red-proxy-lab/data`
+- env: `/etc/red-proxy-lab.env`
+- service: `red-proxy-lab.service`
+- publicacao: `/proxy-lab/`
 
 ## Observacoes
 
-- este servico nao substitui o proxy oficial
-- ele e um laboratorio para benchmark
-- o discovery live depende de pelo menos uma key valida por provider
+- Este servico nao substitui o proxy oficial.
+- O admin deve ficar restrito a localhost ou allowlist no nginx.

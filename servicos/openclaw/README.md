@@ -12,19 +12,51 @@ Ele nao substitui:
 Ele fica por cima da stack para:
 
 - operar a VM por chat
-- acessar o Control UI/WebChat
+- acessar o Control UI e o WebChat
 - usar nossos modelos do proxy RED
 - integrar canais privados, incluindo WhatsApp
+
+## Dependencias do host
+
+- Ubuntu ou Debian com systemd
+- Node.js 24 em runtime dedicado
+- npm
+- nginx para publicar `/openclaw/`
+- acesso ao proxy RED em `127.0.0.1:8080`
 
 ## Runtime esperado na VM
 
 - usuario: `openclaw`
-- home/state: `/home/openclaw/.openclaw`
+- home e state: `/home/openclaw/.openclaw`
 - runtime Node dedicado: `/opt/red-openclaw`
 - service: `red-openclaw.service`
 - gateway local: `127.0.0.1:18789`
 - rota publica via nginx: `/openclaw/`
 - wrapper CLI global: `/usr/local/bin/openclaw`
+
+## Instalacao em qualquer VM
+
+1. Instale Node 24 em um runtime dedicado.
+2. Crie o usuario `openclaw`.
+3. Instale o OpenClaw em `/opt/red-openclaw`.
+4. Gere o gateway e o token.
+5. Configure o runtime para escutar em `127.0.0.1:18789`.
+6. Publique `/openclaw/` pelo nginx.
+7. Instale a unit `red-openclaw.service`.
+
+Caminho pratico usado na RED:
+
+```bash
+useradd --system --create-home --shell /bin/bash openclaw
+mkdir -p /opt/red-openclaw
+```
+
+Depois:
+
+- runtime Node: `/opt/red-openclaw/node`
+- CLI: `/usr/local/bin/openclaw`
+- state: `/home/openclaw/.openclaw`
+- env: `/etc/red-openclaw.env`
 
 ## Operacao do host
 
@@ -33,132 +65,32 @@ Na VM, o OpenClaw roda com acesso amplo ao host.
 - `tools.exec.security=full`
 - `tools.exec.ask=off`
 - o usuario `openclaw` tem `sudo` sem senha para tarefas operacionais
-- o service `red-openclaw` **nao** deve usar `NoNewPrivileges=true`, senao o `sudo` falha dentro das tools
-
-Na pratica, o fluxo esperado e:
-
-- o gateway continua rodando como usuario `openclaw`
-- quando uma tarefa pede privilegio elevado, o agente usa `sudo`
-- no shell do host, `openclaw ...` deve funcionar direto apos login, sem precisar exportar `PATH` ou `HOME`
-
-Exemplos:
-
-```bash
-openclaw channels status
-openclaw gateway health
-openclaw agent --to +5511999999999 --message "me diga o status do proxy" --deliver
-```
+- o service `red-openclaw` nao deve usar `NoNewPrivileges=true`, senao o `sudo` falha dentro das tools
 
 ## Curadoria atual de modelos
 
-- texto/tools principal: `red/NIM - nvidia/llama-3.1-nemotron-nano-8b-v1`
-- fallback operacional de texto/tools:
-  - `red/NIM - nvidia/nemotron-mini-4b-instruct`
-- fallback de seguranca:
-  - `ollama/minimax-m2.1`
+- texto e tools principal: `red/NIM - nvidia/llama-3.1-nemotron-nano-8b-v1`
+- fallback operacional de texto e tools: `red/NIM - nvidia/nemotron-mini-4b-instruct`
+- fallback de seguranca: `ollama/minimax-m2.1`
 - visao principal: `red/NIM - meta/llama-3.2-11b-vision-instruct`
-- fallback rapido de visao:
-  - `red/NIM - nvidia/nemotron-nano-12b-v2-vl`
-- fallback pesado de visao:
-  - `red/qwen3-vl:235b-instruct`
+- fallback rapido de visao: `red/NIM - nvidia/nemotron-nano-12b-v2-vl`
+- fallback pesado de visao: `red/qwen3-vl:235b-instruct`
+- imagem via helper: `NIM - flux.2-klein-4b`
 
-### Observacao sobre imagem
-
-O OpenClaw hoje usa o nosso proxy RED muito bem para:
-
-- texto
-- tools
-- visao / multimodal
-
-Para **geracao de imagem**, o caminho operacional adotado na RED e um helper de
-host que usa o endpoint oficial do proxy RED:
-
-- script: `servicos/openclaw/scripts/red_openclaw_generate_image.py`
-- endpoint usado: `http://127.0.0.1:8080/api/images/generate`
-- modelo padrao: `NIM - flux.2-klein-4b`
-- fallback automatico: `NIM - flux.1-schnell`
-
-Esse helper:
-
-- gera a imagem via proxy RED
-- salva o arquivo em disco
-- opcionalmente envia direto pelo WhatsApp do OpenClaw
-- tenta primeiro o modelo mais detalhado
-- se ele falhar, cai no fallback rapido automaticamente
-
-Exemplo:
+## Validacao recomendada
 
 ```bash
-python3 /opt/red-openclaw/helpers/red_openclaw_generate_image.py \
-  --prompt "um caranguejo vermelho minimalista em fundo escuro" \
-  --output /home/openclaw/.openclaw/media/red-crab.jpg \
-  --send-whatsapp +5511999999999 \
-  --caption "Teste RED Systems" \
-  --json
+systemctl is-active red-openclaw
+openclaw gateway health
+openclaw channels status
+curl -I http://127.0.0.1:18789/openclaw/
 ```
-
-### Comportamento de canal recomendado
-
-- DM do WhatsApp: `open`
-- grupos: manter fechados/allowlist por padrao
-- tools: `full`
-- exec policy: `yolo`
-- streaming em blocos: `on`
-- chunkMode do WhatsApp: `newline`
-
-### Streaming de respostas no WhatsApp
-
-Quando o OpenClaw precisar responder em etapas, o comportamento recomendado e
-mandar blocos curtos separados, em vez de acumular tudo para o fim.
-
-Configuracao operacional esperada:
-
-- `agents.defaults.blockStreamingDefault=on`
-- `agents.defaults.blockStreamingBreak=text_end`
-- `channels.whatsapp.blockStreaming=true`
-- `channels.whatsapp.chunkMode=newline`
-
-Isso ajuda muito em respostas do tipo:
-
-- "vou verificar isso agora"
-- "achei o status"
-- "fechou, esta tudo certo"
-
-em mensagens separadas no WhatsApp.
-
-## Leitura pratica da curadoria
-
-- `llama-3.1-nemotron-nano-8b-v1`
-  - melhor equilibrio real para OpenClaw quando o assunto e **texto + tools + baixa latencia**
-- `nemotron-mini-4b-instruct`
-  - fallback que ainda faz tool call direito, mas pode demorar bastante mais
-- `llama-3.2-11b-vision-instruct`
-  - melhor NIM de visao no equilibrio **precisao + tempo**
-- `nemotron-nano-12b-v2-vl`
-  - visao mais rapida, boa para fallback
-- `flux.2-klein-4b`
-  - melhor NIM de imagem para detalhe/qualidade geral
-- `flux.1-schnell`
-  - melhor fallback de imagem quando a prioridade e responder logo
-
-Assim o OpenClaw opera como uma **RED I.A privada**, com acesso amplo ao host,
-sem abrir espaco para responder em todo grupo de WhatsApp por acidente.
-
-## Prompt base recomendado
-
-O prompt-base do agente deve refletir que ele e uma **RED I.A operacional**,
-nao um chatbot romantico nem um assistente "sem permissao".
-
-Ele deve:
-
-- falar em portugues brasileiro claro e direto
-- agir como operadora da stack RED
-- validar efeito real antes de dizer "feito"
-- usar `sudo` quando a tarefa pedir privilegio elevado
-- preferir atualizacoes curtas e separadas no WhatsApp durante execucoes longas
 
 ## Exposicao
 
 O gateway deve ficar em loopback e aparecer publicamente apenas via nginx.
 
-Como a stack atual ainda usa HTTP simples no host publico, a configuracao do Control UI precisa assumir conscientemente um downgrade de seguranca para funcionar fora de localhost/HTTPS.
+## Observacoes
+
+- Como a stack atual ainda usa HTTP simples no host publico, a configuracao do Control UI precisa assumir conscientemente um downgrade de seguranca para funcionar fora de localhost e HTTPS.
+- O OpenClaw opera como uma RED I.A privada e operacional, nao como substituto direto da REDIA.

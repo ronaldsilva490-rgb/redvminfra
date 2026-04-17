@@ -4,15 +4,20 @@ Extensao secundaria, separada da principal, para testar comportamento remoto na 
 
 ## Ideia
 
-- a extensao principal continua como fonte estavel de leitura/operacao;
-- esta extensao `motor-lab` puxa um JSON do bridge;
-- o JSON define acoes de laboratorio em tempo real;
-- quando um comportamento se provar bom, ele e portado para a extensao principal.
+- a extensao principal continua como fonte estavel de leitura e operacao
+- esta extensao `motor-lab` puxa um JSON do bridge
+- o JSON define acoes de laboratorio em tempo real
+- quando um comportamento se provar bom, ele e portado para a extensao principal
+
+## Dependencias
+
+- Chrome ou Chromium com suporte a Manifest V3
+- bridge da extensao principal acessivel em `/iq-bridge/`
 
 ## Fluxo
 
 1. O content script busca a config viva em `/iq-bridge/api/motor/config/current?channel=spy`.
-2. O worker continua servindo como relay/telemetria, mas a aplicacao da config nao depende mais do broadcast dele.
+2. O worker continua servindo como relay e telemetria, mas a aplicacao da config nao depende mais so do broadcast dele.
 3. O content script executa as acoes e reporta o resultado de volta.
 
 ## Acoes suportadas hoje
@@ -40,18 +45,23 @@ Extensao secundaria, separada da principal, para testar comportamento remoto na 
 }
 ```
 
-## Carregar no Chrome
+## Instalacao em qualquer VM e navegador
 
-1. `chrome://extensions`
-2. `Modo do desenvolvedor`
-3. `Carregar sem compactacao`
-4. selecione `servicos/extensao-iq-motor-lab`
+O `motor-lab` nao precisa de um backend proprio. Ele depende do mesmo bridge da extensao principal.
 
-## Ponte com o bridge
+1. Instale o bridge principal da IQ na VM.
+2. No navegador, abra `chrome://extensions`.
+3. Ative `Modo do desenvolvedor`.
+4. Clique em `Carregar sem compactacao`.
+5. Selecione `servicos/extensao-iq-motor-lab`.
 
-O bridge da extensao principal ganhou dois endpoints:
+## Validacao recomendada
 
-- `GET /iq-bridge/api/motor/config/current`
-- `PUT /iq-bridge/api/motor/config/current`
+- confirmar no bridge que a extensao aparece com sessao nova
+- aplicar uma config simples por `PUT /iq-bridge/api/motor/config/current`
+- verificar `report_state` e `config_applied`
 
-Isso permite alterar comportamento em tempo real sem rebuild da extensao principal.
+## Observacoes
+
+- O `motor-lab` existe para testar comportamento antes de portar para a principal.
+- Se algo ainda estiver pedindo reload constante, a direcao certa e melhorar o motor remoto, nao a principal.
