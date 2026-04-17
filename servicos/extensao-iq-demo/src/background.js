@@ -5,16 +5,18 @@ const DEFAULT_CONFIG = {
   maxTicks: 240,
   sendIntervalMs: 500,
   bridgeEnabled: true,
-  bridgeUrl: "http://redsystems.ddns.net:3115",
+  bridgeUrl: "http://redsystems.ddns.net/iq-bridge",
   bridgeToken: "",
   bridgeMinIntervalMs: 600,
-  frameCaptureEnabled: false,
+  frameCaptureEnabled: true,
   frameMinIntervalMs: 2500,
-  bridgeTransportEnabled: true,
+  bridgeTransportEnabled: false,
   bridgeTransportFlushMs: 1000,
   bridgeTransportBatchSize: 40,
   bridgeCommandPollingEnabled: true,
   bridgeCommandPollMs: 2000,
+  bridgeRawSnapshotEnabled: false,
+  bridgeDiagnosticsEnabled: true,
 };
 
 const WORKER_LOG_LIMIT = 120;
@@ -68,24 +70,18 @@ function pushWorkerLog(level, event, payload = {}) {
 
 function summarizeStateForLog(state) {
   const debug = state?.debug || {};
-  const transport = Array.isArray(debug.transportSamples) ? debug.transportSamples.slice(-4) : [];
-  const signatures = transport.map((item) => item.signature || item.kind || "").filter(Boolean);
   return {
     mode: state?.mode || "-",
     asset: state?.asset || "-",
     market: state?.marketType || "-",
     price: state?.currentPrice ?? null,
-    livePrice: debug?.livePrice?.value ?? null,
-    livePriceSource: debug?.livePrice?.source || "",
     payout: state?.payoutPct ?? null,
     countdown: state?.countdown || "-",
     buyWindowOpen: !!state?.buyWindowOpen,
     suspendedHint: !!state?.suspendedHint,
-    wsUrl: debug.wsLastUrl || "",
-    ids: debug?.ids || {},
-    transport: signatures,
-    priceCandidate: debug.priceCandidate?.text || "",
-    resolution: debug?.resolution || null,
+    activeId: state?.activeId ?? debug?.ids?.selectedAssetId ?? null,
+    uiFlags: state?.uiFlags || {},
+    healthFlags: state?.healthFlags || {},
   };
 }
 
@@ -93,7 +89,7 @@ function maybeLogState(state) {
   const summary = summarizeStateForLog(state);
   const key = JSON.stringify(summary);
   const now = Date.now();
-  if (key === lastStateLogKey && now - lastStateLogAt < 1500) return;
+  if (key === lastStateLogKey && now - lastStateLogAt < 5000) return;
   lastStateLogKey = key;
   lastStateLogAt = now;
   pushWorkerLog("info", "state", summary);
@@ -118,11 +114,6 @@ async function pushToBridge(snapshot, config) {
   }
   bridgeState.lastSuccessAt = now;
   bridgeState.lastError = "";
-  pushWorkerLog("info", "bridge.telemetry.ok", {
-    asset: snapshot?.state?.asset || "-",
-    market: snapshot?.state?.marketType || "-",
-    mode: snapshot?.state?.mode || "-",
-  });
 }
 
 async function pushFrameToBridge(frame, config) {
@@ -149,6 +140,24 @@ async function pushFrameToBridge(frame, config) {
     market: frame?.frame?.marketType || "-",
     canvas: frame?.frame?.canvas || null,
   });
+}
+
+async function captureVisibleTabImage(windowId, fallbackDataUrl = "") {
+  try {
+    const dataUrl = await chrome.tabs.captureVisibleTab(
+      Number.isFinite(windowId) ? windowId : undefined,
+      { format: "jpeg", quality: 72 },
+    );
+    if (typeof dataUrl === "string" && dataUrl.startsWith("data:image/")) {
+      return dataUrl;
+    }
+  } catch (error) {
+    pushWorkerLog("warn", "frame.capture_visible_tab.error", {
+      error: String(error),
+      windowId,
+    });
+  }
+  return fallbackDataUrl || "";
 }
 
 async function pushTransportBatchToBridge(items, config) {
@@ -215,7 +224,24 @@ async function ensureDefaults() {
     await chrome.storage.local.set({ config: DEFAULT_CONFIG });
     return DEFAULT_CONFIG;
   }
-  const merged = { ...DEFAULT_CONFIG, ...stored.config };
+  const migrated = { ...stored.config };
+  const legacyBridgeUrl = String(migrated.bridgeUrl || "").trim();
+  if (!legacyBridgeUrl || /:3115\/?$/.test(legacyBridgeUrl)) {
+    migrated.bridgeUrl = DEFAULT_CONFIG.bridgeUrl;
+  }
+  if (typeof migrated.bridgeTransportEnabled !== "boolean") {
+    migrated.bridgeTransportEnabled = DEFAULT_CONFIG.bridgeTransportEnabled;
+  }
+  if (migrated.frameCaptureEnabled !== true) {
+    migrated.frameCaptureEnabled = DEFAULT_CONFIG.frameCaptureEnabled;
+  }
+  if (typeof migrated.bridgeRawSnapshotEnabled !== "boolean") {
+    migrated.bridgeRawSnapshotEnabled = DEFAULT_CONFIG.bridgeRawSnapshotEnabled;
+  }
+  if (typeof migrated.bridgeDiagnosticsEnabled !== "boolean") {
+    migrated.bridgeDiagnosticsEnabled = DEFAULT_CONFIG.bridgeDiagnosticsEnabled;
+  }
+  const merged = { ...DEFAULT_CONFIG, ...migrated };
   if (JSON.stringify(merged) !== JSON.stringify(stored.config)) {
     await chrome.storage.local.set({ config: merged });
   }
@@ -530,12 +556,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message?.type === "rediq:frame" && typeof tabId === "number") {
+      const capturedImage = await captureVisibleTabImage(sender.tab?.windowId, message.payload?.imageDataUrl || "");
+      if (!capturedImage || !String(capturedImage).startsWith("data:image/")) {
+        pushWorkerLog("warn", "frame.capture.empty", {
+          tabId,
+          windowId: sender.tab?.windowId,
+          asset: message.payload?.asset || "-",
+          market: message.payload?.marketType || "-",
+        });
+        sendResponse({ ok: false, error: "frame_capture_empty" });
+        return;
+      }
       const frame = {
         tabId,
         title: sender.tab?.title || "",
         url: sender.tab?.url || "",
         receivedAt: Date.now(),
-        frame: message.payload || {},
+        frame: {
+          ...(message.payload || {}),
+          imageDataUrl: capturedImage || message.payload?.imageDataUrl || "",
+          captureSource: capturedImage ? "visible-tab" : "canvas-fallback",
+        },
       };
       const { config } = await chrome.storage.local.get("config");
       const merged = { ...DEFAULT_CONFIG, ...(config || {}) };
@@ -558,6 +599,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === "rediq:transport") {
       const payload = message.payload || {};
+      const { config } = await chrome.storage.local.get("config");
+      const merged = { ...DEFAULT_CONFIG, ...(config || {}) };
+      if (!merged.bridgeTransportEnabled) {
+        sendResponse({ ok: true, skipped: true });
+        return;
+      }
       transportQueue.push({
         level: "info",
         event: `transport.${payload.kind || "unknown"}`,
@@ -565,10 +612,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         asset: payload.asset || "",
         payload,
       });
-      if (transportQueue.length >= ((await chrome.storage.local.get("config")).config?.bridgeTransportBatchSize || DEFAULT_CONFIG.bridgeTransportBatchSize)) {
+      if (transportQueue.length >= (merged.bridgeTransportBatchSize || DEFAULT_CONFIG.bridgeTransportBatchSize)) {
         await flushTransportQueue();
       } else {
-        scheduleTransportFlush((await chrome.storage.local.get("config")).config?.bridgeTransportFlushMs || DEFAULT_CONFIG.bridgeTransportFlushMs);
+        scheduleTransportFlush(merged.bridgeTransportFlushMs || DEFAULT_CONFIG.bridgeTransportFlushMs);
       }
       sendResponse({ ok: true });
       return;
@@ -577,6 +624,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === "rediq:raw-snapshot") {
       const { config } = await chrome.storage.local.get("config");
       const merged = { ...DEFAULT_CONFIG, ...(config || {}) };
+      if (!merged.bridgeRawSnapshotEnabled) {
+        sendResponse({ ok: true, skipped: true });
+        return;
+      }
       try {
         await pushSingleLogToBridge({
           level: "info",
@@ -603,6 +654,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === "rediq:diagnostic") {
       const { config } = await chrome.storage.local.get("config");
       const merged = { ...DEFAULT_CONFIG, ...(config || {}) };
+      if (!merged.bridgeDiagnosticsEnabled) {
+        sendResponse({ ok: true, skipped: true });
+        return;
+      }
       try {
         await pushSingleLogToBridge({
           level: message.payload?.level || "info",

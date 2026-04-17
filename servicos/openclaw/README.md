@@ -24,6 +24,30 @@ Ele fica por cima da stack para:
 - service: `red-openclaw.service`
 - gateway local: `127.0.0.1:18789`
 - rota publica via nginx: `/openclaw/`
+- wrapper CLI global: `/usr/local/bin/openclaw`
+
+## Operacao do host
+
+Na VM, o OpenClaw roda com acesso amplo ao host.
+
+- `tools.exec.security=full`
+- `tools.exec.ask=off`
+- o usuario `openclaw` tem `sudo` sem senha para tarefas operacionais
+- o service `red-openclaw` **nao** deve usar `NoNewPrivileges=true`, senao o `sudo` falha dentro das tools
+
+Na pratica, o fluxo esperado e:
+
+- o gateway continua rodando como usuario `openclaw`
+- quando uma tarefa pede privilegio elevado, o agente usa `sudo`
+- no shell do host, `openclaw ...` deve funcionar direto apos login, sem precisar exportar `PATH` ou `HOME`
+
+Exemplos:
+
+```bash
+openclaw channels status
+openclaw gateway health
+openclaw agent --to +5511999999999 --message "me diga o status do proxy" --deliver
+```
 
 ## Curadoria atual de modelos
 
@@ -79,6 +103,28 @@ python3 /opt/red-openclaw/helpers/red_openclaw_generate_image.py \
 - grupos: manter fechados/allowlist por padrao
 - tools: `full`
 - exec policy: `yolo`
+- streaming em blocos: `on`
+- chunkMode do WhatsApp: `newline`
+
+### Streaming de respostas no WhatsApp
+
+Quando o OpenClaw precisar responder em etapas, o comportamento recomendado e
+mandar blocos curtos separados, em vez de acumular tudo para o fim.
+
+Configuracao operacional esperada:
+
+- `agents.defaults.blockStreamingDefault=on`
+- `agents.defaults.blockStreamingBreak=text_end`
+- `channels.whatsapp.blockStreaming=true`
+- `channels.whatsapp.chunkMode=newline`
+
+Isso ajuda muito em respostas do tipo:
+
+- "vou verificar isso agora"
+- "achei o status"
+- "fechou, esta tudo certo"
+
+em mensagens separadas no WhatsApp.
 
 ## Leitura pratica da curadoria
 
@@ -97,6 +143,19 @@ python3 /opt/red-openclaw/helpers/red_openclaw_generate_image.py \
 
 Assim o OpenClaw opera como uma **RED I.A privada**, com acesso amplo ao host,
 sem abrir espaco para responder em todo grupo de WhatsApp por acidente.
+
+## Prompt base recomendado
+
+O prompt-base do agente deve refletir que ele e uma **RED I.A operacional**,
+nao um chatbot romantico nem um assistente "sem permissao".
+
+Ele deve:
+
+- falar em portugues brasileiro claro e direto
+- agir como operadora da stack RED
+- validar efeito real antes de dizer "feito"
+- usar `sudo` quando a tarefa pedir privilegio elevado
+- preferir atualizacoes curtas e separadas no WhatsApp durante execucoes longas
 
 ## Exposicao
 

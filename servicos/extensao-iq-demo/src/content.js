@@ -37,13 +37,40 @@ const SEEDED_ASSET_MAP = {
 };
 
 const DEFAULT_CONTROL_ANCHORS = {
-  amount_minus: { x: 0.952, y: 0.104 },
-  amount_plus: { x: 0.986, y: 0.104 },
-  expiry_minus: { x: 0.952, y: 0.192 },
-  expiry_plus: { x: 0.986, y: 0.192 },
-  trade_call: { x: 0.945, y: 0.405 },
-  open_new_option: { x: 0.945, y: 0.49 },
-  trade_put: { x: 0.945, y: 0.553 },
+  amount_plus: { x: 0.981211, y: 0.103486 },
+  amount_minus: { x: 0.981211, y: 0.12854 },
+  expiry_plus: { x: 0.981211, y: 0.178649 },
+  expiry_minus: { x: 0.979123, y: 0.196078 },
+  trade_call: { x: 0.919624, y: 0.411765 },
+  open_new_option: { x: 0.919624, y: 0.477124 },
+  trade_put: { x: 0.919624, y: 0.541394 },
+};
+
+const CONTROL_ZONE_HINTS = {
+  trade_call: {
+    xMin: 0.84,
+    xMax: 0.99,
+    yMin: 0.30,
+    yMax: 0.52,
+    color: "green",
+    texts: ["acima", "call", "higher", "up", "alto"],
+  },
+  open_new_option: {
+    xMin: 0.84,
+    xMax: 0.99,
+    yMin: 0.40,
+    yMax: 0.58,
+    color: "orange",
+    texts: ["nova opcao", "nova opção", "new option", "+"],
+  },
+  trade_put: {
+    xMin: 0.84,
+    xMax: 0.99,
+    yMin: 0.44,
+    yMax: 0.72,
+    color: "red",
+    texts: ["abaixo", "put", "lower", "down", "baixo"],
+  },
 };
 
 const state = {
@@ -104,7 +131,10 @@ const state = {
     currentPrice: null,
     priceSource: "",
     activeId: null,
+    lastCandleId: null,
     payoutPct: null,
+    payoutSource: "",
+    payoutAt: 0,
     marketType: "",
     countdownLabel: "",
     countdownSeconds: null,
@@ -126,6 +156,7 @@ const state = {
   },
   canvasCapture: {
     lastSentAt: 0,
+    lastCaptureKey: "",
     lastCanvasMeta: null,
     lastError: "",
   },
@@ -151,7 +182,16 @@ const state = {
     lastPortfolioAt: 0,
     lastTradeUiAt: 0,
     lastOpenOptionTemplate: null,
+    lastGridSettingsTemplate: null,
+    lastAvailabilityTemplate: null,
     userBalanceId: null,
+  },
+  uiTree: {
+    snapshot: null,
+    updatedAt: 0,
+    lastPollAt: 0,
+    lastError: "",
+    pending: null,
   },
   bridgeCommands: {
     seq: 0,
@@ -296,15 +336,13 @@ function classifyControlAnchor(point) {
   if (!point) return "";
   const { xNorm, yNorm } = point;
   if (xNorm < 0.78) return "";
-  if (xNorm > 0.93 && yNorm >= 0.08 && yNorm <= 0.14) {
-    return xNorm >= 0.975 ? "amount_plus" : "amount_minus";
-  }
-  if (xNorm > 0.93 && yNorm >= 0.16 && yNorm <= 0.24) {
-    return xNorm >= 0.975 ? "expiry_plus" : "expiry_minus";
-  }
-  if (xNorm > 0.88 && yNorm >= 0.34 && yNorm <= 0.46) return "trade_call";
-  if (xNorm > 0.88 && yNorm >= 0.47 && yNorm <= 0.53) return "open_new_option";
-  if (xNorm > 0.88 && yNorm >= 0.54 && yNorm <= 0.66) return "trade_put";
+  if (xNorm > 0.968 && yNorm >= 0.088 && yNorm <= 0.116) return "amount_plus";
+  if (xNorm > 0.968 && yNorm >= 0.117 && yNorm <= 0.142) return "amount_minus";
+  if (xNorm > 0.968 && yNorm >= 0.166 && yNorm <= 0.189) return "expiry_plus";
+  if (xNorm > 0.968 && yNorm >= 0.19 && yNorm <= 0.212) return "expiry_minus";
+  if (xNorm > 0.89 && yNorm >= 0.36 && yNorm <= 0.46) return "trade_call";
+  if (xNorm > 0.89 && yNorm >= 0.46 && yNorm <= 0.52) return "open_new_option";
+  if (xNorm > 0.89 && yNorm >= 0.52 && yNorm <= 0.61) return "trade_put";
   return "";
 }
 
@@ -429,22 +467,75 @@ function isLikelyTradeProbe(probe, side = "call") {
 }
 
 function detectTradeSurface() {
-  const openNewOption = probeNamedControl("open_new_option");
-  const tradeCall = probeNamedControl("trade_call");
-  const tradePut = probeNamedControl("trade_put");
+  const uiTree = getUiTreeSnapshot(3000);
+  if (uiTree) {
+    return {
+      openNewOption: {
+        likely: !!uiTree.newOption,
+        text: normalizeText(uiTree.newOption?.text || "").toLowerCase(),
+        tree: uiTree.newOption || null,
+      },
+      tradeCall: {
+        likely: !!uiTree.call,
+        text: normalizeText(uiTree.call?.text || "").toLowerCase(),
+        tree: uiTree.call || null,
+      },
+      tradePut: {
+        likely: !!uiTree.put,
+        text: normalizeText(uiTree.put?.text || "").toLowerCase(),
+        tree: uiTree.put || null,
+      },
+      uiTree,
+    };
+  }
+  const openNewOptionProbe = probeNamedControl("open_new_option");
+  const tradeCallProbe = probeNamedControl("trade_call");
+  const tradePutProbe = probeNamedControl("trade_put");
+  const openNewOptionCandidate = collectActionZoneCandidates("open_new_option", 1)[0] || null;
+  const tradeCallCandidate = collectActionZoneCandidates("trade_call", 1)[0] || null;
+  const tradePutCandidate = collectActionZoneCandidates("trade_put", 1)[0] || null;
+  const openNewOption = openNewOptionCandidate ? {
+    ...openNewOptionProbe,
+    candidate: openNewOptionCandidate,
+    likely: true,
+  } : {
+    ...openNewOptionProbe,
+    likely: isLikelyOpenNewOptionProbe(openNewOptionProbe),
+  };
+  const tradeCall = tradeCallCandidate ? {
+    ...tradeCallProbe,
+    candidate: tradeCallCandidate,
+    likely: true,
+  } : {
+    ...tradeCallProbe,
+    likely: isLikelyTradeProbe(tradeCallProbe, "call"),
+  };
+  const tradePut = tradePutCandidate ? {
+    ...tradePutProbe,
+    candidate: tradePutCandidate,
+    likely: true,
+  } : {
+    ...tradePutProbe,
+    likely: isLikelyTradeProbe(tradePutProbe, "put"),
+  };
   return {
-    openNewOption: {
-      ...openNewOption,
-      likely: isLikelyOpenNewOptionProbe(openNewOption),
-    },
-    tradeCall: {
-      ...tradeCall,
-      likely: isLikelyTradeProbe(tradeCall, "call"),
-    },
-    tradePut: {
-      ...tradePut,
-      likely: isLikelyTradeProbe(tradePut, "put"),
-    },
+    openNewOption,
+    tradeCall,
+    tradePut,
+  };
+}
+
+function summarizeTradeSurface(surface) {
+  return {
+    hasNewOptionButton: !!surface?.openNewOption?.likely,
+    hasCallButton: !!surface?.tradeCall?.likely,
+    hasPutButton: !!surface?.tradePut?.likely,
+    callText: surface?.tradeCall?.text || "",
+    putText: surface?.tradePut?.text || "",
+    newOptionText: surface?.openNewOption?.text || "",
+    callCandidateScore: surface?.tradeCall?.candidate?.score ?? null,
+    putCandidateScore: surface?.tradePut?.candidate?.score ?? null,
+    newOptionCandidateScore: surface?.openNewOption?.candidate?.score ?? null,
   };
 }
 
@@ -541,15 +632,7 @@ function updatePayoutFromCommissionPayload(payload, source = "socket") {
   const activeId = Number(actualCommission?.active_id);
   const profitPercent = commissionToProfitPercent(actualCommission?.commission);
   if (!Number.isFinite(activeId) || !Number.isFinite(profitPercent)) return null;
-  updateLiveEntry(activeId, { payoutPct: profitPercent });
-  state.marketCache[activeId] = {
-    ...(state.marketCache[activeId] || {}),
-    payoutPct: profitPercent,
-    updatedAt: now(),
-  };
-  if (shouldPromoteFocusedActive(activeId)) {
-    state.live.payoutPct = profitPercent;
-  }
+  setPayoutForActive(activeId, profitPercent, `actual_commission:${source}`);
   emitDiagnostic(
     "trade.payout_adjusted",
     { activeId, profitPercent, source },
@@ -689,6 +772,273 @@ function inferNextExpiration(activeId, optionTypeId) {
   return target;
 }
 
+function buildIqSendMessage(name, body = {}, version = "1.0") {
+  const requestId = String(Math.floor(now() % 1000000000));
+  return {
+    requestId,
+    message: {
+      name: "sendMessage",
+      request_id: requestId,
+      local_time: Math.round(performance.now()),
+      msg: {
+        name,
+        version,
+        body,
+      },
+    },
+  };
+}
+
+function latestKnownCandleId(preferredActiveId = null) {
+  const preferredId = Number(preferredActiveId);
+  const entryId = Number(state.liveBook?.[preferredId]?.lastCandleId);
+  if (Number.isFinite(entryId) && entryId > 0) return entryId;
+  const liveId = Number(state.live.lastCandleId);
+  if (Number.isFinite(liveId) && liveId > 0) return liveId;
+  const quoteId = Number(state.ids.quoteActiveId);
+  const quoteEntryId = Number(state.liveBook?.[quoteId]?.lastCandleId);
+  if (Number.isFinite(quoteEntryId) && quoteEntryId > 0) return quoteEntryId;
+  return null;
+}
+
+function buildGetCandlesMessage(activeId, candleId = null, lookback = 5) {
+  const numericId = Number(activeId);
+  const numericCandleId = Number(candleId);
+  const safeToId = Number.isFinite(numericCandleId) && numericCandleId > 0 ? numericCandleId : 0;
+  const safeFromId = safeToId > 0 ? Math.max(0, safeToId - Math.max(1, Number(lookback) || 1)) : 0;
+  return buildIqSendMessage("get-candles", {
+    active_id: numericId,
+    size: 1,
+    from_id: safeFromId,
+    to_id: safeToId,
+    split_normalization: true,
+    only_closed: true,
+  }, "2.0");
+}
+
+function buildNativeSelectAssetAttempts(activeId, activeType, selectionType = null) {
+  const numericId = Number(activeId);
+  const numericType = Number.isFinite(Number(activeType)) ? Number(activeType) : 3;
+  const numericSelectionType = Number(selectionType);
+  const baseConfig = {
+    selectedActiveId: numericId,
+    selectedActiveType: Number.isFinite(numericSelectionType) ? numericSelectionType : numericType,
+  };
+  const plotterConfig = {
+    ...baseConfig,
+    plotters: [
+      {
+        activeId: numericId,
+        activeType: numericType,
+      },
+    ],
+  };
+  const attempts = [
+    {
+      strategy: "update-user-availability",
+      ...buildIqSendMessage("update-user-availability", {
+        platform_id: "9",
+        idle_duration: 360,
+        selected_asset_id: numericId,
+        selected_asset_type: Number.isFinite(numericSelectionType) ? numericSelectionType : numericType,
+      }, "1.1"),
+    },
+    {
+      strategy: "set-user-settings:minimal",
+      ...buildIqSendMessage("set-user-settings", {
+        config: baseConfig,
+      }, "1.0"),
+    },
+    {
+      strategy: "set-user-settings:plotters",
+      ...buildIqSendMessage("set-user-settings", {
+        config: plotterConfig,
+      }, "1.0"),
+    },
+    {
+      strategy: "set-user-settings:traderoom-grid",
+      ...buildIqSendMessage("set-user-settings", {
+        name: "traderoom_gl_grid",
+        version: "1.0",
+        config: plotterConfig,
+      }, "1.0"),
+    },
+    {
+      strategy: "set-user-settings:plotters-alt",
+      ...buildIqSendMessage("set-user-settings", {
+        config: {
+          ...plotterConfig,
+          activeId: numericId,
+          activeType: numericType,
+        },
+      }, "2.0"),
+    },
+  ];
+
+  const gridTemplate = state.trade.lastGridSettingsTemplate;
+  const currentSelectedId = Number(currentActiveId() ?? state.ids.selectedAssetId);
+  const templateConfig = gridTemplate?.config;
+  const templatePlotters = Array.isArray(templateConfig?.plotters) ? templateConfig.plotters : [];
+  if (templateConfig && templatePlotters.length) {
+    const firstPlotter = templatePlotters[0] || {};
+    const fallbackPlotterType = typeof firstPlotter?.activeType === "string" && firstPlotter.activeType
+      ? firstPlotter.activeType
+      : "turbo";
+    const targetPlotterBase = templatePlotters.find((plotter) => Number(plotter?.activeId) === numericId) || firstPlotter;
+    const previousPlotterBase = templatePlotters.find((plotter) => Number(plotter?.activeId) === currentSelectedId && Number(plotter?.activeId) !== numericId)
+      || templatePlotters.find((plotter) => Number(plotter?.activeId) !== numericId)
+      || firstPlotter;
+    const targetPlotter = {
+      ...targetPlotterBase,
+      activeId: numericId,
+      activeType: typeof targetPlotterBase?.activeType === "string" && targetPlotterBase.activeType
+        ? targetPlotterBase.activeType
+        : fallbackPlotterType,
+      isMinimized: false,
+    };
+    const plotters = [targetPlotter];
+    if (Number.isFinite(currentSelectedId) && currentSelectedId > 0 && currentSelectedId !== numericId) {
+      plotters.push({
+        ...previousPlotterBase,
+        activeId: currentSelectedId,
+        activeType: typeof previousPlotterBase?.activeType === "string" && previousPlotterBase.activeType
+          ? previousPlotterBase.activeType
+          : fallbackPlotterType,
+        isMinimized: true,
+      });
+    }
+    attempts.unshift({
+      strategy: "set-user-settings:template-grid",
+      ...buildIqSendMessage("set-user-settings", {
+        ...gridTemplate,
+        name: gridTemplate?.name || "traderoom_gl_grid",
+        version: gridTemplate?.version ?? 2,
+        client_id: gridTemplate?.client_id || `${Date.now()}000`,
+        config: {
+          ...templateConfig,
+          selectedActiveId: numericId,
+          selectedActiveType: Number.isFinite(numericSelectionType)
+            ? numericSelectionType
+            : templateConfig?.selectedActiveType,
+          plotters,
+        },
+      }, "1.0"),
+    });
+  }
+  return attempts;
+}
+
+async function waitForAssetSelectionEvidence(targetActiveId, startedAt, timeoutMs = 2400) {
+  const deadline = now() + Math.max(200, Number(timeoutMs) || 0);
+  const numericTarget = Number(targetActiveId);
+  while (now() < deadline) {
+    const liveEntry = state.liveBook?.[numericTarget] || {};
+    const selectedMatch = Number(state.ids.selectedAssetId) === numericTarget && Number(state.ids.selectedAssetAt || 0) >= startedAt;
+    const quoteMatch = Number(state.ids.quoteActiveId) === numericTarget && Number(state.ids.quoteActiveAt || 0) >= startedAt;
+    const liveMatch = Number(state.live.activeId) === numericTarget && Number(state.live.lastAt || 0) >= startedAt;
+    const liveBookMatch = Number(liveEntry?.lastAt || 0) >= startedAt && Number.isFinite(Number(liveEntry?.currentPrice));
+    const livePrice = Number(liveEntry?.currentPrice);
+    if (liveMatch || liveBookMatch) {
+      return {
+        ok: true,
+        selectedMatch,
+        quoteMatch,
+        liveMatch,
+        liveBookMatch,
+        currentAsset: state.current.asset,
+        currentMarketType: state.current.marketType,
+        currentPrice: Number.isFinite(livePrice) ? livePrice : null,
+        ids: getIdsSnapshot(),
+      };
+    }
+    if (selectedMatch && quoteMatch && Number.isFinite(livePrice)) {
+      return {
+        ok: true,
+        selectedMatch,
+        quoteMatch,
+        liveMatch,
+        liveBookMatch,
+        currentAsset: state.current.asset,
+        currentMarketType: state.current.marketType,
+        currentPrice: livePrice,
+        ids: getIdsSnapshot(),
+      };
+    }
+    await sleep(90);
+  }
+  return null;
+}
+
+async function nativeSelectAsset(payload = {}) {
+  const activeId = Number(payload.activeId ?? payload.assetId ?? payload.id);
+  if (!Number.isFinite(activeId)) {
+    return { ok: false, method: "native_select_asset", error: "native_select_missing_active_id" };
+  }
+  const availabilityTypeHint = Number(
+    payload.selectionType
+    ?? payload.selectedAssetType
+    ?? payload.selected_asset_type
+    ?? state.trade.lastAvailabilityTemplate?.selected_asset_type
+    ?? state.ids.selectedAssetType
+  );
+  const activeType = Number(
+    payload.activeType
+    ?? payload.assetType
+    ?? state.ids.selectedAssetType
+    ?? 3
+  );
+  const attempts = buildNativeSelectAssetAttempts(activeId, activeType, availabilityTypeHint);
+  const summaries = [];
+  for (const attempt of attempts) {
+    const startedAt = now();
+    const sent = await sendBridgeCommand("ws-send", { text: JSON.stringify(attempt.message) }, 1800);
+    const refreshMessage = buildGetCandlesMessage(activeId, latestKnownCandleId(activeId) ?? latestKnownCandleId(state.ids.selectedAssetId), 5);
+    const refreshAck = await sendBridgeCommand("ws-send", { text: JSON.stringify(refreshMessage.message) }, 1800);
+    const socketResult = await waitForIqRequestResult(attempt.requestId, 1200);
+    const refreshResult = await waitForIqRequestResult(refreshMessage.requestId, 1200);
+    const evidence = await waitForAssetSelectionEvidence(activeId, startedAt, 2200);
+    const summary = {
+      strategy: attempt.strategy,
+      requestId: attempt.requestId,
+      sendAck: sent,
+      socketResult,
+      refreshRequestId: refreshMessage.requestId,
+      refreshAck,
+      refreshResult,
+      evidence,
+    };
+    summaries.push(summary);
+    if (evidence?.ok) {
+      return {
+        ok: true,
+      method: "native_select_asset",
+      activeId,
+      activeType,
+      selectionType: availabilityTypeHint,
+      strategy: attempt.strategy,
+        requestId: attempt.requestId,
+        sendAck: sent,
+        socketResult,
+        refreshRequestId: refreshMessage.requestId,
+        refreshAck,
+        refreshResult,
+        evidence,
+        attempts: summaries,
+      };
+    }
+    await sleep(120);
+  }
+  return {
+    ok: false,
+    method: "native_select_asset",
+    activeId,
+    activeType,
+    selectionType: availabilityTypeHint,
+    error: "native_select_unconfirmed",
+    attempts: summaries,
+  };
+}
+
 function buildNativeOpenOptionBody(direction, payload = {}) {
   const template = state.trade.lastOpenOptionTemplate || {};
   const activeId = Number(payload.activeId ?? currentActiveId() ?? template.active_id);
@@ -697,7 +1047,8 @@ function buildNativeOpenOptionBody(direction, payload = {}) {
   if (!Number.isFinite(userBalanceId)) return { ok: false, error: "native_missing_user_balance_id" };
   const optionTypeId = optionTypeIdFromSelection(payload.optionTypeId ?? state.ids.selectedAssetType ?? template.option_type_id);
   const liveEntry = state.liveBook[activeId] || {};
-  const livePrice = Number(payload.currentPrice ?? liveEntry.currentPrice ?? state.current.currentPrice ?? template.value);
+  const cachedEntry = state.marketCache[activeId] || {};
+  const livePrice = Number(payload.currentPrice ?? liveEntry.currentPrice ?? cachedEntry.currentPrice ?? state.current.currentPrice ?? template.value);
   if (!Number.isFinite(livePrice)) return { ok: false, error: "native_missing_live_price" };
   const precision = Number(state.assetMeta[activeId]?.precision ?? guessPricePrecision(livePrice));
   const value = Number(payload.value ?? Math.round(livePrice * (10 ** precision)));
@@ -708,7 +1059,7 @@ function buildNativeOpenOptionBody(direction, payload = {}) {
   if (!Number.isFinite(expired)) return { ok: false, error: "native_missing_expiration" };
   const price = Number(payload.price ?? payload.amount ?? template.price);
   if (!Number.isFinite(price)) return { ok: false, error: "native_missing_amount" };
-  const profitPercent = Number(payload.profitPercent ?? liveEntry.payoutPct ?? state.current.payoutPct ?? template.profit_percent);
+  const profitPercent = Number(payload.profitPercent ?? liveEntry.payoutPct ?? cachedEntry.payoutPct ?? state.current.payoutPct ?? template.profit_percent);
 
   return {
     ok: true,
@@ -740,6 +1091,392 @@ function sendBridgeCommand(command, payload = {}, timeoutMs = 1800) {
       payload: { id, command, payload },
     }, "*");
   });
+}
+
+async function runMainEval(source, timeoutMs = 3000) {
+  const code = String(source || "").trim();
+  if (!code) {
+    return { ok: false, error: "empty_main_eval" };
+  }
+  const result = await sendBridgeCommand("eval-main", { code }, timeoutMs);
+  if (!result?.ok) {
+    return {
+      ok: false,
+      error: result?.error || "main_eval_failed",
+      command: "eval-main",
+    };
+  }
+  return {
+    ok: true,
+    command: "eval-main",
+    value: result?.result?.value,
+  };
+}
+
+function uiAssetLabel(label) {
+  const text = normalizeText(String(label || ""));
+  if (!text) return "";
+  return text.replace(/-OTC$/i, " (OTC)");
+}
+
+function getUiTreeSnapshot(maxAgeMs = 2500) {
+  const snapshot = state.uiTree.snapshot;
+  if (!snapshot || !state.uiTree.updatedAt) return null;
+  if ((now() - state.uiTree.updatedAt) > Math.max(100, Number(maxAgeMs) || 0)) return null;
+  return snapshot;
+}
+
+function rememberUiTreeSnapshot(snapshot) {
+  if (!snapshot || snapshot.ok === false) return null;
+  state.uiTree.snapshot = snapshot;
+  state.uiTree.updatedAt = now();
+  state.uiTree.lastError = "";
+  return snapshot;
+}
+
+function buildMainUiEvalScript(spec = {}) {
+  const encodedSpec = JSON.stringify(spec || {});
+  return `(() => {
+    const spec = ${encodedSpec};
+    const M = window.Module || window.GLEngineModule;
+    if (!M || !M["automation.getCurrentView"] || !M["automation.getElementViaQueryAll"] || !M["automation.getElementJsonView"]) {
+      return { ok: false, error: "automation_unavailable" };
+    }
+    const norm = (value) => String(value || "")
+      .normalize("NFD")
+      .replace(/[\\u0300-\\u036f]/g, "")
+      .replace(/\\s+/g, " ")
+      .trim();
+    const parse = (id) => {
+      try {
+        const raw = M["automation.getElementJsonView"](id);
+        return raw ? JSON.parse(raw) : null;
+      } catch (_) {
+        return null;
+      }
+    };
+    const scan = () => {
+      const view = M["automation.getCurrentView"]();
+      const root = M["automation.getElementViaQueryAll"](view, "*");
+      const queue = [root];
+      const seen = new Set();
+      const nodes = [];
+      while (queue.length && seen.size < 25000) {
+        const id = queue.shift();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        const node = parse(id);
+        if (!node) continue;
+        if (Array.isArray(node.children)) queue.push(...node.children);
+        if (!node.visible) continue;
+        nodes.push({
+          id,
+          name: String(node.name || ""),
+          text: String(node.text || ""),
+          x: Number(node.x || 0),
+          y: Number(node.y || 0),
+          width: Number(node.width || 0),
+          height: Number(node.height || 0),
+          enabled: !!node.enabled,
+        });
+      }
+      return nodes;
+    };
+    const mapNode = (node) => node ? ({
+      id: node.id,
+      name: node.name,
+      text: node.text,
+      x: node.x,
+      y: node.y,
+      width: node.width,
+      height: node.height,
+      enabled: node.enabled,
+    }) : null;
+    const findNode = (nodes, predicate) => nodes.find((node) => {
+      try {
+        return predicate(node);
+      } catch (_) {
+        return false;
+      }
+    }) || null;
+    const clickNode = (node) => {
+      if (!node) return null;
+      const x = node.x + Math.max(10, node.width / 2);
+      const y = node.y + Math.max(10, node.height / 2);
+      const target = document.getElementById("glcanvas") || document.elementFromPoint(x, y);
+      if (!target) return null;
+      const options = { bubbles: true, cancelable: true, clientX: x, clientY: y, composed: true };
+      target.dispatchEvent(new PointerEvent("pointerdown", options));
+      target.dispatchEvent(new MouseEvent("mousedown", options));
+      target.dispatchEvent(new PointerEvent("pointerup", options));
+      target.dispatchEvent(new MouseEvent("mouseup", options));
+      target.dispatchEvent(new MouseEvent("click", options));
+      return { x, y };
+    };
+    const buildSnapshot = (nodes) => ({
+      ok: true,
+      selected: mapNode(findNode(nodes, (node) => node.name === "bSelectedActiveName" && node.text)),
+      optionType: mapNode(findNode(nodes, (node) => (node.name === "bOptionType" || node.name === "SelectCurrentActiveTypeLabel" || node.name === "bSelectedOptionType") && node.text)),
+      amount: mapNode(findNode(nodes, (node) => node.name === "tbValue")),
+      expiry: mapNode(findNode(nodes, (node) => node.name === "bSelectedTimeText" && node.text)),
+      payout: mapNode(findNode(nodes, (node) => node.name === "bProfitValue" && node.text)),
+      call: mapNode(findNode(nodes, (node) => node.name === "bCall")),
+      put: mapNode(findNode(nodes, (node) => node.name === "bPut")),
+      newOption: mapNode(
+        findNode(nodes, (node) => node.name === "bAnotherBid")
+        || findNode(nodes, (node) => norm(node.text).toUpperCase().includes("NOVA"))
+      ),
+      selectActive: mapNode(findNode(nodes, (node) => node.name === "bSelectActive")),
+      topTabs: nodes
+        .filter((node) => node.name === "bActiveName" && node.text && node.y < 60)
+        .map(mapNode)
+        .slice(0, 8),
+      popupEntries: nodes
+        .filter((node) => (node.name === "bAssetName" || node.name === "bName") && node.text && node.x > 250 && node.width > 40)
+        .map(mapNode)
+        .slice(0, 80),
+      popupCategories: nodes
+        .filter((node) => node.name === "bName" && node.text && node.x < 300 && node.y >= 240 && node.y <= 420)
+        .map(mapNode)
+        .slice(0, 20),
+    });
+    const chooseNamed = (nodes, name) => {
+      if (name === "trade_call") return findNode(nodes, (node) => node.name === "bCall");
+      if (name === "trade_put") return findNode(nodes, (node) => node.name === "bPut");
+      if (name === "open_new_option") return findNode(nodes, (node) => node.name === "bAnotherBid") || findNode(nodes, (node) => norm(node.text).toUpperCase().includes("NOVA"));
+      if (name === "select_active") return findNode(nodes, (node) => node.name === "bSelectActive");
+      if (name === "expiry_picker") return findNode(nodes, (node) => node.name === "bExpirationTime") || findNode(nodes, (node) => node.name === "bSelectedTimeText");
+      if (name === "amount_plus") return findNode(nodes, (node) => node.name === "bUp" && node.x >= 920 && node.y < 110);
+      if (name === "amount_minus") return findNode(nodes, (node) => node.name === "bDown" && node.x >= 920 && node.y < 140);
+      if (name === "expiry_plus") return findNode(nodes, (node) => node.name === "bUp" && node.x >= 920 && node.y >= 140 && node.y < 170);
+      if (name === "expiry_minus") return findNode(nodes, (node) => node.name === "bDown" && node.x >= 920 && node.y >= 165 && node.y < 200);
+      return null;
+    };
+    const chooseActionTarget = (nodes) => {
+      if (!spec || !spec.action) return null;
+      if (spec.action === "click_named") return chooseNamed(nodes, String(spec.name || ""));
+      if (spec.action === "top_tab") {
+        const target = norm(spec.label);
+        return findNode(nodes, (node) => node.name === "bActiveName" && norm(node.text) === target);
+      }
+      if (spec.action === "visible_asset") {
+        const target = norm(spec.label);
+        return findNode(nodes, (node) => (node.name === "bAssetName" || node.name === "bName") && node.x > 250 && norm(node.text) === target);
+      }
+      if (spec.action === "popup_category") {
+        const target = norm(spec.label);
+        return findNode(nodes, (node) => node.name === "bName" && node.x < 300 && norm(node.text) === target);
+      }
+      if (spec.action === "expiry_time") {
+        const target = norm(spec.label);
+        return findNode(nodes, (node) => node.name === "bTime" && norm(node.text) === target);
+      }
+      return null;
+    };
+    const before = scan();
+    const target = chooseActionTarget(before);
+    const click = target ? clickNode(target) : null;
+    const after = scan();
+    return {
+      ok: true,
+      action: spec.action || "snapshot",
+      target: mapNode(target),
+      click,
+      snapshot: buildSnapshot(after),
+    };
+  })()`;
+}
+
+async function refreshUiTree(force = false) {
+  if (!force) {
+    const current = getUiTreeSnapshot(2500);
+    if (current) return current;
+    if ((now() - state.uiTree.lastPollAt) < 700) return state.uiTree.snapshot;
+  }
+  if (state.uiTree.pending) return state.uiTree.pending;
+  state.uiTree.lastPollAt = now();
+  state.uiTree.pending = (async () => {
+    const result = await runMainEval(buildMainUiEvalScript(), 4000);
+    if (!result?.ok || !result.value?.ok) {
+      state.uiTree.lastError = result?.error || result?.value?.error || "ui_tree_eval_failed";
+      return state.uiTree.snapshot;
+    }
+    return rememberUiTreeSnapshot(result.value?.snapshot || result.value);
+  })().finally(() => {
+    state.uiTree.pending = null;
+  });
+  return state.uiTree.pending;
+}
+
+async function clickUiTreeControl(name) {
+  const result = await runMainEval(buildMainUiEvalScript({
+    action: "click_named",
+    name,
+  }), 3500);
+  if (!result?.ok || !result.value?.ok) {
+    return {
+      ok: false,
+      control: name,
+      method: "ui-tree",
+      error: result?.error || result?.value?.error || "ui_tree_click_failed",
+    };
+  }
+  rememberUiTreeSnapshot(result.value?.snapshot || null);
+  return {
+    ok: !!result.value?.click,
+    control: name,
+    method: "ui-tree",
+    click: result.value?.click || null,
+    target: result.value?.target || null,
+    snapshot: result.value?.snapshot || null,
+  };
+}
+
+async function switchAssetViaUi(label) {
+  const uiLabel = uiAssetLabel(label);
+  await refreshUiTree(true);
+  const current = getUiTreeSnapshot(6000);
+  if (normalizeText(current?.selected?.text) === normalizeText(uiLabel)) {
+    return {
+      ok: true,
+      method: "ui-tree:already-selected",
+      after: current,
+    };
+  }
+  const topMatch = current?.topTabs?.find((item) => normalizeText(item?.text) === normalizeText(uiLabel));
+  if (topMatch) {
+    const result = await runMainEval(buildMainUiEvalScript({
+      action: "top_tab",
+      label: uiLabel,
+    }), 3500);
+    if (result?.ok && result.value?.ok) {
+      await sleep(300);
+      await refreshUiTree(true);
+      const after = getUiTreeSnapshot(6000);
+      return {
+        ok: normalizeText(after?.selected?.text) === normalizeText(uiLabel),
+        method: "ui-tree:top-tab",
+        target: result.value?.target || null,
+        click: result.value?.click || null,
+        after,
+      };
+    }
+  }
+  await clickUiTreeControl("select_active");
+  await sleep(450);
+  await refreshUiTree(true);
+  const popup = getUiTreeSnapshot(6000);
+  const visible = popup?.popupEntries?.find((item) => normalizeText(item?.text) === normalizeText(uiLabel));
+  if (!visible) {
+    const desiredCategory = /-OTC$/i.test(String(label || "")) ? "Blitz" : "Binárias";
+    const categoryResult = await runMainEval(buildMainUiEvalScript({
+      action: "popup_category",
+      label: desiredCategory,
+    }), 3500);
+    if (categoryResult?.ok && categoryResult.value?.ok) {
+      await sleep(350);
+      await refreshUiTree(true);
+    }
+  }
+  const popupAfterCategory = getUiTreeSnapshot(6000);
+  const visibleAfterCategory = popupAfterCategory?.popupEntries?.find((item) => normalizeText(item?.text) === normalizeText(uiLabel));
+  if (!visibleAfterCategory) {
+    return {
+      ok: false,
+      method: "ui-tree:popup",
+      error: "visible_asset_not_found",
+      targetLabel: uiLabel,
+      popup: popupAfterCategory || popup,
+    };
+  }
+  const result = await runMainEval(buildMainUiEvalScript({
+    action: "visible_asset",
+    label: uiLabel,
+  }), 3500);
+  if (!result?.ok || !result.value?.ok) {
+    return {
+      ok: false,
+      method: "ui-tree:popup",
+      error: result?.error || result?.value?.error || "visible_asset_click_failed",
+      targetLabel: uiLabel,
+    };
+  }
+  await sleep(450);
+  await refreshUiTree(true);
+  const after = getUiTreeSnapshot(6000);
+  return {
+    ok: normalizeText(after?.selected?.text) === normalizeText(uiLabel),
+    method: "ui-tree:popup",
+    target: result.value?.target || null,
+    click: result.value?.click || null,
+    after,
+  };
+}
+
+async function setAmountViaUi(targetValue) {
+  const desired = Number(targetValue);
+  if (!Number.isFinite(desired) || desired <= 0) {
+    return { ok: false, method: "ui-tree:amount", error: "invalid_amount" };
+  }
+  const steps = [];
+  for (let index = 0; index < 12; index += 1) {
+    await refreshUiTree(true);
+    const current = toNumber(getUiTreeSnapshot(5000)?.amount?.text);
+    if (Number.isFinite(current) && Math.abs(current - desired) < 0.0001) {
+      return { ok: true, method: "ui-tree:amount", desired, current, steps };
+    }
+    const control = Number.isFinite(current) && current < desired ? "amount_plus" : "amount_minus";
+    const click = await clickUiTreeControl(control);
+    steps.push({ control, before: current, click });
+    if (!click?.ok) break;
+    await sleep(140);
+  }
+  await refreshUiTree(true);
+  const current = toNumber(getUiTreeSnapshot(5000)?.amount?.text);
+  return {
+    ok: Number.isFinite(current) && Math.abs(current - desired) < 0.0001,
+    method: "ui-tree:amount",
+    desired,
+    current,
+    steps,
+  };
+}
+
+async function setExpiryViaUi(targetLabel) {
+  const desired = normalizeText(targetLabel);
+  if (!desired) {
+    return { ok: false, method: "ui-tree:expiry", error: "invalid_expiry" };
+  }
+  const openPicker = await clickUiTreeControl("expiry_picker");
+  if (!openPicker?.ok) {
+    return { ok: false, method: "ui-tree:expiry", error: "expiry_picker_not_opened", openPicker };
+  }
+  await sleep(300);
+  const result = await runMainEval(buildMainUiEvalScript({
+    action: "expiry_time",
+    label: desired,
+  }), 3500);
+  if (!result?.ok || !result.value?.ok || !result.value?.click) {
+    return {
+      ok: false,
+      method: "ui-tree:expiry",
+      error: result?.error || result?.value?.error || "expiry_time_not_found",
+      openPicker,
+      picker: result?.value?.snapshot || null,
+    };
+  }
+  await sleep(350);
+  await refreshUiTree(true);
+  const after = getUiTreeSnapshot(5000);
+  return {
+    ok: normalizeText(after?.expiry?.text) === desired,
+    method: "ui-tree:expiry",
+    desired,
+    openPicker,
+    click: result.value?.click || null,
+    target: result.value?.target || null,
+    after,
+  };
 }
 
 async function tryNativeTrade(direction, payload = {}) {
@@ -774,7 +1511,11 @@ async function tryNativeTrade(direction, payload = {}) {
   const rejectionMessage = iqResponseMessage(socketResult);
   if (socketResult && (
     (socketResult.name === "result" && socketResult.success === false) ||
-    (socketResult.name === "option" && Number.isFinite(socketResult.status) && socketResult.status !== 0)
+    (
+      socketResult.name === "option" &&
+      Number.isFinite(socketResult.status) &&
+      ![0, 2000].includes(Number(socketResult.status))
+    )
   )) {
     const adjusted = updatePayoutFromCommissionPayload(socketResult.payload, "native-reject");
     const adjustedProfitPercent = Number(adjusted?.profitPercent);
@@ -813,6 +1554,24 @@ async function tryNativeTrade(direction, payload = {}) {
   }, 4500);
 
   if (!tradeEvidence) {
+    if (socketResult && socketResult.name === "option" && Number(socketResult.status) === 2000) {
+      return {
+        ok: true,
+        method: "native",
+        direction,
+        request: built.body,
+        requestId,
+        sendAck: sent,
+        socketResult,
+        tradeEvidence: {
+          ok: true,
+          source: "socket-option-status-2000",
+          confirmed: false,
+          note: "portfolio_confirmation_timeout",
+          event: socketResult,
+        },
+      };
+    }
     return {
       ok: false,
       method: "native",
@@ -838,9 +1597,21 @@ async function tryNativeTrade(direction, payload = {}) {
 }
 
 async function openNewOptionSurface() {
+  await refreshUiTree(true);
   const surface = detectTradeSurface();
   if (!surface.openNewOption?.likely && !shouldUseNewOptionFallback()) {
     return { ok: false, skipped: true, reason: "new_option_not_expected", surface };
+  }
+  const uiAttempt = await clickUiTreeControl("open_new_option");
+  if (uiAttempt?.ok) {
+    await sleep(180);
+    await refreshUiTree(true);
+    return {
+      ...uiAttempt,
+      command: "open_new_option",
+      method: "ui-tree",
+      surface,
+    };
   }
   const domAttempt = clickByText("nova opcao", false);
   if (domAttempt?.ok) {
@@ -849,6 +1620,18 @@ async function openNewOptionSurface() {
   }
   if (!surface.openNewOption?.likely) {
     return { ok: false, skipped: true, reason: "new_option_not_visible", surface };
+  }
+  if (surface.openNewOption?.candidate?.element) {
+    dispatchClickSequence(surface.openNewOption.candidate.element);
+    await sleep(140);
+    return {
+      ok: true,
+      command: "open_new_option",
+      method: "candidate-zone",
+      surface,
+      target: surface.openNewOption.candidate.descriptor,
+      score: surface.openNewOption.candidate.score,
+    };
   }
   const fallback = clickNamedControl("open_new_option");
   await sleep(140);
@@ -949,26 +1732,82 @@ async function clickTradeControl(side = "call", payload = {}) {
     };
   }
 
-  const preparedSurface = await ensureTradeSurfaceReady(action);
-  const candidates = collectTradeControlCandidates(action, 12);
-  if (candidates.length) {
-    const best = candidates[0];
-    dispatchClickSequence(best.element);
+    const preparedSurface = await ensureTradeSurfaceReady(action);
+    const baselineOpenCount = Number(state.trade.openPositionsCount || 0);
+    const startedAt = now();
+    const preferredControl = action === "call" ? "trade_call" : "trade_put";
+  const uiAttempt = await clickUiTreeControl(preferredControl);
+  if (uiAttempt?.ok) {
+    await sleep(120);
+    const tradeEvidence = await waitForTradeOpenEvidence({
+      activeId: Number(currentActiveId() || state.current.activeId),
+      direction: action,
+      amount: null,
+      baselineOpenCount,
+      startedAt,
+    }, 4500);
     return {
-      ok: true,
+      ...uiAttempt,
+      ok: !!tradeEvidence?.ok,
       command: `trade_${action}`,
-      method: "candidate",
       side: action,
+      method: "ui-tree",
       nativeAttempt,
       preparedSurface,
-      target: best.descriptor,
-      score: best.score,
-      candidates: candidates.map((item) => ({
-        score: item.score,
-        descriptor: item.descriptor,
-        bg: item.bg,
-      })),
+      tradeEvidence,
+      error: tradeEvidence?.ok ? null : "ui_tree_unconfirmed",
     };
+  }
+  const detectedSurface = detectTradeSurface();
+  const zonedCandidates = collectActionZoneCandidates(preferredControl, 12);
+  const candidates = [
+    ...(detectedSurface?.[preferredControl === "trade_call" ? "tradeCall" : "tradePut"]?.candidate
+      ? [detectedSurface[preferredControl === "trade_call" ? "tradeCall" : "tradePut"].candidate]
+      : []),
+    ...zonedCandidates,
+    ...collectTradeControlCandidates(action, 12),
+  ];
+  const uniqueCandidates = [];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const key = JSON.stringify(candidate?.descriptor?.rect || candidate?.rect || candidate?.descriptor || {});
+    if (seen.has(key)) continue;
+    seen.add(key);
+    uniqueCandidates.push(candidate);
+  }
+  if (uniqueCandidates.length) {
+    const best = uniqueCandidates[0];
+    const rect = best.descriptor?.rect || best.rect;
+    if (rect) {
+      const point = normalizeViewportPoint(rect.left + (rect.width / 2), rect.top + (rect.height / 2), state.layout.viewport);
+      if (point) rememberLayoutAnchor(preferredControl, point, { source: "candidate-zone" });
+    }
+      dispatchClickSequence(best.element);
+      const tradeEvidence = await waitForTradeOpenEvidence({
+        activeId: Number(currentActiveId() || state.current.activeId),
+        direction: action,
+        amount: null,
+        baselineOpenCount,
+        startedAt,
+      }, 4500);
+      return {
+        ok: !!tradeEvidence?.ok,
+        command: `trade_${action}`,
+        method: "candidate-zone",
+        side: action,
+        nativeAttempt,
+        preparedSurface,
+        target: best.descriptor,
+        score: best.score,
+        tradeEvidence,
+        error: tradeEvidence?.ok ? null : "candidate_zone_unconfirmed",
+        candidates: uniqueCandidates.map((item) => ({
+          score: item.score,
+          descriptor: item.descriptor,
+          bg: item.bg,
+          colorKind: item.colorKind || "",
+        })),
+      };
   }
 
   const steps = [];
@@ -978,17 +1817,38 @@ async function clickTradeControl(side = "call", payload = {}) {
   }
 
   const controlName = action === "call" ? "trade_call" : "trade_put";
-  const clicked = clickNamedControl(controlName);
-  return {
-    ...clicked,
-    command: `trade_${action}`,
-    method: "anchor",
-    side: action,
-    steps,
-    nativeAttempt,
-    preparedSurface,
-  };
-}
+    const clicked = clickNamedControl(controlName);
+    if (!clicked?.ok) {
+      return {
+        ...clicked,
+        command: `trade_${action}`,
+        method: "anchor",
+        side: action,
+        steps,
+        nativeAttempt,
+        preparedSurface,
+      };
+    }
+    const tradeEvidence = await waitForTradeOpenEvidence({
+      activeId: Number(currentActiveId() || state.current.activeId),
+      direction: action,
+      amount: null,
+      baselineOpenCount,
+      startedAt,
+    }, 4500);
+    return {
+      ...clicked,
+      ok: !!tradeEvidence?.ok,
+      command: `trade_${action}`,
+      method: "anchor",
+      side: action,
+      steps,
+      nativeAttempt,
+      preparedSurface,
+      tradeEvidence,
+      error: tradeEvidence?.ok ? null : "anchor_unconfirmed",
+    };
+  }
 
 function getIdsSnapshot() {
   return {
@@ -1291,13 +2151,95 @@ function parseRgb(value) {
   };
 }
 
+function colorKindFromRgb(bg) {
+  if (!bg) return "";
+  const { r, g, b } = bg;
+  if (g > r + 25 && g > b + 20) return "green";
+  if (r > g + 25 && r > b + 10) return "red";
+  if (r >= 170 && g >= 90 && g <= 210 && b <= 140) return "orange";
+  return "";
+}
+
+function controlZoneHint(name) {
+  return CONTROL_ZONE_HINTS[name] || null;
+}
+
+function rectCenterNorm(rect) {
+  return {
+    x: (rect.left + (rect.width / 2)) / Math.max(window.innerWidth, 1),
+    y: (rect.top + (rect.height / 2)) / Math.max(window.innerHeight, 1),
+  };
+}
+
+function isRectInsideHint(rect, hint) {
+  if (!rect || !hint) return false;
+  const center = rectCenterNorm(rect);
+  return (
+    center.x >= hint.xMin &&
+    center.x <= hint.xMax &&
+    center.y >= hint.yMin &&
+    center.y <= hint.yMax
+  );
+}
+
+function scoreControlCandidateForName(name, element) {
+  if (!element || !isVisibleElement(element)) return null;
+  const hint = controlZoneHint(name);
+  if (!hint) return null;
+  const rect = element.getBoundingClientRect();
+  if (rect.width < 40 || rect.height < 40) return null;
+  if (!isRectInsideHint(rect, hint)) return null;
+  const text = buildElementText(element).toLowerCase();
+  const style = window.getComputedStyle(element);
+  const bg = parseRgb(style.backgroundColor);
+  const colorKind = colorKindFromRgb(bg);
+  const center = rectCenterNorm(rect);
+  const textScore = hint.texts.some((item) => text.includes(item)) ? 8 : 0;
+  const colorScore = colorKind === hint.color ? 5 : (hint.color === "orange" && colorKind === "red" ? 1 : 0);
+  const anchor = DEFAULT_CONTROL_ANCHORS[name];
+  const dx = Math.abs(center.x - anchor.x);
+  const dy = Math.abs(center.y - anchor.y);
+  const geometryScore = Math.max(0, 4 - (dx * 10) - (dy * 12));
+  const interactableScore = isInteractableElement(element) ? 1.5 : 0;
+  const areaScore = Math.min((rect.width * rect.height) / 26000, 2);
+  const score = textScore + colorScore + geometryScore + interactableScore + areaScore;
+  return {
+    element,
+    descriptor: buildElementDescriptor(element, 0),
+    rect,
+    text,
+    bg,
+    colorKind,
+    score: Number(score.toFixed(3)),
+  };
+}
+
+function collectActionZoneCandidates(name, limit = 12) {
+  const candidates = [];
+  const baseRoot = document.body || document.documentElement;
+  walkRoots(baseRoot, (root) => {
+    const elements = root.querySelectorAll?.("*") || [];
+    for (const element of elements) {
+      if (candidates.length >= limit * 6) break;
+      if (element.id === ROOT_ID || element.closest?.(`#${ROOT_ID}`)) continue;
+      const scored = scoreControlCandidateForName(name, element);
+      if (!scored || scored.score < 3.2) continue;
+      candidates.push(scored);
+    }
+  });
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates.slice(0, limit);
+}
+
 function collectTradeControlCandidates(side = "call", limit = 30) {
   const isCall = String(side || "").toLowerCase() !== "put";
+  const preferredControl = isCall ? "trade_call" : "trade_put";
+  const defaultAnchor = DEFAULT_CONTROL_ANCHORS[preferredControl] || { x: 0.91, y: isCall ? 0.42 : 0.56 };
   const textHints = isCall
     ? ["acima", "call", "up", "higher", "alto"]
     : ["abaixo", "put", "down", "lower", "baixo"];
-  const idealY = isCall ? 0.54 : 0.71;
-  const idealX = 0.91;
+  const idealY = defaultAnchor.y;
+  const idealX = defaultAnchor.x;
   const candidates = [];
   const baseRoot = document.body || document.documentElement;
   walkRoots(baseRoot, (root) => {
@@ -1633,6 +2575,10 @@ function rememberTransport(kind, payload) {
     if (data?.name === "sendMessage" && msg?.name === "update-user-availability") {
       const id = Number(msg?.body?.selected_asset_id);
       const type = msg?.body?.selected_asset_type ?? null;
+      state.trade.lastAvailabilityTemplate = {
+        ...(msg?.body || {}),
+        capturedAt: now(),
+      };
       if (updateIdState("selected", id, { type, reason: "update-user-availability" })) {
         extractedSignals.push({ role: "selected", id, type, reason: "update-user-availability" });
       }
@@ -1641,6 +2587,12 @@ function rememberTransport(kind, payload) {
       rememberUserBalanceId(msg?.body?.user_balance_id, `sendMessage.${msg?.name}`);
     }
     if (data?.name === "sendMessage" && msg?.name === "set-user-settings") {
+      if (msg?.body?.name === "traderoom_gl_grid" && msg?.body?.config) {
+        state.trade.lastGridSettingsTemplate = {
+          ...msg.body,
+          capturedAt: now(),
+        };
+      }
       const config = msg?.body?.config || {};
       const selectedId = Number(config?.selectedActiveId ?? config?.plotters?.[0]?.activeId);
       const selectedType = config?.selectedActiveType ?? config?.plotters?.[0]?.activeType ?? null;
@@ -1733,6 +2685,24 @@ function inferOtcForActive(activeId, preferredMarket = "") {
 
   const meta = state.assetMeta[activeId] || {};
   if (meta.otcHint) return true;
+
+  if (preferred.includes("blitz") || preferred.includes("binary") || preferred.includes("turbo") || preferred.includes("digital")) return false;
+
+  const selectedType = String(state.ids.selectedAssetType || "").toLowerCase();
+  if (
+    selectedType.includes("blitz")
+    || selectedType.includes("binary")
+    || selectedType.includes("turbo")
+    || selectedType.includes("digital")
+    || selectedType === "1"
+    || selectedType === "3"
+    || selectedType === "7"
+  ) {
+    return false;
+  }
+
+  if (liveMarket.includes("blitz") || liveMarket.includes("binary") || liveMarket.includes("turbo") || liveMarket.includes("digital")) return false;
+  if (cachedMarket.includes("blitz") || cachedMarket.includes("binary") || cachedMarket.includes("turbo") || cachedMarket.includes("digital")) return false;
 
   return false;
 }
@@ -1861,6 +2831,7 @@ function ensureLiveEntry(activeId) {
       priceSource: "",
       priceAt: 0,
       payoutPct: null,
+      payoutSource: "",
       payoutAt: 0,
       marketType: "",
       marketTypeAt: 0,
@@ -1893,6 +2864,67 @@ function updateLiveEntry(activeId, patch = {}) {
   Object.assign(entry, patch);
   entry.updatedAt = stamp;
   return entry;
+}
+
+function payoutSourceRank(source = "") {
+  const text = String(source || "").toLowerCase();
+  if (text.includes("actual_commission")) return 100;
+  if (text.includes("option-result")) return 95;
+  if (text.includes("trading-params:commissions")) return 92;
+  if (text.includes("trading-params:spot_profits")) return 88;
+  if (text.includes("top-assets-updated")) return 82;
+  if (text.includes("net:")) return 70;
+  if (text.includes("candles")) return 60;
+  return 50;
+}
+
+function payoutSourceFreshnessMs(source = "") {
+  const text = String(source || "").toLowerCase();
+  if (text.includes("actual_commission")) return 10 * 60 * 1000;
+  if (text.includes("option-result")) return 10 * 60 * 1000;
+  if (text.includes("trading-params:spot_profits")) return 5 * 60 * 1000;
+  if (text.includes("trading-params:commissions")) return 5 * 60 * 1000;
+  if (text.includes("top-assets-updated")) return 20 * 1000;
+  if (text.includes("net:")) return 20 * 1000;
+  if (text.includes("candles")) return 8 * 1000;
+  return 6 * 1000;
+}
+
+function isPayoutEntryFresh(entry) {
+  if (!entry || !Number.isFinite(entry?.payoutPct)) return false;
+  const payoutAt = Number(entry?.payoutAt || 0);
+  if (!payoutAt) return false;
+  return (now() - payoutAt) <= payoutSourceFreshnessMs(entry?.payoutSource || "");
+}
+
+function setPayoutForActive(activeId, payoutPct, source = "") {
+  if (!Number.isFinite(activeId)) return;
+  const normalized = Number(payoutPct);
+  if (!Number.isFinite(normalized) || normalized < 1 || normalized > 100) return;
+  const entry = ensureLiveEntry(activeId);
+  const currentRank = payoutSourceRank(entry?.payoutSource || "");
+  const nextRank = payoutSourceRank(source);
+  const isFresh = isPayoutEntryFresh(entry);
+  if (
+    Number.isFinite(entry?.payoutPct)
+    && isFresh
+    && currentRank > nextRank
+    && Math.abs(Number(entry.payoutPct) - normalized) > 0.001
+  ) {
+    return;
+  }
+  updateLiveEntry(activeId, { payoutPct: normalized, payoutSource: source || "" });
+  state.marketCache[activeId] = {
+    ...(state.marketCache[activeId] || {}),
+    payoutPct: normalized,
+    payoutSource: source || "",
+    updatedAt: now(),
+  };
+  if (shouldPromoteFocusedActive(activeId)) {
+    state.live.payoutPct = normalized;
+    state.live.payoutSource = source || "";
+    state.live.payoutAt = now();
+  }
 }
 
 function shouldPromoteFocusedActive(activeId) {
@@ -1947,6 +2979,13 @@ function harvestLiveMarketData(data) {
   if (data?.name === "candle-generated") {
     const activeId = Number(msg?.active_id);
     const price = [msg?.close, msg?.ask, msg?.bid, msg?.open].find((value) => Number.isFinite(value));
+    const candleId = Number(msg?.id);
+    if (Number.isFinite(activeId) && Number.isFinite(candleId)) {
+      updateLiveEntry(activeId, { lastCandleId: candleId });
+      if (shouldPromoteFocusedActive(activeId)) {
+        state.live.lastCandleId = candleId;
+      }
+    }
     setLivePrice(activeId, price, "ws:candle-generated");
     return;
   }
@@ -1955,13 +2994,44 @@ function harvestLiveMarketData(data) {
     visitStructured(msg, (node) => {
       const activeId = Number(node?.active_id ?? node?.asset_id);
       const price = [node?.close, node?.ask, node?.bid, node?.open, node?.value].find((value) => Number.isFinite(value));
+      const candleId = Number(node?.id);
+      if (Number.isFinite(activeId) && Number.isFinite(candleId)) {
+        updateLiveEntry(activeId, { lastCandleId: candleId });
+        if (shouldPromoteFocusedActive(activeId)) {
+          state.live.lastCandleId = candleId;
+        }
+      }
       if (Number.isFinite(activeId) && Number.isFinite(price)) {
         setLivePrice(activeId, price, "ws:candles-generated");
       }
       if (Number.isFinite(node?.spot_profit) && Number.isFinite(activeId)) {
-        updateLiveEntry(activeId, { payoutPct: node.spot_profit });
+        setPayoutForActive(activeId, node.spot_profit, "ws:candles-generated");
       }
     });
+    return;
+  }
+
+  if (data?.name === "trading-params") {
+    if (Array.isArray(msg?.spot_profits)) {
+      for (const item of msg.spot_profits) {
+        const activeId = Number(item?.active_id);
+        const profit = Number(item?.profit);
+        if (Number.isFinite(activeId) && Number.isFinite(profit)) {
+          setPayoutForActive(activeId, profit, "ws:trading-params:spot_profits");
+        }
+      }
+    }
+    if (Array.isArray(msg?.commissions)) {
+      for (const item of msg.commissions) {
+        const activeId = Number(item?.active_id);
+        const rawCommission = item?.value ?? item?.commission;
+        const commissionValue = Number(rawCommission);
+        const payoutPct = commissionToProfitPercent(commissionValue);
+        if (Number.isFinite(activeId) && Number.isFinite(payoutPct) && payoutPct > 0) {
+          setPayoutForActive(activeId, payoutPct, "ws:trading-params:commissions");
+        }
+      }
+    }
     return;
   }
 
@@ -1969,6 +3039,13 @@ function harvestLiveMarketData(data) {
     const activeId = Number(msg?.active_id ?? state.ids.quoteActiveId ?? state.ids.selectedAssetId);
     const candle = msg.candles[msg.candles.length - 1];
     const price = [candle?.close, candle?.ask, candle?.bid, candle?.open].find((value) => Number.isFinite(value));
+    const candleId = Number(candle?.id ?? msg?.to_id);
+    if (Number.isFinite(activeId) && Number.isFinite(candleId)) {
+      updateLiveEntry(activeId, { lastCandleId: candleId });
+      if (shouldPromoteFocusedActive(activeId)) {
+        state.live.lastCandleId = candleId;
+      }
+    }
     if (Number.isFinite(activeId) && Number.isFinite(price)) {
       setLivePrice(activeId, price, "ws:candles");
     }
@@ -1981,13 +3058,16 @@ function harvestLiveMarketData(data) {
       if (!Number.isFinite(activeId)) continue;
       state.marketCache[activeId] = {
         payoutPct: Number.isFinite(item?.spot_profit) ? item.spot_profit : null,
+        payoutSource: Number.isFinite(item?.spot_profit) ? "ws:top-assets-updated" : "",
         marketType: typeof msg?.instrument_type === "string" ? msg.instrument_type : "",
         currentPrice: Number.isFinite(item?.cur_price) ? item.cur_price : null,
         tradersMood: Number.isFinite(item?.traders_mood) ? item.traders_mood : null,
         updatedAt: now(),
       };
+      if (Number.isFinite(item?.spot_profit)) {
+        setPayoutForActive(activeId, item.spot_profit, "ws:top-assets-updated");
+      }
       updateLiveEntry(activeId, {
-        payoutPct: Number.isFinite(item?.spot_profit) ? item.spot_profit : null,
         marketType: typeof msg?.instrument_type === "string" ? msg.instrument_type : "",
       });
     }
@@ -1997,9 +3077,6 @@ function harvestLiveMarketData(data) {
       const activeId = Number(preferred?.active_id);
       const price = [preferred?.cur_price, preferred?.close, preferred?.price].find((value) => Number.isFinite(value));
       setLivePrice(activeId, price, "ws:top-assets-updated");
-      if (Number.isFinite(preferred?.spot_profit) && shouldPromoteFocusedActive(activeId)) {
-        state.live.payoutPct = preferred.spot_profit;
-      }
       if (typeof msg?.instrument_type === "string" && shouldPromoteFocusedActive(activeId)) {
         state.live.marketType = msg.instrument_type;
       }
@@ -2031,10 +3108,7 @@ function harvestLiveMarketData(data) {
         }
         if (Number.isFinite(node?.spot_profit)) {
           if (Number.isFinite(activeId)) {
-            updateLiveEntry(activeId, { payoutPct: node.spot_profit });
-            if (shouldPromoteFocusedActive(activeId)) {
-              state.live.payoutPct = node.spot_profit;
-            }
+            setPayoutForActive(activeId, node.spot_profit, `net:${data.url}`);
           }
         }
       });
@@ -2145,8 +3219,6 @@ function findMainCanvas() {
 
 async function maybeSendCanvasFrame() {
   const minInterval = Math.max(1200, Number(state.config.frameMinIntervalMs) || 2500);
-  if (now() - state.canvasCapture.lastSentAt < minInterval) return;
-
   const main = findMainCanvas();
   state.canvasCapture.lastCanvasMeta = main
     ? {
@@ -2157,12 +3229,28 @@ async function maybeSendCanvasFrame() {
       }
     : null;
 
-  if (!main?.canvas) return;
+  const current = state.current || {};
+  const resolution = resolveActiveContext();
+  const captureKey = JSON.stringify({
+    activeId: resolution.activeId ?? null,
+    asset: current.asset || "-",
+    marketType: current.marketType || "-",
+    selectedAt: state.ids.selectedAssetAt || 0,
+  });
+  const inconsistent =
+    !current.healthFlags?.assetDetected
+    || !current.healthFlags?.payoutDetected
+    || !current.healthFlags?.marketDetected
+    || !!current.healthFlags?.selectionConsistent === false;
+  const due = (now() - state.canvasCapture.lastSentAt) >= minInterval;
+  const changed = captureKey !== state.canvasCapture.lastCaptureKey;
+  if (!changed && !due && !inconsistent) return;
 
   try {
-    const dataUrl = main.canvas.toDataURL("image/jpeg", 0.55);
-    if (!dataUrl || dataUrl.length < 1500) return;
+    setOverlayCaptureHidden(true);
+    await sleep(80);
     state.canvasCapture.lastSentAt = now();
+    state.canvasCapture.lastCaptureKey = captureKey;
     state.canvasCapture.lastError = "";
     await chrome.runtime.sendMessage({
       type: "rediq:frame",
@@ -2172,12 +3260,18 @@ async function maybeSendCanvasFrame() {
         mode: state.current.mode,
         payoutPct: state.current.payoutPct,
         countdown: state.current.countdown,
+        activeId: current.activeId ?? null,
+        tickAgeMs: current.tickAgeMs ?? null,
+        healthFlags: current.healthFlags || {},
+        uiFlags: current.uiFlags || {},
         canvas: state.canvasCapture.lastCanvasMeta,
-        imageDataUrl: dataUrl,
+        imageDataUrl: "",
       },
     }).catch(() => {});
   } catch (error) {
     state.canvasCapture.lastError = String(error);
+  } finally {
+    setOverlayCaptureHidden(false);
   }
 }
 
@@ -2470,6 +3564,11 @@ function detectMode(bodyText) {
 }
 
 function detectAsset(textNodes, bodyText) {
+  const uiTree = getUiTreeSnapshot(3000);
+  const uiSelected = normalizeText(uiTree?.selected?.text || "");
+  if (uiSelected) {
+    return uiSelected.replace(/\s+\(OTC\)/i, "-OTC");
+  }
   const activeId = currentActiveId();
   if (Number.isFinite(activeId)) {
     return buildAssetLabel(activeId);
@@ -2493,6 +3592,13 @@ function detectAsset(textNodes, bodyText) {
 }
 
 function detectMarketType(textNodes, bodyText, asset) {
+  const uiTree = getUiTreeSnapshot(3000);
+  const uiOptionType = normalizeText(uiTree?.optionType?.text || "").toLowerCase();
+  if (uiOptionType) {
+    if (uiOptionType.includes("blitz")) return "Blitz";
+    if (uiOptionType.includes("digital")) return "Digital";
+    if (uiOptionType.includes("binaria") || uiOptionType.includes("binarias") || uiOptionType.includes("binary") || uiOptionType.includes("turbo")) return "Binaria";
+  }
   const activeId = currentActiveId();
   if (Number.isFinite(activeId) && state.liveBook[activeId]?.marketType && isFieldFreshForSelection(activeId, state.liveBook[activeId]?.marketTypeAt)) {
     const market = String(state.liveBook[activeId].marketType).toLowerCase();
@@ -2531,23 +3637,52 @@ function detectMarketType(textNodes, bodyText, asset) {
 }
 
 function detectPayout(textNodes, bodyText) {
+  const uiTree = getUiTreeSnapshot(3000);
+  const uiPayout = toNumber(uiTree?.payout?.text);
+  if (Number.isFinite(uiPayout) && uiPayout >= 1 && uiPayout <= 100) {
+    return uiPayout;
+  }
   const activeId = currentActiveId();
-  if (Number.isFinite(activeId) && Number.isFinite(state.liveBook[activeId]?.payoutPct)) {
+  if (
+    Number.isFinite(activeId)
+    && Number.isFinite(state.liveBook[activeId]?.payoutPct)
+    && isPayoutEntryFresh(state.liveBook[activeId])
+  ) {
     return state.liveBook[activeId].payoutPct;
   }
-  if (Number.isFinite(activeId) && Number.isFinite(state.marketCache[activeId]?.payoutPct)) {
+  if (
+    Number.isFinite(activeId)
+    && Number.isFinite(state.marketCache[activeId]?.payoutPct)
+    && ((now() - Number(state.marketCache[activeId]?.updatedAt || 0)) <= payoutSourceFreshnessMs(state.marketCache[activeId]?.payoutSource || ""))
+  ) {
     return state.marketCache[activeId].payoutPct;
   }
-  if (!Number.isFinite(activeId) && Number.isFinite(state.live.payoutPct)) {
+  if (
+    Number.isFinite(activeId)
+    && Number(state.live.activeId) === activeId
+    && Number.isFinite(state.live.payoutPct)
+    && state.live.payoutAt
+    && ((now() - Number(state.live.payoutAt || 0)) <= payoutSourceFreshnessMs(state.live.payoutSource || ""))
+  ) {
+    return state.live.payoutPct;
+  }
+  if (
+    !Number.isFinite(activeId)
+    && Number.isFinite(state.live.payoutPct)
+    && state.live.payoutAt
+    && ((now() - Number(state.live.payoutAt || 0)) <= payoutSourceFreshnessMs(state.live.payoutSource || ""))
+  ) {
     return state.live.payoutPct;
   }
   const values = [];
   const source = getAllSignalTexts(textNodes, bodyText).join(" ");
   for (const match of source.matchAll(/([+]?)\b(\d{1,3})%/g)) {
     const value = Number(match[2]);
-    if (value >= 20 && value <= 95) values.push(value);
+    if (value >= 50 && value <= 95) values.push(value);
   }
-  return values.length ? Math.max(...values) : null;
+  if (!values.length) return null;
+  values.sort((left, right) => right - left);
+  return values[0];
 }
 
 function detectCountdown(textNodes, bodyText) {
@@ -2705,6 +3840,14 @@ function renderSparkline(canvas, ticks) {
   ctx.fill();
 }
 
+function setOverlayCaptureHidden(hidden) {
+  const root = document.getElementById(ROOT_ID);
+  if (!root) return;
+  root.dataset.captureHidden = hidden ? "1" : "0";
+  root.style.opacity = hidden ? "0" : "";
+  root.style.pointerEvents = hidden ? "none" : "";
+}
+
 function render() {
   ensureUi();
   const root = document.getElementById(ROOT_ID);
@@ -2745,6 +3888,8 @@ function snapshotState() {
   collectStorageSignals();
   const textNodes = collectVisibleTextNodes();
   const bodyText = getBodyText();
+  const uiTree = getUiTreeSnapshot(3000);
+  const tradeSurface = detectTradeSurface();
   const resolution = resolveActiveContext();
   const resolvedActiveId = resolution.activeId;
   const mode = detectMode(bodyText);
@@ -2775,6 +3920,24 @@ function snapshotState() {
   const suspendedHint = detectSuspendedHint(textNodes, bodyText);
   const buyWindowOpen = countdown.totalSeconds != null ? countdown.totalSeconds > 0 : !suspendedHint;
   const pulse = computePulse();
+  const uiFlags = {
+    ...summarizeTradeSurface(tradeSurface),
+    hasResultOverlay: !!tradeSurface?.openNewOption?.likely,
+    tradeSurfaceReady: !!(tradeSurface?.tradeCall?.likely && tradeSurface?.tradePut?.likely),
+  };
+  const healthFlags = {
+    assetDetected: asset !== "-",
+    priceDetected: Number.isFinite(price),
+    payoutDetected: Number.isFinite(payoutPct),
+    marketDetected: marketType !== "-",
+    countdownDetected: countdown.totalSeconds != null,
+    selectionConsistent: !(
+      Number.isFinite(resolvedActiveId)
+      && Number.isFinite(state.live.activeId)
+      && resolvedActiveId !== state.live.activeId
+    ),
+    readyToTrade: !suspendedHint && !!buyWindowOpen && Number.isFinite(price),
+  };
 
   const notes = [];
   if (asset === "-") notes.push("Ativo ainda nao reconhecido no DOM ou no fluxo da pagina.");
@@ -2803,11 +3966,16 @@ function snapshotState() {
     asset,
     marketType,
     payoutPct,
+    selectedAmount: toNumber(uiTree?.amount?.text),
+    selectedExpiry: normalizeText(uiTree?.expiry?.text || "") || "-",
     countdown: countdown.label,
     currentPrice: price,
+    activeId: Number.isFinite(resolvedActiveId) ? resolvedActiveId : null,
     tickAgeMs,
     buyWindowOpen,
     suspendedHint,
+    uiFlags,
+    healthFlags,
     entryHint: buildEntryHint({ mode, currentPrice: price, suspendedHint, buyWindowOpen }),
     notes,
     updatedAt: now(),
@@ -2816,12 +3984,31 @@ function snapshotState() {
       sampleTexts: textNodes.slice(0, 18).map((item) => item.text),
       bodySnippet: bodyText.slice(0, 600),
       priceCandidate: priceCandidate ? { text: priceCandidate.text, value: priceCandidate.value, source: priceCandidate.source } : null,
+      uiTree: uiTree ? {
+        selected: uiTree.selected || null,
+        optionType: uiTree.optionType || null,
+        amount: uiTree.amount || null,
+        expiry: uiTree.expiry || null,
+        payout: uiTree.payout || null,
+        call: uiTree.call || null,
+        put: uiTree.put || null,
+        newOption: uiTree.newOption || null,
+        topTabs: uiTree.topTabs || [],
+      } : null,
       livePrice: Number.isFinite(state.live.currentPrice)
         ? {
             value: state.live.currentPrice,
             source: state.live.priceSource,
             activeId: state.live.activeId,
             ageMs: state.live.lastAt ? now() - state.live.lastAt : null,
+          }
+        : null,
+      livePayout: Number.isFinite(state.live.payoutPct)
+        ? {
+            value: state.live.payoutPct,
+            source: state.live.payoutSource || "",
+            activeId: state.live.activeId,
+            ageMs: state.live.payoutAt ? now() - state.live.payoutAt : null,
           }
         : null,
       canvasLastMessageAgeMs: state.canvasText.lastMessageAt ? now() - state.canvasText.lastMessageAt : null,
@@ -2883,15 +4070,42 @@ function snapshotState() {
 async function pushState() {
   if (now() - state.lastSentAt < state.config.sendIntervalMs) return;
   state.lastSentAt = now();
+  const current = state.current || {};
+  const debug = current.debug || {};
   await chrome.runtime.sendMessage({
     type: "rediq:state",
     payload: {
-      ...state.current,
+      mode: current.mode,
+      demoAllowed: current.demoAllowed,
+      asset: current.asset,
+      marketType: current.marketType,
+      payoutPct: current.payoutPct,
+      selectedAmount: current.selectedAmount,
+      selectedExpiry: current.selectedExpiry,
+      countdown: current.countdown,
+      currentPrice: current.currentPrice,
+      activeId: current.activeId ?? null,
+      tickAgeMs: current.tickAgeMs,
+      buyWindowOpen: current.buyWindowOpen,
+      suspendedHint: current.suspendedHint,
+      entryHint: current.entryHint,
+      notes: Array.isArray(current.notes) ? current.notes.slice(0, 6) : [],
+      updatedAt: current.updatedAt,
+      uiFlags: current.uiFlags || {},
+      healthFlags: current.healthFlags || {},
       pulse: computePulse(),
       ticks: state.ticks.slice(-60),
       pageTitle: document.title,
       href: location.href,
       domFreshnessMs: now() - state.lastDomMutationAt,
+      debug: {
+        ids: debug.ids || {},
+        resolution: debug.resolution || null,
+        livePrice: debug.livePrice || null,
+        livePayout: debug.livePayout || null,
+        priceCandidate: debug.priceCandidate || null,
+        textNodeCount: debug.textNodeCount ?? null,
+      },
     },
   }).catch(() => {});
 }
@@ -2909,6 +4123,7 @@ async function loadConfig() {
 
 function loop() {
   if (!state.config.enabled) return;
+  refreshUiTree(false).catch(() => {});
   snapshotState();
   render();
   pushState();
@@ -2985,19 +4200,37 @@ async function boot() {
         result.bodySnippet = bodyText.slice(0, 5000);
       } else if (command === "list_targets") {
         result.targets = collectInteractableTargets(200).map((item) => item.descriptor);
-      } else if (command === "click_text" || command === "switch_asset") {
+      } else if (command === "click_text") {
         const targetText = message.payload?.text || message.payload?.asset || "";
         Object.assign(result, clickByText(targetText, !!message.payload?.exact));
+      } else if (command === "switch_asset") {
+        const targetText = message.payload?.text || message.payload?.asset || "";
+        const switched = await switchAssetViaUi(targetText);
+        if (switched?.ok) {
+          Object.assign(result, switched);
+        } else {
+          Object.assign(result, switched || {});
+          if (!switched?.ok) {
+            Object.assign(result, clickByText(targetText, !!message.payload?.exact));
+          }
+        }
       } else if (command === "click_selector") {
         Object.assign(result, clickBySelector(message.payload?.selector || ""));
       } else if (command === "click_point") {
         Object.assign(result, clickByPoint(message.payload?.x, message.payload?.y));
       } else if (command === "click_control") {
-        Object.assign(result, clickNamedControl(String(message.payload?.control || "")));
+        const smartClick = await clickUiTreeControl(String(message.payload?.control || ""));
+        if (smartClick?.ok) {
+          Object.assign(result, smartClick);
+        } else {
+          Object.assign(result, clickNamedControl(String(message.payload?.control || "")));
+        }
       } else if (command === "probe_points") {
         result.points = probePoints(message.payload?.points || []);
       } else if (command === "scan_trade_controls") {
+        await refreshUiTree(true);
         result.surface = detectTradeSurface();
+        result.uiTree = getUiTreeSnapshot(6000);
         result.callCandidates = collectTradeControlCandidates("call", 12).map((item) => ({
           score: item.score,
           descriptor: item.descriptor,
@@ -3019,10 +4252,23 @@ async function boot() {
         Object.assign(result, await clickTradeControl("call", message.payload || {}));
       } else if (command === "trade_put") {
         Object.assign(result, await clickTradeControl("put", message.payload || {}));
+      } else if (command === "native_select_asset") {
+        Object.assign(result, await nativeSelectAsset(message.payload || {}));
       } else if (command === "amount_plus" || command === "amount_minus" || command === "expiry_plus" || command === "expiry_minus") {
-        Object.assign(result, clickNamedControl(command));
+        const smartClick = await clickUiTreeControl(command);
+        if (smartClick?.ok) {
+          Object.assign(result, smartClick);
+        } else {
+          Object.assign(result, clickNamedControl(command));
+        }
+      } else if (command === "set_amount") {
+        Object.assign(result, await setAmountViaUi(message.payload?.amount ?? message.payload?.value));
+      } else if (command === "set_expiry") {
+        Object.assign(result, await setExpiryViaUi(message.payload?.text ?? message.payload?.value ?? message.payload?.expiry));
       } else if (command === "eval_js") {
         result.evalResult = runEvalScript(String(message.payload?.source || message.payload?.script || ""), message.payload?.payload || {});
+      } else if (command === "main_eval") {
+        result.mainEval = await runMainEval(String(message.payload?.source || message.payload?.script || message.payload?.code || ""), Number(message.payload?.timeoutMs || 3000));
       } else if (command === "dump_transport") {
         result.transportSamples = state.transport.samples.slice(-80);
         result.wsSamples = state.ws.samples.slice(-60);
@@ -3041,6 +4287,21 @@ async function boot() {
         Object.assign(result, buildRawSnapshot(textNodes, bodyText));
       }
 
+      snapshotState();
+      result.current = state.current;
+      result.ids = getIdsSnapshot();
+      result.live = state.live;
+      result.liveBook = state.liveBook;
+      result.resolution = resolveActiveContext();
+      result.assetMap = state.assetMap;
+      result.assetMeta = state.assetMeta;
+      result.marketCache = state.marketCache;
+      result.layout = {
+        viewport: state.layout.viewport,
+        anchors: state.layout.anchors,
+        clicks: state.layout.clicks.slice(-20),
+      };
+      result.trade = state.trade;
       sendResponse(result);
     })().catch((error) => {
       sendResponse({ ok: false, error: String(error) });

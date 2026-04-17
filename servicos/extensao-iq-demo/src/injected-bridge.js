@@ -92,6 +92,37 @@
             error: String(error),
           });
         }
+        return;
+      }
+
+      if (command === "eval-main") {
+        const code = String(data.payload?.payload?.code || data.payload?.code || "");
+        try {
+          const value = Function(`"use strict"; return (${code});`)();
+          emit("ws-command-result", {
+            id,
+            command,
+            ok: true,
+            result: { value },
+          });
+        } catch (error1) {
+          try {
+            const value = Function(String(code))();
+            emit("ws-command-result", {
+              id,
+              command,
+              ok: true,
+              result: { value },
+            });
+          } catch (error2) {
+            emit("ws-command-result", {
+              id,
+              command,
+              ok: false,
+              error: String(error2 || error1),
+            });
+          }
+        }
       }
     });
   };

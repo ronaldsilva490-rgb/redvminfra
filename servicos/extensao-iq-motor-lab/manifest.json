@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "RED IQ Demo Vision",
-  "description": "Overlay em tempo real para ler a IQ Option demo e preparar análise manual-like.",
-  "version": "0.1.41",
+  "name": "RED IQ Motor Lab",
+  "description": "Motor secundario de experimentacao remota para a IQ demo, controlado por JSON via bridge.",
+  "version": "0.0.6",
   "permissions": [
     "storage",
     "tabs",
@@ -10,10 +10,8 @@
     "activeTab"
   ],
   "host_permissions": [
-    "<all_urls>",
     "https://iqoption.com/*",
     "https://*.iqoption.com/*",
-    "http://redsystems.ddns.net:3115/*",
     "http://redsystems.ddns.net/iq-bridge/*"
   ],
   "background": {
@@ -21,8 +19,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "RED IQ Demo Vision",
-    "default_popup": "src/popup.html"
+    "default_title": "RED IQ Motor Lab"
   },
   "content_scripts": [
     {
@@ -31,23 +28,22 @@
         "https://*.iqoption.com/*"
       ],
       "js": [
-        "src/injected-bridge.js"
-      ],
-      "run_at": "document_start",
-      "world": "MAIN"
-    },
-    {
-      "matches": [
-        "https://iqoption.com/*",
-        "https://*.iqoption.com/*"
-      ],
-      "js": [
         "src/content.js"
-      ],
-      "css": [
-        "src/overlay.css"
       ],
       "run_at": "document_start"
     }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/injected-bridge.js"
+      ],
+      "matches": [
+        "https://iqoption.com/*",
+        "https://*.iqoption.com/*"
+      ]
+    }
   ]
 }
+
+

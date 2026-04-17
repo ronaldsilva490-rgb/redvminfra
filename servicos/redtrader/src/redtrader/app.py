@@ -34,8 +34,9 @@ async def lifespan(_app: FastAPI):
         yield
     finally:
         await runtime.stop()
+        await runtime.iq_extension_adapter.close()
+        await runtime.iq_bridge.close()
         await runtime.platforms.close()
-        await runtime.iqoption.close()
         await runtime.market.close()
         await runtime.news_client.close()
         await runtime.ai.close()
@@ -171,6 +172,17 @@ async def models() -> dict[str, Any]:
 @app.post("/api/platforms/refresh")
 async def refresh_platforms() -> dict[str, Any]:
     return {"ok": True, "platforms": await runtime.refresh_platforms()}
+
+
+@app.post("/api/iq-extension/command")
+async def iq_extension_command(request: Request) -> dict[str, Any]:
+    payload = await request.json()
+    result = await runtime.enqueue_iq_extension_command(
+        str(payload.get("command") or "").strip(),
+        payload.get("payload") or {},
+        str(payload.get("session_id") or "").strip(),
+    )
+    return {"ok": True, "command": result}
 
 
 @app.websocket("/ws")

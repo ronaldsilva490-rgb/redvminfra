@@ -9,7 +9,7 @@ from typing import Any
 import requests
 
 
-DEFAULT_BASE = "http://redsystems.ddns.net:3115"
+DEFAULT_BASE = "http://redsystems.ddns.net/iq-bridge"
 DEFAULT_SESSION = "chrome-extension:peimfeacggmdcmjfookmdadjjaebmfig"
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")

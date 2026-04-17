@@ -42,7 +42,7 @@
       <section id="terminal" class="terminal">
         <header class="terminal-head">
           <div>
-            <p class="eyebrow">IQ Option Demo / Binárias</p>
+            <p class="eyebrow">IQ via Extensao / Binarias</p>
             <h1 id="terminalTitle">Terminal ao vivo</h1>
           </div>
           <div id="symbolTabs" class="symbol-tabs" aria-label="Pares monitorados"></div>
@@ -74,6 +74,30 @@
               <strong id="botState">rodando</strong>
               <small id="openTradeState">sem posição aberta</small>
             </div>
+
+            <article class="control-card iq-live">
+              <span>Extensão IQ</span>
+              <strong id="iqExtState">aguardando</strong>
+              <small id="iqExtMeta">sem telemetria do bridge</small>
+              <div class="iq-live-grid">
+                <div><label>Ativo</label><strong id="iqExtAsset">-</strong></div>
+                <div><label>Mercado</label><strong id="iqExtMarket">-</strong></div>
+                <div><label>Preço</label><strong id="iqExtPrice">-</strong></div>
+                <div><label>Payout</label><strong id="iqExtPayout">-</strong></div>
+                <div><label>Valor</label><strong id="iqExtAmount">-</strong></div>
+                <div><label>Expiração</label><strong id="iqExtExpiry">-</strong></div>
+                <div><label>Countdown</label><strong id="iqExtCountdown">-</strong></div>
+                <div><label>Janela</label><strong id="iqExtWindow">-</strong></div>
+                <div><label>Active ID</label><strong id="iqExtActiveId">-</strong></div>
+                <div><label>Saldo</label><strong id="iqExtBalance">-</strong></div>
+              </div>
+              <p id="iqExtHint" class="iq-live-hint">Aguardando o feed da extensão.</p>
+              <div class="iq-live-badges">
+                <span id="iqExtUiReady" class="chip neutral">ui --</span>
+                <span id="iqExtTradeReady" class="chip neutral">trade --</span>
+                <span id="iqExtSession" class="chip neutral">sessão --</span>
+              </div>
+            </article>
 
             <form id="basicForm" class="basic-form">
               <label>

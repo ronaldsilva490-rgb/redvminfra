@@ -33,8 +33,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "risk_profile": "aggressive",
     "symbols": ["EURUSD", "GBPUSD", "EURGBP", "EURUSD-OTC", "GBPUSD-OTC", "EURJPY-OTC"],
     "tradable_symbols": ["EURUSD", "GBPUSD", "EURGBP", "EURUSD-OTC", "GBPUSD-OTC", "EURJPY-OTC"],
-    "market_provider": "binance_spot",
-    "execution_provider": "internal_paper",
+    "market_provider": "iq_extension",
+    "execution_provider": "iq_extension",
     "iqoption_amount": 1.0,
     "iqoption_expiration_minutes": 1,
     "iqoption_gale_enabled": True,
@@ -136,7 +136,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "iqoption_experimental": {
             "enabled": True,
             "mode": "demo",
-            "label": "IQ Option Demo",
+            "label": "IQ Browser Demo",
         },
     },
 }
@@ -319,7 +319,7 @@ def build_candidates(
     for symbol, snapshot in snapshots.items():
         if snapshot.get("error") or symbol not in tradable:
             continue
-        effective_news_risk = "neutral" if snapshot.get("provider") == "iqoption_demo" else news_risk
+        effective_news_risk = "neutral" if snapshot.get("provider") == "iq_extension" else news_risk
         candidate = score_snapshot(snapshot, config, effective_news_risk)
         if candidate:
             candidates.append(candidate)
@@ -459,7 +459,7 @@ def score_snapshot(snapshot: dict[str, Any], config: dict[str, Any], news_risk: 
     checks: dict[str, str] = {}
     score = 0
 
-    is_binary = snapshot.get("provider") == "iqoption_demo"
+    is_binary = snapshot.get("provider") == "iq_extension"
     code_context = iq_direction_context(features) if is_binary else {}
     up_count = sum(1 for key in ["trend_1m", "trend_5m", "trend_15m"] if features.get(key) == "up")
     down_count = sum(1 for key in ["trend_1m", "trend_5m", "trend_15m"] if features.get(key) == "down")
@@ -694,7 +694,7 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
         if is_binary
         else "paper trading cripto spot, sem alavancagem"
     )
-    mode = "iqoption_demo_binary_only" if is_binary else "paper_trading_only"
+    mode = "iq_extension_binary_only" if is_binary else "paper_trading_only"
     if profile["key"] == "full_aggressive":
         news_rule = (
             "No perfil full agressivo, news_risk=fail significa risco alto, nao veto automatico. "
@@ -769,7 +769,7 @@ def build_decision_prompt(candidate: dict[str, Any], news: dict[str, Any] | None
     }
     user = (
         "Analise o candidato abaixo respeitando o perfil operacional informado. "
-        "Se o modo for iqoption_demo_binary_only, avalie o ativo informado como CALL/PUT demo na IQ, seja par normal (ex.: EURUSD) ou OTC (ex.: EURUSD-OTC). "
+        "Se o modo for iq_extension_binary_only, avalie o ativo informado como CALL/PUT demo na IQ, seja par normal (ex.: EURUSD) ou OTC (ex.: EURUSD-OTC). "
         "Use code_context como pre-leitura quantitativa: se ele apontar exaustao/armadilha, trate como alerta forte. "
         "Use learning_context como memoria operacional: evite repetir padroes marcados como loss recente, mas permita excecao somente com consenso forte. "
         "Use learning_adjustment para entender bonus/penalidades que o codigo aplicou ao score antes de chamar os modelos. "

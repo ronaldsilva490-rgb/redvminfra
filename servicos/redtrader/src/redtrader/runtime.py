@@ -10,7 +10,8 @@ from zoneinfo import ZoneInfo
 from .ai import RedSystemsAI
 from .config import settings
 from .db import Database
-from .iqoption_demo import IQOptionDemoAdapter
+from .iq_bridge import IQExtensionBridgeClient
+from .iq_extension_adapter import IQExtensionAdapter
 from .market import BinanceMarketClient
 from .news import NewsClient
 from .platforms import PlatformRegistry
@@ -119,12 +120,21 @@ class TraderRuntime:
         self.market = market
         self.news_client = news
         self.ai = ai
-        self.iqoption = IQOptionDemoAdapter()
+        self.iq_bridge = IQExtensionBridgeClient(
+            settings.iq_bridge_url,
+            token=settings.iq_bridge_token,
+            preferred_session_id=settings.iq_bridge_session_id,
+            timeout_seconds=settings.iq_bridge_timeout_seconds,
+        )
+        self.iq_extension_adapter = IQExtensionAdapter(self.iq_bridge)
         self.task: asyncio.Task | None = None
         self.market_task: asyncio.Task | None = None
         self.exit_task: asyncio.Task | None = None
+        self.extension_task: asyncio.Task | None = None
         self.running = False
         self.latest_snapshots: dict[str, dict[str, Any]] = {}
+        self.iq_extension: dict[str, Any] = {"connected": False, "source": "iq_bridge", "error": "not_started"}
+        self.last_iq_extension_hash = ""
         self.latest_news: dict[str, Any] = {}
         self.platforms = PlatformRegistry()
         self.platform_statuses: list[dict[str, Any]] = []
@@ -151,12 +161,33 @@ class TraderRuntime:
             self.db.set_kv("wallet", {"initial_balance_brl": DEFAULT_CONFIG["initial_balance_brl"]})
 
     def config(self) -> dict[str, Any]:
-        return deep_merge(DEFAULT_CONFIG, self.db.get_kv("config", {}) or {})
+        merged = deep_merge(DEFAULT_CONFIG, self.db.get_kv("config", {}) or {})
+        if str(merged.get("market_provider") or "").strip().lower() == "iqoption_demo":
+            merged["market_provider"] = "iq_extension"
+        if str(merged.get("execution_provider") or "").strip().lower() == "iqoption_demo":
+            merged["execution_provider"] = "iq_extension"
+        platforms = merged.get("platforms") or {}
+        iq_platform = platforms.get("iqoption_experimental")
+        if isinstance(iq_platform, dict):
+            label = str(iq_platform.get("label") or "").strip()
+            if not label or label == "IQ Option Demo":
+                iq_platform["label"] = "IQ Browser Demo"
+        return merged
 
     def update_config(self, patch: dict[str, Any]) -> dict[str, Any]:
         current = self.config()
         old_profile = current.get("risk_profile")
         merged = deep_merge(current, patch)
+        if str(merged.get("market_provider") or "").strip().lower() == "iqoption_demo":
+            merged["market_provider"] = "iq_extension"
+        if str(merged.get("execution_provider") or "").strip().lower() == "iqoption_demo":
+            merged["execution_provider"] = "iq_extension"
+        platforms = merged.get("platforms") or {}
+        iq_platform = platforms.get("iqoption_experimental")
+        if isinstance(iq_platform, dict):
+            label = str(iq_platform.get("label") or "").strip()
+            if not label or label == "IQ Option Demo":
+                iq_platform["label"] = "IQ Browser Demo"
         if merged.get("risk_profile") not in RISK_PROFILES:
             merged["risk_profile"] = DEFAULT_CONFIG["risk_profile"]
         if "risk_profile" in patch and merged.get("risk_profile") != old_profile:
@@ -174,6 +205,7 @@ class TraderRuntime:
         self.task = asyncio.create_task(self.loop())
         self.market_task = asyncio.create_task(self.market_loop())
         self.exit_task = asyncio.create_task(self.exit_loop())
+        self.extension_task = asyncio.create_task(self.extension_loop())
         self.publish("runtime", "RED Trader iniciado", {})
 
     async def stop(self) -> None:
@@ -196,6 +228,12 @@ class TraderRuntime:
                 await self.exit_task
             except asyncio.CancelledError:
                 pass
+        if self.extension_task:
+            self.extension_task.cancel()
+            try:
+                await self.extension_task
+            except asyncio.CancelledError:
+                pass
         self.publish("runtime", "RED Trader parado", {})
 
     async def market_loop(self) -> None:
@@ -207,7 +245,7 @@ class TraderRuntime:
             except Exception as exc:
                 self.publish("market:error", "Falha ao atualizar mercado rapido", {"error": repr(exc)})
             elapsed = time.time() - started
-            min_sleep = 0.35 if config.get("market_provider") == "iqoption_demo" else 3
+            min_sleep = 0.35 if _is_iq_market_provider(config.get("market_provider")) else 3
             await asyncio.sleep(max(min_sleep, float(config.get("market_poll_seconds", 20)) - elapsed))
 
     async def loop(self) -> None:
@@ -219,7 +257,7 @@ class TraderRuntime:
                 self.publish("error", "Falha no ciclo principal", {"error": repr(exc)})
             elapsed = time.time() - started
             config = self.config()
-            min_sleep = 1 if config.get("market_provider") == "iqoption_demo" else 10
+            min_sleep = 1 if _is_iq_market_provider(config.get("market_provider")) else 10
             await asyncio.sleep(max(min_sleep, float(config.get("decision_poll_seconds", 5)) - elapsed))
 
     async def exit_loop(self) -> None:
@@ -231,8 +269,66 @@ class TraderRuntime:
             except Exception as exc:
                 self.publish("trade:error", "Falha no loop rapido de fechamento", {"error": repr(exc)})
             elapsed = time.time() - started
-            min_sleep = 0.2 if config.get("market_provider") == "iqoption_demo" else 0.5
+            min_sleep = 0.2 if _is_iq_market_provider(config.get("market_provider")) else 0.5
             await asyncio.sleep(max(min_sleep, float(config.get("exit_poll_seconds", 0.25)) - elapsed))
+
+    async def extension_loop(self) -> None:
+        while self.running:
+            started = time.time()
+            changed = False
+            try:
+                state = await self.iq_bridge.fetch_live_state()
+                digest = json.dumps(
+                    {
+                        "connected": state.get("connected"),
+                        "session_id": state.get("session_id"),
+                        "asset": state.get("asset"),
+                        "market_type": state.get("market_type"),
+                        "active_id": state.get("active_id"),
+                        "price": state.get("price"),
+                        "payout_pct": state.get("payout_pct"),
+                        "countdown": state.get("countdown"),
+                        "selected_amount": state.get("selected_amount"),
+                        "selected_expiry": state.get("selected_expiry"),
+                        "buy_window_open": state.get("buy_window_open"),
+                        "ui_flags": state.get("ui_flags"),
+                        "health_flags": state.get("health_flags"),
+                        "entry_hint": state.get("entry_hint"),
+                    },
+                    sort_keys=True,
+                    ensure_ascii=False,
+                )
+                changed = digest != self.last_iq_extension_hash
+                self.last_iq_extension_hash = digest
+                previous_session = str(self.iq_extension.get("session_id") or "")
+                self.iq_extension = state
+                if changed and state.get("session_id") and state.get("session_id") != previous_session:
+                    self.publish(
+                        "iqext:session",
+                        "Extensao IQ sincronizada",
+                        {
+                            "session_id": state.get("session_id"),
+                            "asset": state.get("asset"),
+                            "market_type": state.get("market_type"),
+                            "selection": state.get("selection"),
+                        },
+                    )
+            except Exception as exc:
+                message = str(exc)
+                changed = message != str(self.iq_extension.get("error") or "")
+                self.iq_extension = {
+                    "connected": False,
+                    "source": "iq_bridge",
+                    "error": message,
+                    "received_at": time.time(),
+                }
+                if changed:
+                    self.publish("iqext:error", "Falha ao sincronizar extensao IQ", {"error": message})
+            if changed:
+                self.broadcast_status()
+            elapsed = time.time() - started
+            poll_seconds = max(0.2, float(settings.iq_bridge_poll_ms) / 1000.0)
+            await asyncio.sleep(max(0.2, poll_seconds - elapsed))
 
     async def cycle(self, reason: str = "manual") -> None:
         async with self.cycle_lock:
@@ -258,8 +354,8 @@ class TraderRuntime:
     async def refresh_market(self, config: dict[str, Any], reason: str = "loop") -> dict[str, dict[str, Any]]:
         async with self.market_lock:
             symbols = config.get("symbols") or DEFAULT_CONFIG["symbols"]
-            if config.get("market_provider") == "iqoption_demo":
-                snapshots = await self.iqoption.fetch_symbols(symbols)
+            if _is_iq_market_provider(config.get("market_provider")):
+                snapshots = await self.iq_extension_adapter.fetch_symbols(symbols)
             else:
                 snapshots = await self.market.fetch_symbols(symbols)
             self.latest_snapshots = snapshots
@@ -282,7 +378,7 @@ class TraderRuntime:
     async def refresh_platforms(self, config: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         try:
             config = config or self.config()
-            self.platform_statuses = await self.platforms.status(config)
+            self.platform_statuses = await self.platforms.status(config, self.iq_extension)
             self.last_platforms_at = time.time()
             connected = [row["id"] for row in self.platform_statuses if row.get("connected")]
             self.publish(
@@ -510,7 +606,7 @@ class TraderRuntime:
             return "WIN"
         if pnl < 0:
             return "LOSS"
-        return str(status or "EMPATE").replace("iqoption_demo:", "").upper()
+        return str(status or "EMPATE").replace("iqoption_demo:", "").replace("iq_extension:", "").upper()
 
     @staticmethod
     def _profit_factor(gross_profit: float, gross_loss: float) -> str:
@@ -522,7 +618,7 @@ class TraderRuntime:
         rows = []
         for trade in self.db.list_trades(limit=limit):
             metadata = trade.get("metadata") or {}
-            if trade.get("status") == "CLOSED" and metadata.get("execution_provider") == "iqoption_demo":
+            if trade.get("status") == "CLOSED" and _is_iq_execution_provider(metadata.get("execution_provider")):
                 rows.append(trade)
         rows.sort(key=lambda item: int(item.get("id") or 0))
         return rows
@@ -584,7 +680,7 @@ class TraderRuntime:
                 "gale_stage": gale_stage,
                 "opened_at": self._timestamp_from_epoch(trade.get("opened_at")),
                 "closed_at": self._timestamp_from_epoch(trade.get("closed_at") or trade.get("opened_at")),
-                "exit_reason": str(trade.get("exit_reason") or "").replace("iqoption_demo:", ""),
+                "exit_reason": str(trade.get("exit_reason") or "").replace("iqoption_demo:", "").replace("iq_extension:", ""),
             })
 
         win_rate = (wins / total * 100) if total else 0.0
@@ -597,7 +693,7 @@ class TraderRuntime:
             "title": title,
             "timestamp": self._timestamp(),
             "period": period_label,
-            "market": "IQ Option Demo / Binárias (OTC + normal)",
+            "market": "IQ via Extensao / Binarias (OTC + normal)",
             "total": total,
             "wins": wins,
             "losses": losses,
@@ -956,7 +1052,7 @@ class TraderRuntime:
             "Seu papel e aprender com erros sem prometer lucro. Gere regras praticas, curtas e testaveis para o RED Trader."
         )
         user = (
-            "Analise as operacoes IQ Option DEMO abaixo. Identifique padroes de loss, setups que devem exigir mais consenso, "
+            "Analise as operacoes IQ via extensao abaixo. Identifique padroes de loss, setups que devem exigir mais consenso, "
             "tecnicas de recuperacao que parecem ruins e filtros tecnicos que o codigo deve aplicar. "
             "Nao diga que e infalivel. Responda SOMENTE JSON valido, compacto, sem markdown, neste formato: "
             '{"lessons":["curto"],"avoid_patterns":[{"symbol":"EURUSD|*","direction":"CALL|PUT|*","reason":"curto","severity":0.0,"cooldown_minutes":3}],'
@@ -1298,7 +1394,13 @@ class TraderRuntime:
             return
 
         clean_error = str(raw_error or "").strip().strip("'\"")
-        clean_error = clean_error.replace("iqoption_buy_failed:", "").replace("iqoption_buy_suspended:", "ativo suspenso: ")
+        clean_error = (
+            clean_error
+            .replace("iqoption_buy_failed:", "")
+            .replace("iqoption_buy_suspended:", "ativo suspenso: ")
+            .replace("iq_extension_trade_failed:", "")
+            .replace("iq_extension_symbol_unmapped:", "ativo nao mapeado na extensao: ")
+        )
         payload = {
             "timestamp": self._timestamp(),
             "symbol": symbol,
@@ -1343,46 +1445,40 @@ class TraderRuntime:
                 price = ((snapshot.get("features") or {}).get("last_price")) or ((snapshot.get("ticker") or {}).get("last_price"))
                 if not price:
                     price = float(trade["entry_price"])
-                if metadata.get("execution_provider") == "iqoption_demo":
+                if _is_iq_execution_provider(metadata.get("execution_provider")):
                     expiry_seconds = float(metadata.get("expiry_seconds") or 60)
                     held = time.time() - float(trade["opened_at"])
                     settle_grace = min(0.35, max(0.1, expiry_seconds * 0.01))
                     if held < expiry_seconds + settle_grace:
                         continue
                     try:
-                        quick_wait = 1.6 if expiry_seconds <= 60 else 2.5
-                        poll_interval = 0.15 if expiry_seconds <= 60 else 0.25
-                        result = await self.iqoption.check_result(
-                            metadata["iqoption_order_id"],
-                            max_wait_seconds=quick_wait,
-                            poll_interval=poll_interval,
-                        )
-                        self.set_iqoption_balance(result.get("balance_after_close"))
+                        result = await self.iq_extension_adapter.check_result(trade, snapshot)
                         pnl_brl = float(result.get("profit") or 0)
                         pnl_pct = pnl_brl / max(float(trade["position_brl"]), 1) * 100
                         status = result.get("status") or "unknown"
                         self.store_trade_snapshot(int(trade["id"]), trade["symbol"], "close")
-                        self.db.close_trade(int(trade["id"]), float(price), pnl_brl, pnl_pct, f"iqoption_demo:{status}")
+                        close_price = float(result.get("close_quote") or price)
+                        self.db.close_trade(int(trade["id"]), close_price, pnl_brl, pnl_pct, f"iq_extension:{status}")
                         self.update_iq_recovery_after_close(config, trade, pnl_brl, status)
                         self.publish(
                             "trade:closed",
-                            f"IQ Option demo fechou {trade['symbol']}: {status}",
-                            {"trade_id": trade["id"], "provider": "iqoption_demo", "result": result, "pnl_brl": pnl_brl},
+                            f"IQ via extensao fechou {trade['symbol']}: {status}",
+                            {"trade_id": trade["id"], "provider": "iq_extension", "result": result, "pnl_brl": pnl_brl},
                         )
                         self.broadcast_status()
                         asyncio.create_task(self.notify_whatsapp_trade_closed(config, trade, status, pnl_brl, result))
                     except Exception as exc:
-                        if "iqoption_result_not_ready" in repr(exc) and held > expiry_seconds + 240:
-                            self.db.close_trade(int(trade["id"]), float(price), 0.0, 0.0, "iqoption_demo:unknown_timeout")
+                        if "iq_extension_result_not_ready" in repr(exc) and held > expiry_seconds + 240:
+                            self.db.close_trade(int(trade["id"]), float(price), 0.0, 0.0, "iq_extension:unknown_timeout")
                             self.publish(
                                 "trade:closed",
-                                f"IQ Option demo expirou sem retorno auditavel em {trade['symbol']}",
-                                {"trade_id": trade["id"], "provider": "iqoption_demo", "error": repr(exc)},
+                                f"IQ via extensao expirou sem retorno auditavel em {trade['symbol']}",
+                                {"trade_id": trade["id"], "provider": "iq_extension", "error": repr(exc)},
                             )
                             self.broadcast_status()
                             asyncio.create_task(self.notify_whatsapp_trade_closed(config, trade, "unknown_timeout", 0.0, {"error": repr(exc)}))
                             continue
-                        self.publish("trade:error", "Falha ao checar resultado IQ Option demo", {"trade_id": trade["id"], "error": repr(exc)})
+                        self.publish("trade:error", "Falha ao checar resultado via extensao IQ", {"trade_id": trade["id"], "error": repr(exc)})
                     continue
                 entry = float(trade["entry_price"])
                 direction = -1 if str(trade.get("side") or "").upper() == "PUT" else 1
@@ -1457,22 +1553,24 @@ class TraderRuntime:
         if not decision.get("approved"):
             self.publish("trade:skipped", "Comite vetou a entrada", decision)
             return
-        execution_provider = config.get("execution_provider") or "internal_paper"
+        execution_provider = str(config.get("execution_provider") or "internal_paper").strip().lower()
+        if execution_provider == "iqoption_demo":
+            execution_provider = "iq_extension"
         side = str(decision.get("action") or candidate.get("action") or "ENTER_LONG").upper()
         position_brl = max(1.0, self.wallet_summary()["equity_brl"] * float(decision["position_pct"]) / 100)
         metadata = {"decision": decision, "candidate": candidate, "execution_provider": execution_provider}
-        if execution_provider == "iqoption_demo":
+        if _is_iq_execution_provider(execution_provider):
             amount, recovery_state = self.next_iq_amount(config, decision)
             expiration_minutes = max(1, int(config.get("iqoption_expiration_minutes", 1)))
             iq_action = "put" if side == "PUT" else "call"
             try:
-                order = await self.iqoption.buy(candidate["symbol"], iq_action, amount, expiration_minutes)
+                order = await self.iq_extension_adapter.buy(candidate["symbol"], iq_action, amount, expiration_minutes)
             except Exception as exc:
                 error_text = repr(exc)
                 open_info = self._binary_open_info(candidate["symbol"], candidate.get("snapshot") or {})
                 next_open_ts = float(open_info.get("next_open_ts") or 0.0)
                 cooldown_seconds = 25
-                if "iqoption_buy_suspended" in error_text or "Cannot purchase" in error_text or "suspended" in error_text.lower():
+                if "cannot purchase" in error_text.lower() or "suspended" in error_text.lower() or "4103" in error_text or "4104" in error_text:
                     if next_open_ts > time.time():
                         cooldown_seconds = max(20, min(120, int(next_open_ts - time.time())))
                     else:
@@ -1480,7 +1578,7 @@ class TraderRuntime:
                 self.asset_cooldowns[candidate["symbol"]] = time.time() + cooldown_seconds
                 self.publish(
                     "trade:error",
-                    "IQ Option demo recusou a abertura agora",
+                    "IQ via extensao recusou a abertura agora",
                     {
                         "symbol": candidate["symbol"],
                         "action": iq_action,
@@ -1493,12 +1591,18 @@ class TraderRuntime:
                     self.notify_whatsapp_trade_rejected(config, candidate, decision, amount, iq_action, error_text)
                 )
                 return
-            self.set_iqoption_balance(order.get("balance_after_open"))
             position_brl = amount
             metadata.update({
                 "iqoption_order_id": order["order_id"],
                 "iqoption_action": iq_action,
                 "iqoption_order": order,
+                "iq_extension_order_id": order["order_id"],
+                "iq_extension_action": iq_action,
+                "iq_extension_order": order,
+                "active_id": order.get("active_id"),
+                "open_quote": order.get("open_quote"),
+                "payout_pct": order.get("payout_pct"),
+                "expiration_ts": order.get("expiration_ts"),
                 "expiry_seconds": expiration_minutes * 60,
                 "gale_stage": int(recovery_state.get("stage") or 0),
                 "recovery_loss_total": float(recovery_state.get("loss_total") or 0),
@@ -1521,10 +1625,10 @@ class TraderRuntime:
         self.store_trade_snapshot(trade_id, candidate["symbol"], "open")
         self.publish(
             "trade:opened",
-            f"{'IQ Option demo' if execution_provider == 'iqoption_demo' else 'Paper'} trade aberto em {candidate['symbol']}",
+            f"{'IQ via extensao' if _is_iq_execution_provider(execution_provider) else 'Paper'} trade aberto em {candidate['symbol']}",
             {"trade_id": trade_id, "symbol": candidate["symbol"], "side": side, "position_brl": position_brl, "entry_price": candidate["price"], "provider": execution_provider},
         )
-        if execution_provider == "iqoption_demo":
+        if _is_iq_execution_provider(execution_provider):
             asyncio.create_task(self.notify_whatsapp_trade_opened(config, trade_id, candidate, decision, position_brl, metadata))
 
     def store_trade_snapshot(self, trade_id: int, symbol: str, phase: str) -> None:
@@ -1692,7 +1796,7 @@ class TraderRuntime:
         feedback = []
         for trade in self.db.list_trades(80):
             metadata = trade.get("metadata") or {}
-            if metadata.get("execution_provider") != "iqoption_demo":
+            if not _is_iq_execution_provider(metadata.get("execution_provider")):
                 continue
             feedback.append({
                 "id": trade.get("id"),
@@ -2707,7 +2811,7 @@ class TraderRuntime:
                 open_unrealized += float(item["position_brl"]) * change_pct / 100
         closed_count = wins + losses
         iq_balance = self.iqoption_balance()
-        if config.get("execution_provider") == "iqoption_demo" and iq_balance is not None:
+        if _is_iq_execution_provider(config.get("execution_provider")) and iq_balance is not None:
             return {
                 "initial_balance_brl": initial,
                 "realized_pnl_brl": realized,
@@ -2718,7 +2822,7 @@ class TraderRuntime:
                 "losses": losses,
                 "win_rate_pct": (wins / closed_count * 100) if closed_count else 0,
                 "last_trade_at": self.last_trade_at,
-                "source": "iqoption_practice_balance",
+                "source": "iq_extension_balance",
             }
         return {
             "initial_balance_brl": initial,
@@ -2733,6 +2837,9 @@ class TraderRuntime:
         }
 
     def iqoption_balance(self) -> float | None:
+        extension_balance = _num((self.iq_extension or {}).get("balance"))
+        if extension_balance > 0:
+            return extension_balance
         for row in self.platform_statuses:
             if row.get("id") == "iqoption_experimental" and row.get("practice_balance") is not None:
                 try:
@@ -2835,14 +2942,26 @@ class TraderRuntime:
             "iq_recovery": recovery_state,
             "platforms": self.platform_statuses,
             "iq_learning": self.iq_learning_state(),
+            "iq_extension": self.iq_extension,
             "committee": self.committee_state,
             "models": self.models,
             "news": self.latest_news,
-            "snapshots": self.latest_snapshots or self.db.list_snapshots(),
+            "snapshots": self.latest_snapshots if _is_iq_market_provider(config.get("market_provider")) else (self.latest_snapshots or self.db.list_snapshots()),
             "trades": self.db.list_trades(80),
             "analyses": self.db.list_analyses(50),
             "events": self.db.list_events(120),
         }
+
+    async def enqueue_iq_extension_command(
+        self,
+        command: str,
+        payload: dict[str, Any] | None = None,
+        session_id: str = "",
+    ) -> dict[str, Any]:
+        target_session = str(session_id or self.iq_extension.get("session_id") or settings.iq_bridge_session_id or "").strip()
+        if not target_session:
+            raise RuntimeError("iq_extension_session_unavailable")
+        return await self.iq_bridge.enqueue_command(target_session, command, payload or {})
 
     def subscribe(self) -> asyncio.Queue:
         queue: asyncio.Queue = asyncio.Queue(maxsize=200)
@@ -2874,6 +2993,14 @@ def _num(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _is_iq_market_provider(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"iq_extension", "iqoption_demo"}
+
+
+def _is_iq_execution_provider(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"iq_extension", "iqoption_demo"}
 
 
 def _binary_direction(value: Any) -> str | None:

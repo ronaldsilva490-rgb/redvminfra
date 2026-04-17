@@ -146,6 +146,7 @@ function renderStatus() {
   if (!data) return;
   renderHeader(data);
   renderSymbols(data);
+  renderIqExtension(data);
   renderForms(data.config || {});
   renderCommitteeProgress(data);
   renderConsensusBanner(data);
@@ -191,6 +192,50 @@ function renderSymbols(data) {
       renderStatus();
     };
   });
+}
+
+function extMoneyLike(value) {
+  if (value == null || value === "") return "-";
+  const text = String(value).trim();
+  return text || "-";
+}
+
+function renderIqExtension(data) {
+  const ext = data.iq_extension || {};
+  $("#iqExtState").textContent = ext.connected ? "conectada" : "offline";
+  $("#iqExtState").className = ext.connected ? "good" : "bad";
+  const ageMs = Number(ext.age_ms);
+  const ageText = Number.isFinite(ageMs) ? `${(ageMs / 1000).toFixed(2)}s` : "--";
+  $("#iqExtMeta").textContent = ext.connected
+    ? `${ext.session_id || "sessão ?"} · ${ageText} · ${ext.page_title || "IQ Option"}`
+    : (ext.error || "sem telemetria do bridge");
+  $("#iqExtAsset").textContent = ext.asset || "-";
+  $("#iqExtMarket").textContent = ext.market_type || "-";
+  $("#iqExtPrice").textContent = Number.isFinite(Number(ext.price)) ? formatPrice(ext.price) : "-";
+  $("#iqExtPayout").textContent = Number.isFinite(Number(ext.payout_pct)) ? `${Number(ext.payout_pct).toFixed(0)}%` : "-";
+  $("#iqExtAmount").textContent = Number.isFinite(Number(ext.selected_amount)) ? money(ext.selected_amount) : "-";
+  $("#iqExtExpiry").textContent = ext.selected_expiry || "-";
+  $("#iqExtCountdown").textContent = ext.countdown || "-";
+  $("#iqExtWindow").textContent = typeof ext.buy_window_open === "boolean" ? (ext.buy_window_open ? "aberta" : "fechada") : "-";
+  $("#iqExtActiveId").textContent = ext.active_id != null ? String(ext.active_id) : "-";
+  $("#iqExtBalance").textContent = extMoneyLike(ext.balance ?? ext.account_balance);
+  $("#iqExtHint").textContent = ext.entry_hint || (ext.connected ? "Feed da extensão ligado e pronto para espelhar a IQ no Trader." : "Aguardando feed da extensão.");
+
+  const uiReady = !!ext.ui_flags?.tradeSurfaceReady;
+  const tradeReady = !!ext.health_flags?.readyToTrade;
+  const hasSession = !!ext.session_id;
+
+  const uiChip = $("#iqExtUiReady");
+  uiChip.textContent = uiReady ? "ui pronta" : "ui instável";
+  uiChip.className = `chip ${uiReady ? "ok" : "warn"}`;
+
+  const tradeChip = $("#iqExtTradeReady");
+  tradeChip.textContent = tradeReady ? "trade pronto" : "trade bloqueado";
+  tradeChip.className = `chip ${tradeReady ? "ok" : "warn"}`;
+
+  const sessionChip = $("#iqExtSession");
+  sessionChip.textContent = hasSession ? `sessão ${String(ext.session_id).slice(-8)}` : "sessão --";
+  sessionChip.className = `chip ${hasSession ? "ok" : "neutral"}`;
 }
 
 function renderForms(config) {
@@ -520,8 +565,8 @@ function collectBasicConfig() {
     ...current,
     auto_enabled: form.elements.auto_enabled.value === "true",
     risk_profile: riskProfile,
-    market_provider: "iqoption_demo",
-    execution_provider: "iqoption_demo",
+    market_provider: "iq_extension",
+    execution_provider: "iq_extension",
     symbols: activeSymbols,
     tradable_symbols: activeSymbols,
     iqoption_stake_mode: mode,
@@ -552,7 +597,7 @@ function collectBasicConfig() {
       binance_spot: { enabled: false, mode: "market_data_paper", label: "Binance Spot" },
       tastytrade_sandbox: { enabled: false, mode: "sandbox", label: "tastytrade Sandbox" },
       webull_paper: { enabled: false, mode: "paper", label: "Webull Paper" },
-      iqoption_experimental: { enabled: true, mode: "demo", label: "IQ Option Demo" },
+      iqoption_experimental: { enabled: true, mode: "demo", label: "IQ Browser Demo" },
     },
   };
 }

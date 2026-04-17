@@ -15,7 +15,6 @@ EnvironmentFile=-/etc/red-openclaw.env
 ExecStart=/opt/red-openclaw/npm/bin/openclaw gateway run
 Restart=always
 RestartSec=5
-NoNewPrivileges=true
 PrivateTmp=true
 LimitNOFILE=65535
 

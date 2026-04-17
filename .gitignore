@@ -33,6 +33,7 @@ artefatos/**
 !artefatos/.gitkeep
 !artefatos/**/
 !artefatos/**/.gitkeep
+tmp_*
 
 # External clones should be installed as needed, not vendored by default
 referencias/nvidia-riva-python-clients/

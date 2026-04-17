@@ -49,12 +49,12 @@ PLATFORM_DEFINITIONS: dict[str, PlatformDefinition] = {
     ),
     "iqoption_experimental": PlatformDefinition(
         id="iqoption_experimental",
-        label="IQ Option Demo",
+        label="IQ Browser Demo",
         kind="binary_options_demo",
         mode="demo",
         data_scope="market_data_and_demo_account",
-        execution_scope="demo_adapter_only",
-        docs_note="Conta demo via API comunitaria; o RED Trader bloqueia uso em conta real.",
+        execution_scope="extension_bridge_only",
+        docs_note="Conta demo via extensao Chrome + bridge local; o RED Trader bloqueia uso em conta real.",
     ),
 }
 
@@ -66,7 +66,7 @@ class PlatformRegistry:
     async def close(self) -> None:
         await self.client.aclose()
 
-    async def status(self, config: dict[str, Any]) -> list[dict[str, Any]]:
+    async def status(self, config: dict[str, Any], iq_extension: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         platforms = config.get("platforms") or {}
         rows = []
         for platform_id, definition in PLATFORM_DEFINITIONS.items():
@@ -86,7 +86,7 @@ class PlatformRegistry:
                     missing="Configure WEBULL_APP_KEY e WEBULL_APP_SECRET no ambiente.",
                 ))
             elif platform_id == "iqoption_experimental":
-                rows.append(await self._iqoption_status(definition, platform_config, enabled))
+                rows.append(await self._iqoption_status(definition, platform_config, enabled, iq_extension or {}))
         return rows
 
     async def _binance_status(self, definition: PlatformDefinition, platform_config: dict[str, Any], enabled: bool) -> dict[str, Any]:
@@ -230,88 +230,53 @@ class PlatformRegistry:
             raise ValueError("missing_session_token")
         return str(token)
 
-    async def _iqoption_status(self, definition: PlatformDefinition, platform_config: dict[str, Any], enabled: bool) -> dict[str, Any]:
+    async def _iqoption_status(
+        self,
+        definition: PlatformDefinition,
+        platform_config: dict[str, Any],
+        enabled: bool,
+        iq_extension: dict[str, Any],
+    ) -> dict[str, Any]:
         started = time.perf_counter()
-        effective_enabled = bool(enabled and settings.iqoption_enabled)
+        effective_enabled = bool(enabled)
         if not effective_enabled:
             return self._base_row(definition, platform_config, effective_enabled, "disabled", False, "Desativado na configuracao.")
-        if not settings.iqoption_username or not settings.iqoption_password:
+        if not iq_extension or not iq_extension.get("connected"):
             row = self._base_row(
                 definition,
                 platform_config,
                 effective_enabled,
-                "needs_config",
+                "waiting_extension",
                 False,
-                "Defina IQOPTION_ENABLED=true, IQOPTION_USERNAME e IQOPTION_PASSWORD para conectar a conta demo.",
+                "Aguardando a extensao IQ enviar estado vivo para o bridge.",
             )
-            row["base_url"] = settings.iqoption_host
+            row["base_url"] = settings.iq_bridge_url
             return row
 
-        try:
-            result = await asyncio.wait_for(
-                asyncio.to_thread(self._iqoption_probe),
-                timeout=settings.iqoption_timeout_seconds + 5,
-            )
-            latency_ms = int((time.perf_counter() - started) * 1000)
-            row = self._base_row(
-                definition,
-                platform_config,
-                effective_enabled,
-                "connected",
-                True,
-                "IQ Option Demo conectada; o RED Trader usara apenas saldo PRACTICE/demo.",
-            )
-            row.update(result)
-            row.update({"latency_ms": latency_ms, "base_url": settings.iqoption_host})
-            return row
-        except ImportError:
-            row = self._base_row(definition, platform_config, effective_enabled, "error", False, "Dependencia iqoptionapi nao instalada no ambiente.")
-            row.update({"base_url": settings.iqoption_host, "error": "missing_iqoptionapi"})
-            return row
-        except TimeoutError:
-            row = self._base_row(definition, platform_config, effective_enabled, "error", False, "Timeout ao conectar na IQ Option Demo.")
-            row.update({"base_url": settings.iqoption_host, "error": "timeout"})
-            return row
-        except Exception as exc:
-            row = self._base_row(definition, platform_config, effective_enabled, "error", False, "Falha ao conectar na IQ Option Demo.")
-            row.update({"base_url": settings.iqoption_host, "error": type(exc).__name__})
-            return row
-
-    def _iqoption_probe(self) -> dict[str, Any]:
-        from iqoptionapi.stable_api import IQ_Option
-
-        api = IQ_Option(settings.iqoption_username, settings.iqoption_password, active_account_type="PRACTICE")
-        ok, reason = api.connect()
-        if not ok:
-            reason_text = str(reason or "connect_failed")
-            if "2FA" in reason_text.upper():
-                raise RuntimeError("2fa_required")
-            raise RuntimeError(reason_text[:160])
-
-        if settings.iqoption_force_practice:
-            api.change_balance("PRACTICE")
-        balances_raw = api.get_balances()
-        balances = balances_raw.get("msg") if isinstance(balances_raw, dict) else []
-        if not isinstance(balances, list):
-            balances = []
-        selected_balance_id = api.get_balance_id()
-        balance_mode = api.get_balance_mode()
-        if balance_mode != "PRACTICE":
-            raise RuntimeError(f"practice_not_selected:{balance_mode}")
-        balance_amount = api.get_balance()
-        try:
-            api.api.close()
-        except Exception:
-            pass
-        return {
-            "auth_mode": "unofficial_password_session",
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        row = self._base_row(
+            definition,
+            platform_config,
+            effective_enabled,
+            "connected",
+            True,
+            "IQ conectada via extensao Chrome; mercado e execucao passam pelo bridge local.",
+        )
+        row.update({
+            "base_url": settings.iq_bridge_url,
+            "latency_ms": latency_ms,
             "paper_only": True,
             "demo_mode": True,
-            "balances_count": len(balances),
-            "practice_balance_id": selected_balance_id,
-            "practice_selected": balance_mode == "PRACTICE",
-            "practice_balance": balance_amount,
-        }
+            "session_id": iq_extension.get("session_id"),
+            "asset": iq_extension.get("asset"),
+            "market_type": iq_extension.get("market_type"),
+            "active_id": iq_extension.get("active_id"),
+            "buy_window_open": iq_extension.get("buy_window_open"),
+            "payout_pct": iq_extension.get("payout_pct"),
+            "practice_balance": iq_extension.get("balance"),
+            "practice_selected": True,
+        })
+        return row
 
     def _credential_status(
         self,

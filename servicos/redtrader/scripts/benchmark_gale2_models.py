@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Replay what-if para a sequência de gale 2 da IQ Option demo.
+"""Replay what-if para a sequencia de gale 2 da IQ via extensao.
 
 O script reaproveita os prompts salvos em `analyses.prompt_json` perto das
-operações reais e pergunta a outros modelos o que eles teriam feito naquele
-mesmo ponto. Não usa futuro no prompt; o futuro só entra depois para pontuar
-CALL/PUT/WAIT contra o resultado real daquela expiração.
+operacoes reais e pergunta a outros modelos o que eles teriam feito naquele
+mesmo ponto. Nao usa futuro no prompt; o futuro so entra depois para pontuar
+CALL/PUT/WAIT contra o resultado real daquela expiracao.
 """
 
 from __future__ import annotations
@@ -125,7 +125,7 @@ def compact_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "bid_ask_ratio",
     ]
     return {
-        "mode": payload.get("mode", "iqoption_demo_binary_only"),
+        "mode": payload.get("mode", "iq_extension_binary_only"),
         "risk_profile": payload.get("risk_profile"),
         "constraints": payload.get("constraints"),
         "candidate": {

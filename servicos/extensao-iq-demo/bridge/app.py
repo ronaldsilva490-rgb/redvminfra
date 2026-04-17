@@ -12,16 +12,46 @@ from typing import Any
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+import requests
 
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 FRAMES_DIR = DATA_DIR / "frames"
 FRAMES_DIR.mkdir(parents=True, exist_ok=True)
+MOTOR_CONFIG_DIR = DATA_DIR / "motor_configs"
+MOTOR_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = Path(os.getenv("RED_IQ_BRIDGE_DB_PATH", str(DATA_DIR / "iq_vision_bridge.sqlite"))).expanduser()
 AUTH_TOKEN = os.getenv("RED_IQ_BRIDGE_TOKEN", "").strip()
 CORS_RAW = os.getenv("RED_IQ_BRIDGE_CORS", "*").strip()
 ALLOWED_ORIGINS = [item.strip() for item in CORS_RAW.split(",") if item.strip()] or ["*"]
+PROXY_BASE = os.getenv("RED_IQ_VISION_PROXY_BASE", "http://redsystems.ddns.net/ollama").strip().rstrip("/")
+VISION_PRIMARY_MODEL = os.getenv("RED_IQ_VISION_MODEL", "NIM - meta/llama-3.2-11b-vision-instruct").strip()
+VISION_FALLBACK_MODEL = os.getenv("RED_IQ_VISION_FALLBACK_MODEL", "NIM - nvidia/nemotron-nano-12b-v2-vl").strip()
+VISION_TIMEOUT_MS = int(os.getenv("RED_IQ_VISION_TIMEOUT_MS", "15000") or "15000")
+VISION_PROMPT = """Leia esta captura da IQ Option e responda APENAS em JSON.
+
+Extraia exatamente estes campos:
+{
+  "asset": "string",
+  "market": "string",
+  "payout_pct": number|null,
+  "countdown": "string|null",
+  "invest_amount": "string|null",
+  "expiry": "string|null",
+  "call_label": "string|null",
+  "put_label": "string|null",
+  "new_option_visible": boolean|null,
+  "confidence": number
+}
+
+Regras:
+- Se nao tiver certeza, use null no campo.
+- payout_pct deve ser o percentual visivel na tela principal de negociacao.
+- asset deve refletir exatamente o ativo selecionado na tela.
+- market deve ser algo como Binaria, Blitz, Digital.
+- confidence vai de 0 a 100.
+"""
 
 
 def _db() -> sqlite3.Connection:
@@ -195,6 +225,17 @@ class FrameEnvelope(BaseModel):
     frame: FramePayload
 
 
+class MotorConfigPayload(BaseModel):
+    channel: str = "spy"
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class VisionAnalyzePayload(BaseModel):
+    model: str = ""
+    fallback_model: str = ""
+    frame_id: int | None = None
+
+
 app = FastAPI(title="RED IQ Demo Vision Bridge", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -229,6 +270,144 @@ def safe_session_dir(session_id: str) -> Path:
     target = FRAMES_DIR / slug
     target.mkdir(parents=True, exist_ok=True)
     return target
+
+
+def extract_json_block(text: str) -> dict[str, Any]:
+    raw = (text or "").strip()
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except Exception:
+        pass
+    match = re.search(r"\{.*\}", raw, re.S)
+    if not match:
+        return {}
+    try:
+        return json.loads(match.group(0))
+    except Exception:
+        return {}
+
+
+def load_frame_row(frame_id: int | None = None) -> dict[str, Any] | None:
+    with _db() as conn:
+        if frame_id is not None:
+            row = conn.execute(
+                """
+                SELECT id, ts, session_id, tab_id, title, url, asset, market_type, mode,
+                       payout_pct, countdown, width, height, image_path, payload_json
+                FROM frames
+                WHERE id = ?
+                LIMIT 1
+                """,
+                (frame_id,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """
+                SELECT id, ts, session_id, tab_id, title, url, asset, market_type, mode,
+                       payout_pct, countdown, width, height, image_path, payload_json
+                FROM frames
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+    if not row:
+        return None
+    item = dict(row)
+    try:
+        item["payload"] = json.loads(item.pop("payload_json"))
+    except Exception:
+        item["payload"] = {}
+    return item
+
+
+def _motor_config_path(channel: str) -> Path:
+    safe = re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(channel or "spy").strip()) or "spy"
+    return MOTOR_CONFIG_DIR / f"{safe}.json"
+
+
+def _default_motor_config(channel: str) -> dict[str, Any]:
+    return {
+        "channel": channel,
+        "revision": 0,
+        "updatedAt": None,
+        "config": {
+            "enabled": True,
+            "pollMs": 1000,
+            "reportState": True,
+            "stateIntervalMs": 1500,
+            "actions": [],
+            "overrides": {},
+        },
+    }
+
+
+def load_motor_config(channel: str) -> dict[str, Any]:
+    path = _motor_config_path(channel)
+    if not path.exists():
+        return _default_motor_config(channel)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return _default_motor_config(channel)
+        merged = _default_motor_config(channel)
+        merged.update({k: v for k, v in data.items() if k in {"channel", "revision", "updatedAt", "config"}})
+        if not isinstance(merged.get("config"), dict):
+            merged["config"] = _default_motor_config(channel)["config"]
+        return merged
+    except Exception:
+        return _default_motor_config(channel)
+
+
+def save_motor_config(channel: str, config: dict[str, Any]) -> dict[str, Any]:
+    current = load_motor_config(channel)
+    revision = int(current.get("revision") or 0) + 1
+    item = {
+        "channel": channel,
+        "revision": revision,
+        "updatedAt": time.time(),
+        "config": config if isinstance(config, dict) else {},
+    }
+    _motor_config_path(channel).write_text(
+        json.dumps(item, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return item
+
+
+def analyze_frame_with_model(image_data_url: str, model: str) -> dict[str, Any]:
+    started = time.perf_counter()
+    body = {
+        "model": model,
+        "stream": False,
+        "temperature": 0,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": VISION_PROMPT},
+                    {"type": "image_url", "image_url": {"url": image_data_url}},
+                ],
+            }
+        ],
+    }
+    response = requests.post(
+        f"{PROXY_BASE}/v1/chat/completions",
+        json=body,
+        timeout=max(3, VISION_TIMEOUT_MS / 1000.0),
+    )
+    response.raise_for_status()
+    data = response.json()
+    message = (((data.get("choices") or [{}])[0]).get("message") or {})
+    raw_text = message.get("content") or ""
+    parsed = extract_json_block(raw_text)
+    return {
+        "model": model,
+        "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+        "raw_text": raw_text,
+        "parsed": parsed,
+    }
 
 
 @app.get("/healthz")
@@ -586,6 +765,54 @@ def telemetry_recent(limit: int = 50, asset: str = "", session_id: str = "") -> 
     return {"ok": True, "items": items}
 
 
+@app.get("/api/state/current")
+def state_current(session_id: str = "") -> dict[str, Any]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if session_id:
+        clauses.append("session_id = ?")
+        params.append(session_id)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with _db() as conn:
+        row = conn.execute(
+            f"""
+            SELECT id, ts, received_at, session_id, tab_id, title, url, asset, market_type, mode,
+                   payout_pct, current_price, countdown, tick_age_ms, buy_window_open,
+                   suspended_hint, payload_json
+            FROM telemetry
+            {where}
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            tuple(params),
+        ).fetchone()
+    if not row:
+        return {"ok": True, "item": None}
+    item = dict(row)
+    try:
+        item["payload"] = json.loads(item.pop("payload_json"))
+    except Exception:
+        item["payload"] = {}
+    return {"ok": True, "item": item}
+
+
+@app.get("/api/motor/config/current")
+def motor_config_current(channel: str = "spy") -> dict[str, Any]:
+    item = load_motor_config(channel)
+    return {"ok": True, "item": item}
+
+
+@app.put("/api/motor/config/current")
+def motor_config_update(
+    body: MotorConfigPayload,
+    x_red_token: str | None = Header(default=None),
+) -> dict[str, Any]:
+    require_token(x_red_token)
+    channel = str(body.channel or "spy").strip() or "spy"
+    item = save_motor_config(channel, body.config)
+    return {"ok": True, "item": item}
+
+
 @app.get("/api/logs/recent")
 def logs_recent(limit: int = 100, event: str = "", contains: str = "", asset: str = "", session_id: str = "") -> dict[str, Any]:
     limit = max(1, min(1000, int(limit or 100)))
@@ -685,21 +912,61 @@ def summary() -> dict[str, Any]:
 
 @app.get("/api/latest-frame")
 def latest_frame() -> dict[str, Any]:
-    with _db() as conn:
-        row = conn.execute(
-            """
-            SELECT id, ts, session_id, tab_id, title, url, asset, market_type, mode,
-                   payout_pct, countdown, width, height, image_path, payload_json
-            FROM frames
-            ORDER BY id DESC
-            LIMIT 1
-            """
-        ).fetchone()
-    if not row:
-        return {"ok": True, "item": None}
-    item = dict(row)
-    try:
-        item["payload"] = json.loads(item.pop("payload_json"))
-    except Exception:
-        item["payload"] = {}
-    return {"ok": True, "item": item}
+    return {"ok": True, "item": load_frame_row()}
+
+
+@app.post("/api/vision/analyze-latest")
+def vision_analyze_latest(
+    body: VisionAnalyzePayload,
+    x_red_token: str | None = Header(default=None),
+) -> dict[str, Any]:
+    require_token(x_red_token)
+    item = load_frame_row(body.frame_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="frame_not_found")
+    payload = item.get("payload") or {}
+    image_data_url = payload.get("imageDataUrl") or ""
+    if not str(image_data_url).startswith("data:image/"):
+        raise HTTPException(status_code=400, detail="frame_missing_image")
+
+    models = [m for m in [body.model.strip(), body.fallback_model.strip(), VISION_PRIMARY_MODEL, VISION_FALLBACK_MODEL] if m]
+    seen: set[str] = set()
+    attempts = []
+    for model in models:
+        if model in seen:
+            continue
+        seen.add(model)
+        try:
+            result = analyze_frame_with_model(image_data_url, model)
+            attempts.append({"ok": True, **result})
+            return {
+                "ok": True,
+                "frame": {
+                    "id": item.get("id"),
+                    "asset": item.get("asset"),
+                    "market_type": item.get("market_type"),
+                    "payout_pct": item.get("payout_pct"),
+                    "countdown": item.get("countdown"),
+                    "image_path": item.get("image_path"),
+                },
+                "vision": result,
+                "attempts": attempts,
+            }
+        except Exception as exc:
+            attempts.append({
+                "ok": False,
+                "model": model,
+                "error": str(exc),
+            })
+    return {
+        "ok": False,
+        "frame": {
+            "id": item.get("id"),
+            "asset": item.get("asset"),
+            "market_type": item.get("market_type"),
+            "payout_pct": item.get("payout_pct"),
+            "countdown": item.get("countdown"),
+            "image_path": item.get("image_path"),
+        },
+        "attempts": attempts,
+    }

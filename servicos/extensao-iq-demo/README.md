@@ -48,7 +48,20 @@ servicos/extensao-iq-demo/
   tools/
     bridge_inspect.py
     bridge_remote.py
+    motor_config.py
 ```
+
+## Motor Lab secundario
+
+Quando o objetivo for iterar comportamento muito rapido, sem rebuild constante da extensao principal, use a extensao separada:
+
+- `servicos/extensao-iq-motor-lab`
+
+Ela puxa um JSON vivo do bridge por canal (`spy` por padrao) e executa acoes de laboratorio. O fluxo certo e:
+
+1. validar a ideia no `motor-lab`;
+2. observar resultado no bridge;
+3. portar so o que prestou para `extensao-iq-demo`.
 
 ## Bridge para a VM
 
