@@ -20,6 +20,7 @@ const committeeDefaultTextB = process.env.RED_SEB_COMMITTEE_TEXT_B || "NIM - aba
 const committeeDefaultTextC = process.env.RED_SEB_COMMITTEE_TEXT_C || "NIM - z-ai/glm5";
 const sessionStaleMs = Math.max(60000, Number(process.env.RED_SEB_SESSION_STALE_MS || 300000));
 const sessions = new Map();
+const committeeRuns = new Map();
 const downloadCandidates = {
   setupMsi: [
     path.join(downloadsRoot, "Setup.msi"),
@@ -496,6 +497,18 @@ async function fetchProxyJson(pathname, options = {}) {
   const controller = new AbortController();
   const timeoutMs = Number(options.timeoutMs || 120000);
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const externalSignal = options.signal;
+  let removeExternalAbort = null;
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort(externalSignal.reason);
+    } else {
+      const abortFromExternal = () => controller.abort(externalSignal.reason);
+      externalSignal.addEventListener("abort", abortFromExternal, { once: true });
+      removeExternalAbort = () => externalSignal.removeEventListener("abort", abortFromExternal);
+    }
+  }
 
   try {
     const response = await fetch(proxyBase + pathname, {
@@ -524,6 +537,9 @@ async function fetchProxyJson(pathname, options = {}) {
     return payload;
   } finally {
     clearTimeout(timer);
+    if (removeExternalAbort) {
+      removeExternalAbort();
+    }
   }
 }
 
@@ -662,29 +678,38 @@ function resolveActiveSessionAndView(sessionId, viewId) {
   return { session, view };
 }
 
-async function requestVisionExtraction(model, frameBase64) {
-  const payload = await fetchProxyJson("/v1/chat/completions", {
-    method: "POST",
-    timeoutMs: 180000,
-    body: {
-      model,
-      stream: false,
-      temperature: 0.2,
-      max_tokens: 700,
-      messages: [
-        { role: "system", content: "Voce e um analista visual rigoroso da RED Systems." },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: committeeVisionPrompt() },
-            { type: "image_url", image_url: { url: "data:image/jpeg;base64," + frameBase64 } }
-          ]
-        }
-      ]
-    }
-  });
+async function requestVisionExtraction(model, frameBase64, run) {
+  const { controller, cleanup } = createCommitteeAbortController(run, 180000);
 
-  return extractChatText(payload);
+  try {
+    ensureCommitteeRunActive(run);
+    const payload = await fetchProxyJson("/v1/chat/completions", {
+      signal: controller.signal,
+      method: "POST",
+      timeoutMs: 180000,
+      body: {
+        model,
+        stream: false,
+        temperature: 0.2,
+        max_tokens: 700,
+        messages: [
+          { role: "system", content: "Voce e um analista visual rigoroso da RED Systems." },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: committeeVisionPrompt() },
+              { type: "image_url", image_url: { url: "data:image/jpeg;base64," + frameBase64 } }
+            ]
+          }
+        ]
+      }
+    });
+
+    ensureCommitteeRunActive(run);
+    return extractChatText(payload);
+  } finally {
+    cleanup();
+  }
 }
 
 function shouldUseVisionFallback(text) {
@@ -725,12 +750,110 @@ function writeNdjsonEvent(response, payload) {
   response.write(JSON.stringify(payload) + "\n");
 }
 
-async function streamCommitteeMember(member, prompt, response) {
+function createCommitteeRun() {
+  const runId = `committee-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const run = {
+    runId,
+    stopped: false,
+    finalized: false,
+    controllers: new Set()
+  };
+  committeeRuns.set(runId, run);
+  return run;
+}
+
+function finalizeCommitteeRun(run) {
+  if (!run || run.finalized) {
+    return;
+  }
+
+  run.finalized = true;
+  for (const controller of Array.from(run.controllers)) {
+    run.controllers.delete(controller);
+  }
+  committeeRuns.delete(run.runId);
+}
+
+function stopCommitteeRun(runId) {
+  const run = committeeRuns.get(String(runId || ""));
+  if (!run) {
+    return false;
+  }
+
+  run.stopped = true;
+  for (const controller of Array.from(run.controllers)) {
+    try {
+      controller.abort(new Error("Analise interrompida pelo operador."));
+    } catch {
+      controller.abort();
+    }
+  }
+  return true;
+}
+
+function registerCommitteeController(run, controller) {
+  if (!run || !controller) {
+    return () => {};
+  }
+
+  run.controllers.add(controller);
+  return () => run.controllers.delete(controller);
+}
+
+function createCommitteeAbortController(run, timeoutMs) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 180000);
+  const unregister = registerCommitteeController(run, controller);
+  const timer = setTimeout(() => {
+    try {
+      controller.abort(new Error("Tempo limite da analise excedido."));
+    } catch {
+      controller.abort();
+    }
+  }, Number(timeoutMs || 180000));
+
+  return {
+    controller,
+    cleanup() {
+      clearTimeout(timer);
+      unregister();
+    }
+  };
+}
+
+function isCommitteeAbortError(error, run) {
+  if (run?.stopped) {
+    return true;
+  }
+
+  const name = String(error?.name || "");
+  if (name === "AbortError") {
+    return true;
+  }
+
+  const message = String(error?.message || "").toLowerCase();
+  return message.includes("interrompida pelo operador") || message.includes("aborted") || message.includes("abort");
+}
+
+function ensureCommitteeRunActive(run) {
+  if (!run?.stopped) {
+    return;
+  }
+
+  const error = new Error("Analise interrompida pelo operador.");
+  error.code = "COMMITTEE_STOPPED";
+  throw error;
+}
+
+function writeCommitteeRunEvent(response, run, payload) {
+  writeNdjsonEvent(response, { ...payload, runId: run?.runId || null });
+}
+
+async function streamCommitteeMember(member, prompt, response, run) {
+  const { controller, cleanup } = createCommitteeAbortController(run, 180000);
   let finalText = "";
 
   try {
+    ensureCommitteeRunActive(run);
     const upstream = await fetch(proxyBase + "/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -752,12 +875,13 @@ async function streamCommitteeMember(member, prompt, response) {
       throw new Error(errorText || ("Falha ao iniciar stream do modelo " + member.model));
     }
 
-    writeNdjsonEvent(response, { type: "member_begin", memberId: member.id, role: member.role, model: member.model });
+    writeCommitteeRunEvent(response, run, { type: "member_begin", memberId: member.id, role: member.role, model: member.model });
     const reader = upstream.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
 
     while (true) {
+      ensureCommitteeRunActive(run);
       const { value, done } = await reader.read();
       buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
 
@@ -781,7 +905,7 @@ async function streamCommitteeMember(member, prompt, response) {
             const delta = extractStreamDelta(payload);
             if (delta) {
               finalText += delta;
-              writeNdjsonEvent(response, { type: "member_delta", memberId: member.id, delta });
+              writeCommitteeRunEvent(response, run, { type: "member_delta", memberId: member.id, delta });
             }
           } catch {
             // ignore malformed event chunk
@@ -796,9 +920,10 @@ async function streamCommitteeMember(member, prompt, response) {
       }
     }
 
-    writeNdjsonEvent(response, { type: "member_done", memberId: member.id, text: finalText.trim() });
+    ensureCommitteeRunActive(run);
+    writeCommitteeRunEvent(response, run, { type: "member_done", memberId: member.id, text: finalText.trim() });
   } finally {
-    clearTimeout(timer);
+    cleanup();
   }
 }
 
@@ -1143,20 +1268,61 @@ function renderDashboard() {
     .committee-run {
       min-width: 180px;
     }
+    .committee-run.is-stop {
+      background: linear-gradient(135deg, #6b1510 0%, #94261a 100%);
+      box-shadow: 0 14px 30px rgba(12, 0, 0, 0.18);
+    }
     .committee-status {
       min-height: 20px;
       color: var(--muted);
       font-size: 13px;
       margin-top: 12px;
     }
-    .committee-scene-report {
+    .committee-scene-layout {
       margin-top: 12px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+      gap: 14px;
+      align-items: start;
+    }
+    .committee-preview,
+    .committee-scene-report {
       padding: 14px;
       border-radius: 16px;
       border: 1px solid rgba(232,228,227,0.08);
       background: rgba(16, 2, 2, 0.92);
+    }
+    .committee-preview {
+      margin-top: 0;
+    }
+    .committee-preview h4,
+    .committee-scene-report h4 {
+      margin: 0 0 10px;
+      font-size: 14px;
+    }
+    .committee-preview-frame {
+      min-height: 220px;
+      border-radius: 14px;
+      border: 1px solid rgba(232,228,227,0.08);
+      background: #080304;
+      overflow: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .committee-preview-frame img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .committee-preview-empty {
+      padding: 24px;
       color: var(--muted);
       line-height: 1.6;
+      text-align: center;
+    }
+    .committee-scene-report {
+      margin-top: 0;
       max-height: 220px;
       overflow: auto;
       white-space: pre-wrap;
@@ -1258,6 +1424,7 @@ function renderDashboard() {
       .summary, .insights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .command-grid, .committee-config-grid { grid-template-columns: 1fr 1fr; }
       .committee-grid { grid-template-columns: 1fr; }
+      .committee-scene-layout { grid-template-columns: 1fr; }
     }
     @media (max-width: 720px) {
       .shell { padding: 12px; }
@@ -1398,7 +1565,19 @@ function renderDashboard() {
           <button class="send-button committee-run" id="committee-run-button" type="button">Analisar frame</button>
         </div>
         <div class="committee-status" id="committee-status">Selecione uma sessão com frame válido para iniciar a análise.</div>
-        <div class="committee-scene-report" id="committee-scene-report">O relatório visual consolidado aparecerá aqui antes do trio textual responder.</div>
+        <div class="committee-scene-layout">
+          <div class="committee-preview">
+            <h4>Frame enviada ao comitê</h4>
+            <div class="committee-preview-frame">
+              <img id="committee-frame-image" alt="Frame enviada ao comitê" hidden>
+              <div class="committee-preview-empty" id="committee-frame-empty">A frame exata enviada para a análise aparecerá aqui.</div>
+            </div>
+          </div>
+          <div class="committee-scene-report">
+            <h4>Leitura visual consolidada</h4>
+            <div id="committee-scene-report">O relatório visual consolidado aparecerá aqui antes do trio textual responder.</div>
+          </div>
+        </div>
         <div class="committee-grid">
           <article class="committee-card">
             <h4 id="committee-title-text_a">Analista A</h4>
@@ -1447,6 +1626,8 @@ function renderDashboard() {
     const committeeRunButton = document.getElementById("committee-run-button");
     const committeeStatus = document.getElementById("committee-status");
     const committeeSceneReport = document.getElementById("committee-scene-report");
+    const committeeFrameImage = document.getElementById("committee-frame-image");
+    const committeeFrameEmpty = document.getElementById("committee-frame-empty");
     const ALERT_POSITION_KEY = "redseb.monitor.alertPosition.v1";
     const COMMITTEE_MODELS_KEY = "redseb.committee.models.v2";
     let activeSessionId = null;
@@ -1454,6 +1635,9 @@ function renderDashboard() {
     const knownViewIdsBySession = new Map();
     let committeeCatalog = null;
     let committeeBusy = false;
+    let committeeActiveRunId = null;
+    let committeeAbortController = null;
+    let committeeRequestSerial = 0;
     let frameRenderToken = 0;
 
     function escapeHtml(value) {
@@ -1602,6 +1786,10 @@ function renderDashboard() {
       setCommitteeCardMeta("text_a", "Analista A", committeeTextA.value || "Modelo não definido.", "Sem análise ainda.");
       setCommitteeCardMeta("text_b", "Analista B", committeeTextB.value || "Modelo não definido.", "Sem análise ainda.");
       setCommitteeCardMeta("text_c", "Analista C", committeeTextC.value || "Modelo não definido.", "Sem análise ainda.");
+      committeeFrameImage.hidden = true;
+      committeeFrameImage.removeAttribute("src");
+      committeeFrameEmpty.hidden = false;
+      committeeFrameEmpty.textContent = "A frame exata enviada para a análise aparecerá aqui.";
     }
 
     async function loadCommitteeCatalog() {
@@ -1626,9 +1814,15 @@ function renderDashboard() {
     function updateCommitteeBusy(busy) {
       committeeBusy = Boolean(busy);
       if (committeeRunButton) {
-        committeeRunButton.disabled = committeeBusy;
-        committeeRunButton.textContent = committeeBusy ? "Analisando..." : "Analisar frame";
+        committeeRunButton.disabled = false;
+        committeeRunButton.textContent = committeeBusy ? "Parar" : "Analisar frame";
+        committeeRunButton.classList.toggle("is-stop", committeeBusy);
       }
+      [committeeVisionPrimary, committeeVisionFallback, committeeTextA, committeeTextB, committeeTextC].forEach((node) => {
+        if (node) {
+          node.disabled = committeeBusy;
+        }
+      });
     }
 
     function appendCommitteeOutput(memberId, delta) {
@@ -1638,6 +1832,48 @@ function renderDashboard() {
         outputNode.textContent = "";
       }
       outputNode.textContent += delta;
+    }
+
+    function renderCommitteeSnapshot(base64) {
+      if (!base64) {
+        committeeFrameImage.hidden = true;
+        committeeFrameImage.removeAttribute("src");
+        committeeFrameEmpty.hidden = false;
+        committeeFrameEmpty.textContent = "A frame exata enviada para a análise aparecerá aqui.";
+        return;
+      }
+
+      committeeFrameEmpty.hidden = true;
+      committeeFrameImage.hidden = false;
+      committeeFrameImage.src = buildImageDataUrl(base64, inferImageMimeType(base64));
+    }
+
+    async function stopCommitteeAnalysis() {
+      if (!committeeBusy) {
+        return;
+      }
+
+      committeeRequestSerial += 1;
+      const runId = committeeActiveRunId;
+      const controller = committeeAbortController;
+      committeeActiveRunId = null;
+      committeeAbortController = null;
+      committeeStatus.textContent = "Interrompendo análise atual...";
+      updateCommitteeBusy(false);
+
+      if (controller) {
+        controller.abort();
+      }
+
+      if (runId) {
+        await fetch("/api/committee/stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runId })
+        }).catch(() => {});
+      }
+
+      committeeStatus.textContent = "Análise interrompida.";
     }
 
     function getActiveView(session) {
@@ -1819,6 +2055,11 @@ function renderDashboard() {
     }
 
     async function runCommitteeAnalysis() {
+      if (committeeBusy) {
+        await stopCommitteeAnalysis();
+        return;
+      }
+
       if (!activeSessionId) {
         committeeStatus.textContent = "Selecione uma sessão ativa antes de analisar.";
         return;
@@ -1829,19 +2070,18 @@ function renderDashboard() {
         return;
       }
 
-      if (committeeBusy) {
-        return;
-      }
-
       updateCommitteeBusy(true);
       resetCommitteeOutputs();
       committeeStatus.textContent = "Preparando análise da frame atual...";
+      const requestSerial = ++committeeRequestSerial;
 
       try {
         persistCommitteePreferences();
+        committeeAbortController = new AbortController();
         const response = await fetch("/api/committee/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: committeeAbortController.signal,
           body: JSON.stringify({
             sessionId: activeSessionId,
             viewId: activeViewId,
@@ -1880,8 +2120,20 @@ function renderDashboard() {
               }
 
               if (event) {
+                if (requestSerial !== committeeRequestSerial) {
+                  continue;
+                }
+
+                if (!committeeActiveRunId && event.runId) {
+                  committeeActiveRunId = event.runId;
+                }
+
                 if (event.type === "status") {
                   committeeStatus.textContent = event.message || "Analisando...";
+                }
+
+                if (event.type === "capture") {
+                  renderCommitteeSnapshot(event.frameBase64 || "");
                 }
 
                 if (event.type === "vision_begin") {
@@ -1920,8 +2172,14 @@ function renderDashboard() {
                   setCommitteeCardMeta(event.memberId, event.role || event.memberId, event.model || "modelo", "Erro: " + (event.error || "falha desconhecida"));
                 }
 
+                if (event.type === "stopped") {
+                  committeeStatus.textContent = event.message || "Análise interrompida.";
+                }
+
                 if (event.type === "done") {
-                  committeeStatus.textContent = event.ok ? "Comitê concluído." : "Comitê concluído com avisos.";
+                  committeeStatus.textContent = event.stopped
+                    ? "Análise interrompida."
+                    : (event.ok ? "Comitê concluído." : "Comitê concluído com avisos.");
                 }
               }
             }
@@ -1934,9 +2192,22 @@ function renderDashboard() {
           }
         }
       } catch (error) {
-        committeeStatus.textContent = error.message;
+        if (committeeRequestSerial === requestSerial) {
+          if (String(error?.name || "") === "AbortError") {
+            committeeStatus.textContent = "Análise interrompida.";
+          } else {
+            committeeStatus.textContent = error.message;
+          }
+        }
       } finally {
-        updateCommitteeBusy(false);
+        if (committeeAbortController && committeeAbortController.signal.aborted) {
+          committeeAbortController = null;
+        }
+        if (committeeRequestSerial === requestSerial) {
+          committeeAbortController = null;
+          committeeActiveRunId = null;
+          updateCommitteeBusy(false);
+        }
       }
     }
 
@@ -2081,107 +2352,193 @@ const server = http.createServer((request, response) => {
         const textModelB = String(payload.textModelB || defaults.textB || "").trim();
         const textModelC = String(payload.textModelC || defaults.textC || "").trim();
 
+        const run = createCommitteeRun();
+        const closeHandler = () => stopCommitteeRun(run.runId);
+
         response.writeHead(200, {
           "Content-Type": "application/x-ndjson; charset=utf-8",
           "Cache-Control": "no-store, no-cache, must-revalidate",
           "Connection": "keep-alive",
           "X-Accel-Buffering": "no"
         });
+        request.on("close", closeHandler);
 
-        writeNdjsonEvent(response, {
-          type: "status",
-          stage: "capture",
-          message: "Frame atual capturada. Iniciando leitura visual."
-        });
-
-        writeNdjsonEvent(response, {
-          type: "vision_begin",
-          memberId: "vision_primary",
-          role: "Visao principal",
-          model: visionPrimaryModel
-        });
-
-        let primaryVisionText = "";
-        let primaryVisionError = "";
         try {
-          primaryVisionText = await requestVisionExtraction(visionPrimaryModel, target.view.imageBase64);
-        } catch (error) {
-          primaryVisionError = error.message;
-        }
+          writeCommitteeRunEvent(response, run, {
+            type: "capture",
+            sessionId,
+            viewId: target.view.viewId,
+            frameBase64: target.view.imageBase64
+          });
 
-        let fallbackVisionText = "";
-        let fallbackVisionError = "";
-        let fallbackUsed = false;
-
-        if (visionFallbackModel && visionFallbackModel !== visionPrimaryModel && (primaryVisionError || shouldUseVisionFallback(primaryVisionText))) {
-          fallbackUsed = true;
-          writeNdjsonEvent(response, {
+          writeCommitteeRunEvent(response, run, {
             type: "status",
-            stage: "vision_fallback",
-            message: "A leitura principal ficou fraca ou falhou. Acionando fallback visual."
+            stage: "capture",
+            message: "Frame atual capturada. Iniciando leitura visual."
           });
-          writeNdjsonEvent(response, {
+
+          writeCommitteeRunEvent(response, run, {
             type: "vision_begin",
-            memberId: "vision_fallback",
-            role: "Fallback visual",
-            model: visionFallbackModel
+            memberId: "vision_primary",
+            role: "Visao principal",
+            model: visionPrimaryModel
           });
+
+          let primaryVisionText = "";
+          let primaryVisionError = "";
           try {
-            fallbackVisionText = await requestVisionExtraction(visionFallbackModel, target.view.imageBase64);
+            primaryVisionText = await requestVisionExtraction(visionPrimaryModel, target.view.imageBase64, run);
           } catch (error) {
-            fallbackVisionError = error.message;
+            if (isCommitteeAbortError(error, run)) {
+              throw error;
+            }
+            primaryVisionError = error.message;
           }
+
+          ensureCommitteeRunActive(run);
+          let fallbackVisionText = "";
+          let fallbackVisionError = "";
+          let fallbackUsed = false;
+
+          if (visionFallbackModel && visionFallbackModel !== visionPrimaryModel && (primaryVisionError || shouldUseVisionFallback(primaryVisionText))) {
+            fallbackUsed = true;
+            writeCommitteeRunEvent(response, run, {
+              type: "status",
+              stage: "vision_fallback",
+              message: "A leitura principal ficou fraca ou falhou. Acionando fallback visual."
+            });
+            writeCommitteeRunEvent(response, run, {
+              type: "vision_begin",
+              memberId: "vision_fallback",
+              role: "Fallback visual",
+              model: visionFallbackModel
+            });
+            try {
+              fallbackVisionText = await requestVisionExtraction(visionFallbackModel, target.view.imageBase64, run);
+            } catch (error) {
+              if (isCommitteeAbortError(error, run)) {
+                throw error;
+              }
+              fallbackVisionError = error.message;
+            }
+          }
+
+          ensureCommitteeRunActive(run);
+          const chosenVisionText = String(fallbackVisionText || primaryVisionText || "").trim();
+          const supportVisionText = fallbackUsed
+            ? (primaryVisionText || (primaryVisionError ? "Falha: " + primaryVisionError : ""))
+            : (fallbackVisionText || (fallbackVisionError ? "Falha: " + fallbackVisionError : ""));
+
+          writeCommitteeRunEvent(response, run, {
+            type: "vision_result",
+            memberId: "vision_primary",
+            role: "Relatorio visual consolidado",
+            model: fallbackUsed ? visionFallbackModel : visionPrimaryModel,
+            text: chosenVisionText || "Nenhum relatorio visual valido foi obtido.",
+            fallbackUsed,
+            error: (!chosenVisionText && (primaryVisionError || fallbackVisionError)) ? (fallbackVisionError || primaryVisionError) : ""
+          });
+
+          const prompt = buildCommitteeBrief({
+            session: target.session,
+            view: target.view,
+            visionReport: chosenVisionText || "Nenhum relatorio visual valido foi obtido.",
+            visionFallback: supportVisionText || "Sem apoio adicional."
+          });
+
+          writeCommitteeRunEvent(response, run, {
+            type: "status",
+            stage: "committee",
+            message: "Relatorio visual consolidado. Iniciando respostas em paralelo."
+          });
+
+          const committeeMembers = [
+            { id: "text_a", role: "Analista A", model: textModelA },
+            { id: "text_b", role: "Analista B", model: textModelB },
+            { id: "text_c", role: "Analista C", model: textModelC }
+          ].filter((member) => member.model);
+
+          const results = await Promise.all(
+            committeeMembers.map((member) =>
+              streamCommitteeMember(member, prompt, response, run)
+                .then(() => ({ ok: true }))
+                .catch((error) => {
+                  if (isCommitteeAbortError(error, run)) {
+                    return { ok: false, stopped: true };
+                  }
+                  writeCommitteeRunEvent(response, run, {
+                    type: "member_error",
+                    memberId: member.id,
+                    role: member.role,
+                    model: member.model,
+                    error: error.message
+                  });
+                  return { ok: false, error: error.message };
+                })
+            )
+          );
+
+          ensureCommitteeRunActive(run);
+          writeCommitteeRunEvent(response, run, {
+            type: "done",
+            ok: results.every((item) => item.ok),
+            sessionId,
+            viewId: target.view.viewId,
+            stopped: false
+          });
+          response.end();
+        } catch (error) {
+          const stopped = isCommitteeAbortError(error, run);
+          if (!response.writableEnded) {
+            writeCommitteeRunEvent(response, run, {
+              type: stopped ? "stopped" : "done",
+              ok: false,
+              stopped,
+              sessionId,
+              viewId: target.view.viewId,
+              message: stopped ? "Analise interrompida pelo operador." : (error.message || "Falha durante a analise.")
+            });
+            if (!stopped) {
+              writeCommitteeRunEvent(response, run, {
+                type: "done",
+                ok: false,
+                stopped: false,
+                sessionId,
+                viewId: target.view.viewId
+              });
+            }
+            response.end();
+          }
+        } finally {
+          request.off("close", closeHandler);
+          finalizeCommitteeRun(run);
+        }
+      })
+      .catch((error) => sendJson(response, 500, { ok: false, error: error.message }));
+  }
+
+  if (pathname === "/api/committee/stop" && request.method === "POST") {
+    return readRequestBody(request)
+      .then((body) => {
+        let payload;
+
+        try {
+          payload = JSON.parse(body || "{}");
+        } catch {
+          return sendJson(response, 400, { ok: false, error: "Payload invalido." });
         }
 
-        const chosenVisionText = String(fallbackVisionText || primaryVisionText || "").trim();
-        const supportVisionText = fallbackUsed
-          ? (primaryVisionText || (primaryVisionError ? "Falha: " + primaryVisionError : ""))
-          : (fallbackVisionText || (fallbackVisionError ? "Falha: " + fallbackVisionError : ""));
+        const runId = String(payload.runId || "").trim();
+        if (!runId) {
+          return sendJson(response, 400, { ok: false, error: "Informe o runId da analise atual." });
+        }
 
-        writeNdjsonEvent(response, {
-          type: "vision_result",
-          memberId: "vision_primary",
-          role: "Relatorio visual consolidado",
-          model: fallbackUsed ? visionFallbackModel : visionPrimaryModel,
-          text: chosenVisionText || "Nenhum relatorio visual valido foi obtido.",
-          fallbackUsed,
-          error: (!chosenVisionText && (primaryVisionError || fallbackVisionError)) ? (fallbackVisionError || primaryVisionError) : ""
-        });
+        const stopped = stopCommitteeRun(runId);
+        if (!stopped) {
+          return sendJson(response, 404, { ok: false, error: "Analise nao encontrada ou ja finalizada." });
+        }
 
-        const prompt = buildCommitteeBrief({
-          session: target.session,
-          view: target.view,
-          visionReport: chosenVisionText || "Nenhum relatorio visual valido foi obtido.",
-          visionFallback: supportVisionText || "Sem apoio adicional."
-        });
-
-        writeNdjsonEvent(response, {
-          type: "status",
-          stage: "committee",
-          message: "Relatorio visual consolidado. Iniciando respostas em paralelo."
-        });
-
-        const committeeMembers = [
-          { id: "text_a", role: "Analista A", model: textModelA },
-          { id: "text_b", role: "Analista B", model: textModelB },
-          { id: "text_c", role: "Analista C", model: textModelC }
-        ].filter((member) => member.model);
-
-        const results = await Promise.allSettled(
-          committeeMembers.map((member) =>
-            streamCommitteeMember(member, prompt, response).catch((error) => {
-              writeNdjsonEvent(response, { type: "member_error", memberId: member.id, role: member.role, model: member.model, error: error.message });
-            })
-          )
-        );
-
-        writeNdjsonEvent(response, {
-          type: "done",
-          ok: results.every((item) => item.status === "fulfilled"),
-          sessionId,
-          viewId: target.view.viewId
-        });
-        response.end();
+        return sendJson(response, 200, { ok: true, runId, stopped: true });
       })
       .catch((error) => sendJson(response, 500, { ok: false, error: error.message }));
   }
