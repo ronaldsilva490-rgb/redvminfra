@@ -1805,7 +1805,7 @@ function renderDashboard() {
         while (true) {
           const { value, done } = await reader.read();
           buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-          let boundary = buffer.indexOf("\n");
+          let boundary = buffer.indexOf("\\n");
 
           while (boundary !== -1) {
             const line = buffer.slice(0, boundary).trim();
@@ -1833,8 +1833,8 @@ function renderDashboard() {
                   setCommitteeCardMeta(event.memberId, event.role || event.memberId, event.model || "modelo", prefix + (event.text || "Sem leitura."));
                   const current = committeeSceneReport.textContent === "A leitura-base dos modelos de visão aparecerá aqui antes do comitê responder."
                     ? ""
-                    : (committeeSceneReport.textContent + "\n\n");
-                  committeeSceneReport.textContent = current + (event.role || event.memberId) + " (" + (event.model || "modelo") + "):\n" + (event.text || "Sem leitura.");
+                    : (committeeSceneReport.textContent + "\\n\\n");
+                  committeeSceneReport.textContent = current + (event.role || event.memberId) + " (" + (event.model || "modelo") + "):\\n" + (event.text || "Sem leitura.");
                 }
 
                 if (event.type === "member_begin") {
@@ -1862,7 +1862,7 @@ function renderDashboard() {
               }
             }
 
-            boundary = buffer.indexOf("\n");
+            boundary = buffer.indexOf("\\n");
           }
 
           if (done) {
