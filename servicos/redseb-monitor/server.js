@@ -1748,22 +1748,22 @@ function renderDashboard() {
     function renderInlineMarkdown(text) {
       const tick = String.fromCharCode(96);
       let html = escapeHtml(text || "");
-      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_match, label, url) => {
+      html = html.replace(new RegExp("\\\\[([^\\\\]]+)\\\\]\\\\((https?:\\\\/\\\\/[^\\\\s)]+)\\\\)", "g"), (_match, label, url) => {
         const safeUrl = escapeHtml(url);
         return '<a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' + label + "</a>";
       });
       html = html.replace(new RegExp(tick + "([^" + tick + "]+)" + tick, "g"), "<code>$1</code>");
-      html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-      html = html.replace(/__([^_]+)__/g, "<strong>$1</strong>");
-      html = html.replace(/(^|[\s(])\*([^*]+)\*(?=[\s).,!?:;]|$)/g, "$1<em>$2</em>");
-      html = html.replace(/(^|[\s(])_([^_]+)_(?=[\s).,!?:;]|$)/g, "$1<em>$2</em>");
+      html = html.replace(new RegExp("\\\\\\*\\\\\\*([^*]+)\\\\\\*\\\\\\*", "g"), "<strong>$1</strong>");
+      html = html.replace(new RegExp("__([^_]+)__", "g"), "<strong>$1</strong>");
+      html = html.replace(new RegExp("(^|[\\\\s(])\\\\*([^*]+)\\\\*(?=[\\\\s).,!?:;]|$)", "g"), "$1<em>$2</em>");
+      html = html.replace(new RegExp("(^|[\\\\s(])_([^_]+)_(?=[\\\\s).,!?:;]|$)", "g"), "$1<em>$2</em>");
       return html;
     }
 
     function renderMarkdownHtml(source) {
       const tick = String.fromCharCode(96);
       const fence = tick + tick + tick;
-      const text = String(source || "").replace(/\r\n/g, "\n");
+      const text = String(source || "").replace(new RegExp("\\\\r\\\\n", "g"), "\\n");
       if (!text.trim()) {
         return "<p></p>";
       }
@@ -1772,43 +1772,43 @@ function renderDashboard() {
       const withPlaceholders = text.replace(new RegExp(fence + "([\\\\w-]*)\\n([\\\\s\\\\S]*?)" + fence, "g"), (_match, language, code) => {
         const token = "@@CODEBLOCK_" + codeBlocks.length + "@@";
         const langClass = language ? ' class="language-' + escapeHtml(language) + '"' : "";
-        codeBlocks.push("<pre><code" + langClass + ">" + escapeHtml(code.replace(/\n$/, "")) + "</code></pre>");
+        codeBlocks.push("<pre><code" + langClass + ">" + escapeHtml(code.replace(new RegExp("\\\\n$", "g"), "")) + "</code></pre>");
         return token;
       });
 
-      const blocks = withPlaceholders.split(/\n\s*\n/).map((block) => block.trim()).filter(Boolean);
+      const blocks = withPlaceholders.split(new RegExp("\\\\n\\\\s*\\\\n")).map((block) => block.trim()).filter(Boolean);
       const htmlBlocks = blocks.map((block) => {
-        if (/^@@CODEBLOCK_\d+@@$/.test(block)) {
+        if (new RegExp("^@@CODEBLOCK_\\\\d+@@$").test(block)) {
           return block;
         }
 
-        const lines = block.split("\n").map((line) => line.trimRight());
+        const lines = block.split("\\n").map((line) => line.trimRight());
         if (!lines.length) {
           return "";
         }
 
-        if (/^#{1,4}\s+/.test(lines[0])) {
-          const level = Math.min(4, lines[0].match(/^#+/)[0].length);
-          return "<h" + level + ">" + renderInlineMarkdown(lines[0].replace(/^#{1,4}\s+/, "")) + "</h" + level + ">";
+        if (new RegExp("^#{1,4}\\\\s+").test(lines[0])) {
+          const level = Math.min(4, lines[0].match(new RegExp("^#+"))[0].length);
+          return "<h" + level + ">" + renderInlineMarkdown(lines[0].replace(new RegExp("^#{1,4}\\\\s+"), "")) + "</h" + level + ">";
         }
 
-        if (lines.every((line) => /^>\s?/.test(line))) {
-          return "<blockquote>" + lines.map((line) => renderInlineMarkdown(line.replace(/^>\s?/, ""))).join("<br>") + "</blockquote>";
+        if (lines.every((line) => new RegExp("^>\\\\s?").test(line))) {
+          return "<blockquote>" + lines.map((line) => renderInlineMarkdown(line.replace(new RegExp("^>\\\\s?"), ""))).join("<br>") + "</blockquote>";
         }
 
-        if (lines.every((line) => /^[-*+]\s+/.test(line))) {
-          return "<ul>" + lines.map((line) => "<li>" + renderInlineMarkdown(line.replace(/^[-*+]\s+/, "")) + "</li>").join("") + "</ul>";
+        if (lines.every((line) => new RegExp("^[-*+]\\\\s+").test(line))) {
+          return "<ul>" + lines.map((line) => "<li>" + renderInlineMarkdown(line.replace(new RegExp("^[-*+]\\\\s+"), "")) + "</li>").join("") + "</ul>";
         }
 
-        if (lines.every((line) => /^\d+\.\s+/.test(line))) {
-          return "<ol>" + lines.map((line) => "<li>" + renderInlineMarkdown(line.replace(/^\d+\.\s+/, "")) + "</li>").join("") + "</ol>";
+        if (lines.every((line) => new RegExp("^\\\\d+\\\\.\\\\s+").test(line))) {
+          return "<ol>" + lines.map((line) => "<li>" + renderInlineMarkdown(line.replace(new RegExp("^\\\\d+\\\\.\\\\s+"), "")) + "</li>").join("") + "</ol>";
         }
 
         return "<p>" + lines.map((line) => renderInlineMarkdown(line)).join("<br>") + "</p>";
       });
 
       let html = htmlBlocks.join("");
-      html = html.replace(/@@CODEBLOCK_(\d+)@@/g, (_match, index) => codeBlocks[Number(index)] || "");
+      html = html.replace(new RegExp("@@CODEBLOCK_(\\\\d+)@@", "g"), (_match, index) => codeBlocks[Number(index)] || "");
       return html;
     }
 
