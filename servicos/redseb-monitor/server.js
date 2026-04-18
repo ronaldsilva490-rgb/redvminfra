@@ -1132,35 +1132,9 @@ function renderDashboard() {
     .viewer {
       min-width: 0;
       display: grid;
-      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
+      grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
       gap: 18px;
       align-items: start;
-    }
-    .viewer > .hero {
-      grid-column: 1 / -1;
-    }
-    .viewer > .insights {
-      grid-column: 2;
-      grid-row: 2;
-      height: fit-content;
-    }
-    .viewer > .command-panel:first-of-type {
-      grid-column: 2;
-      grid-row: 3;
-      height: fit-content;
-    }
-    .viewer > .stage {
-      grid-column: 1;
-      grid-row: 2 / span 3;
-    }
-    .viewer > .command-panel:last-of-type {
-      grid-column: 2;
-      grid-row: 4;
-      height: fit-content;
-    }
-    .viewer > .committee-panel {
-      grid-column: 1 / -1;
-      grid-row: 5;
     }
     .hero {
       border-radius: 24px;
@@ -1189,21 +1163,6 @@ function renderDashboard() {
       font-size: 12px;
       font-family: "IBM Plex Mono", Consolas, monospace;
       white-space: nowrap;
-    }
-    .workspace {
-      display: grid;
-      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
-      gap: 18px;
-      align-items: stretch;
-    }
-    .workspace-stage,
-    .workspace-side {
-      min-width: 0;
-      display: grid;
-      gap: 14px;
-    }
-    .workspace-side {
-      align-content: start;
     }
     .insights { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .insight strong { font-size: 17px; line-height: 1.35; word-break: break-word; }
@@ -1350,11 +1309,12 @@ function renderDashboard() {
     }
     .committee-card .meta {
       margin-top: 6px;
+      word-break: break-word;
     }
     .committee-output {
       margin-top: 12px;
-      min-height: 160px;
-      max-height: 360px;
+      min-height: 120px;
+      max-height: 280px;
       overflow: auto;
       padding: 12px;
       border-radius: 14px;
@@ -1365,6 +1325,8 @@ function renderDashboard() {
       color: var(--text);
       font-family: "IBM Plex Mono", Consolas, monospace;
       font-size: 12px;
+      word-break: break-word;
+      overflow-wrap: anywhere;
     }
     .stage {
       border-radius: 24px;
@@ -1409,21 +1371,6 @@ function renderDashboard() {
       .sidebar {
         position: static;
         max-height: none;
-      }
-      .viewer {
-        grid-template-columns: 1fr;
-      }
-      .viewer > .hero,
-      .viewer > .insights,
-      .viewer > .stage,
-      .viewer > .committee-panel,
-      .viewer > .command-panel:first-of-type,
-      .viewer > .command-panel:last-of-type {
-        grid-column: auto;
-        grid-row: auto;
-      }
-      .workspace {
-        grid-template-columns: 1fr;
       }
       .summary, .insights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .command-grid, .committee-config-grid { grid-template-columns: 1fr 1fr; }
