@@ -12,6 +12,10 @@ const repoRoot = process.env.REDVM_REPO_DIR || "/opt/redvm-repo";
 const dashboardRoot = process.env.RED_DASHBOARD_DIR || "/opt/redvm-dashboard";
 const rediaRoot = process.env.REDIA_DIR || "/opt/redia";
 const portalRoot = process.env.RED_PORTAL_DIR || "/var/www/red-portal";
+const proxyBase = String(process.env.RED_PROXY_BASE || "http://127.0.0.1:8080").replace(/\/+$/, "");
+const committeeDefaultVisionPrimary = process.env.RED_SEB_COMMITTEE_VISION_PRIMARY || "NIM - meta/llama-3.2-11b-vision-instruct";
+const committeeDefaultVisionSecondary = process.env.RED_SEB_COMMITTEE_VISION_SECONDARY || "NIM - nvidia/nemotron-nano-12b-v2-vl";
+const committeeDefaultLead = process.env.RED_SEB_COMMITTEE_LEAD || "NIM - nvidia/llama-3.1-nemotron-nano-8b-v1";
 const sessions = new Map();
 const downloadCandidates = {
   setupMsi: [
@@ -374,6 +378,337 @@ function ensureSession(sessionId, request, socket, payload) {
   };
 }
 
+function resolveCommitteeDefaults(models) {
+  const ids = new Set((models || []).map((model) => String(model.id || "")));
+  const pickFirst = (candidates, fallback = "") => {
+    for (const candidate of candidates) {
+      if (ids.has(candidate)) {
+        return candidate;
+      }
+    }
+    return fallback;
+  };
+
+  return {
+    visionPrimary: pickFirst(
+      [
+        committeeDefaultVisionPrimary,
+        "NIM - meta/llama-3.2-11b-vision-instruct",
+        "NIM - nvidia/nemotron-nano-12b-v2-vl",
+        "qwen3-vl:235b-instruct"
+      ],
+      committeeDefaultVisionPrimary
+    ),
+    visionSecondary: pickFirst(
+      [
+        committeeDefaultVisionSecondary,
+        "NIM - nvidia/nemotron-nano-12b-v2-vl",
+        "NIM - meta/llama-3.2-90b-vision-instruct",
+        "qwen3-vl:235b-instruct"
+      ],
+      committeeDefaultVisionSecondary
+    ),
+    lead: pickFirst(
+      [
+        committeeDefaultLead,
+        "NIM - nvidia/llama-3.1-nemotron-nano-8b-v1",
+        "NIM - abacusai/dracarys-llama-3.1-70b-instruct",
+        "qwen3-next:80b"
+      ],
+      committeeDefaultLead
+    )
+  };
+}
+
+async function fetchProxyJson(pathname, options = {}) {
+  const controller = new AbortController();
+  const timeoutMs = Number(options.timeoutMs || 120000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(proxyBase + pathname, {
+      method: options.method || "GET",
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {})
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal
+    });
+    const text = await response.text();
+    let payload = {};
+
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = { raw: text };
+    }
+
+    if (!response.ok) {
+      const message = payload?.error?.message || payload?.error || payload?.detail || payload?.raw || ("HTTP " + response.status);
+      throw new Error(String(message));
+    }
+
+    return payload;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function extractChatText(payload) {
+  const choice = Array.isArray(payload?.choices) ? payload.choices[0] : null;
+  const message = choice?.message || {};
+  const content = message.content;
+
+  if (typeof content === "string") {
+    return content.trim();
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item.text === "string") return item.text;
+        return "";
+      })
+      .join("")
+      .trim();
+  }
+
+  return "";
+}
+
+function committeeVisionPrompt() {
+  return [
+    "Analise esta captura do Safe Exam Browser com muito cuidado.",
+    "Descreva exatamente o que esta visivel na imagem em portugues do Brasil.",
+    "Inclua: contexto geral da tela, textos legiveis, areas da interface, sinais importantes, possiveis riscos ou bloqueios, e qualquer detalhe relevante para operacao.",
+    "Nao invente nada. Se algo estiver incerto, diga claramente."
+  ].join(" ");
+}
+
+function committeeMemberSystemPrompt(roleLabel) {
+  return [
+    "Voce faz parte do comite de analise visual da RED Systems.",
+    "Seu papel neste turno e: " + roleLabel + ".",
+    "Receba os relatórios visuais, pense como operador tecnico e responda em portugues do Brasil.",
+    "Seja objetivo, preciso e util. Nao invente elementos que nao estejam no relatorio."
+  ].join(" ");
+}
+
+function buildCommitteeBrief(context) {
+  const parts = [
+    "FRAME ATUAL DO SEB",
+    "Sessao: " + (context.session?.sessionId || "n/d"),
+    "View: " + (context.view?.viewId || "n/d"),
+    "Titulo: " + (context.view?.title || context.session?.title || "n/d"),
+    "URL: " + (context.view?.url || context.session?.url || "n/d"),
+    "Viewport: " + ((context.view?.width || 0) + "x" + (context.view?.height || 0)),
+    "",
+    "RELATORIO VISUAL A",
+    context.visionPrimary || "Sem resposta.",
+    "",
+    "RELATORIO VISUAL B",
+    context.visionSecondary || "Sem resposta.",
+    "",
+    "TAREFA",
+    "Com base nesses relatórios, diga o que a tela mostra, o que merece atenção e qual seria a próxima ação sensata do operador."
+  ];
+
+  return parts.join("\n");
+}
+
+function normalizeModelCatalogItems(items) {
+  return (Array.isArray(items) ? items : []).map((item) => ({
+    id: String(item.id || ""),
+    provider: String(item.provider || ""),
+    kind: String(item.kind || ""),
+    note: String(item.note || ""),
+    capabilities: Array.isArray(item.capabilities) ? item.capabilities.map((value) => String(value)) : []
+  }));
+}
+
+function prioritizeModels(models, preferredIds) {
+  const priority = new Map((preferredIds || []).map((id, index) => [String(id || ""), index]));
+  return (models || []).slice().sort((left, right) => {
+    const leftRank = priority.has(left.id) ? priority.get(left.id) : 999;
+    const rightRank = priority.has(right.id) ? priority.get(right.id) : 999;
+    if (leftRank !== rightRank) {
+      return leftRank - rightRank;
+    }
+    return String(left.id || "").localeCompare(String(right.id || ""));
+  });
+}
+
+async function fetchCommitteeModelCatalog() {
+  const payload = await fetchProxyJson("/api/router/models", { timeoutMs: 30000 });
+  const models = normalizeModelCatalogItems(payload?.models);
+  const defaults = resolveCommitteeDefaults(models);
+  const visionModels = prioritizeModels(
+    models.filter((model) => model.capabilities.includes("vision")),
+    [defaults.visionPrimary, defaults.visionSecondary, "NIM - meta/llama-3.2-90b-vision-instruct", "qwen3-vl:235b-instruct"]
+  );
+  const leadModels = prioritizeModels(
+    models.filter((model) => model.capabilities.includes("chat") && !model.capabilities.includes("vision")),
+    [defaults.lead, "NIM - abacusai/dracarys-llama-3.1-70b-instruct", "NIM - deepseek-ai/deepseek-v3.1", "qwen3-next:80b"]
+  );
+  return {
+    visionModels,
+    leadModels,
+    defaults
+  };
+}
+
+function resolveActiveSessionAndView(sessionId, viewId) {
+  const session = sessions.get(String(sessionId || ""));
+  if (!session) {
+    throw new Error("Sessao do SEB nao encontrada.");
+  }
+
+  const views = Array.from(session.views || new Map().values());
+  if (!views.length) {
+    throw new Error("A sessao atual ainda nao publicou nenhuma view.");
+  }
+
+  const view = views.find((item) => String(item.viewId || "") === String(viewId || "")) || views[0];
+  if (!view?.imageBase64) {
+    throw new Error("A view atual ainda nao possui frame valido para analise.");
+  }
+
+  return { session, view };
+}
+
+async function requestVisionExtraction(model, frameBase64) {
+  const payload = await fetchProxyJson("/v1/chat/completions", {
+    method: "POST",
+    timeoutMs: 180000,
+    body: {
+      model,
+      stream: false,
+      temperature: 0.2,
+      max_tokens: 700,
+      messages: [
+        { role: "system", content: "Voce e um analista visual rigoroso da RED Systems." },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: committeeVisionPrompt() },
+            { type: "image_url", image_url: { url: "data:image/jpeg;base64," + frameBase64 } }
+          ]
+        }
+      ]
+    }
+  });
+
+  return extractChatText(payload);
+}
+
+function extractStreamDelta(chunkPayload) {
+  const choices = Array.isArray(chunkPayload?.choices) ? chunkPayload.choices : [];
+  let text = "";
+
+  for (const choice of choices) {
+    const delta = choice?.delta || {};
+    if (typeof delta.content === "string") {
+      text += delta.content;
+      continue;
+    }
+
+    if (Array.isArray(delta.content)) {
+      for (const item of delta.content) {
+        if (typeof item === "string") {
+          text += item;
+        } else if (item && typeof item.text === "string") {
+          text += item.text;
+        }
+      }
+    }
+  }
+
+  return text;
+}
+
+function writeNdjsonEvent(response, payload) {
+  response.write(JSON.stringify(payload) + "\n");
+}
+
+async function streamCommitteeMember(member, prompt, response) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 180000);
+  let finalText = "";
+
+  try {
+    const upstream = await fetch(proxyBase + "/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: member.model,
+        stream: true,
+        temperature: 0.4,
+        max_tokens: 900,
+        messages: [
+          { role: "system", content: committeeMemberSystemPrompt(member.role) },
+          { role: "user", content: prompt }
+        ]
+      })
+    });
+
+    if (!upstream.ok || !upstream.body) {
+      const errorText = await upstream.text().catch(() => "");
+      throw new Error(errorText || ("Falha ao iniciar stream do modelo " + member.model));
+    }
+
+    writeNdjsonEvent(response, { type: "member_begin", memberId: member.id, role: member.role, model: member.model });
+    const reader = upstream.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary !== -1) {
+        const chunk = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const dataLines = chunk
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trim())
+          .filter(Boolean);
+
+        for (const dataLine of dataLines) {
+          if (dataLine === "[DONE]") {
+            continue;
+          }
+
+          try {
+            const payload = JSON.parse(dataLine);
+            const delta = extractStreamDelta(payload);
+            if (delta) {
+              finalText += delta;
+              writeNdjsonEvent(response, { type: "member_delta", memberId: member.id, delta });
+            }
+          } catch {
+            // ignore malformed event chunk
+          }
+        }
+
+        boundary = buffer.indexOf("\n\n");
+      }
+
+      if (done) {
+        break;
+      }
+    }
+
+    writeNdjsonEvent(response, { type: "member_done", memberId: member.id, text: finalText.trim() });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function renderDashboard() {
   const logoTag = resolvedAssets.logo
     ? '<img class="brand-logo" src="/assets/logo" alt="RED logo">'
@@ -601,6 +936,10 @@ function renderDashboard() {
       grid-row: 4;
       height: fit-content;
     }
+    .viewer > .committee-panel {
+      grid-column: 1 / -1;
+      grid-row: 5;
+    }
     .hero {
       border-radius: 24px;
       padding: 18px 20px;
@@ -701,6 +1040,69 @@ function renderDashboard() {
       white-space: nowrap;
     }
     .download-status { min-height: 20px; color: var(--muted); font-size: 13px; margin-top: 12px; }
+    .committee-config-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      align-items: end;
+      margin-top: 12px;
+    }
+    .committee-run {
+      min-width: 180px;
+    }
+    .committee-status {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 12px;
+    }
+    .committee-scene-report {
+      margin-top: 12px;
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(232,228,227,0.08);
+      background: rgba(16, 2, 2, 0.92);
+      color: var(--muted);
+      line-height: 1.6;
+      max-height: 220px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+    .committee-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .committee-card {
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(232,228,227,0.08);
+      background: linear-gradient(180deg, rgba(232,68,44,0.08), rgba(255,255,255,0.02));
+      min-width: 0;
+    }
+    .committee-card h4 {
+      margin: 0;
+      font-size: 15px;
+    }
+    .committee-card .meta {
+      margin-top: 6px;
+    }
+    .committee-output {
+      margin-top: 12px;
+      min-height: 160px;
+      max-height: 360px;
+      overflow: auto;
+      padding: 12px;
+      border-radius: 14px;
+      background: rgba(16, 2, 2, 0.92);
+      border: 1px solid rgba(232,228,227,0.08);
+      white-space: pre-wrap;
+      line-height: 1.6;
+      color: var(--text);
+      font-family: "IBM Plex Mono", Consolas, monospace;
+      font-size: 12px;
+    }
     .stage {
       border-radius: 24px;
       padding: 16px;
@@ -751,6 +1153,7 @@ function renderDashboard() {
       .viewer > .hero,
       .viewer > .insights,
       .viewer > .stage,
+      .viewer > .committee-panel,
       .viewer > .command-panel:first-of-type,
       .viewer > .command-panel:last-of-type {
         grid-column: auto;
@@ -760,11 +1163,12 @@ function renderDashboard() {
         grid-template-columns: 1fr;
       }
       .summary, .insights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .command-grid { grid-template-columns: 1fr 1fr; }
+      .command-grid, .committee-config-grid { grid-template-columns: 1fr 1fr; }
+      .committee-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 720px) {
       .shell { padding: 12px; }
-      .summary, .insights, .command-grid, .download-grid { grid-template-columns: 1fr; }
+      .summary, .insights, .command-grid, .download-grid, .committee-config-grid { grid-template-columns: 1fr; }
       .hero-top, .stage-header, .toolbar { flex-direction: column; align-items: start; }
       .frame { min-height: 280px; }
     }
@@ -874,6 +1278,44 @@ function renderDashboard() {
         </div>
         <div class="command-status" id="command-status">Selecione uma sessão ativa para enviar um alerta.</div>
       </section>
+      <section class="command-panel glass committee-panel">
+        <h3>Comitê de IA</h3>
+        <p>Dois revisores visuais e um relator principal analisam a frame atual da view selecionada usando o proxy da RED Systems.</p>
+        <div class="committee-config-grid">
+          <label class="field">
+            <span>Visão A</span>
+            <select id="committee-vision-primary"></select>
+          </label>
+          <label class="field">
+            <span>Visão B</span>
+            <select id="committee-vision-secondary"></select>
+          </label>
+          <label class="field">
+            <span>Relator</span>
+            <select id="committee-lead"></select>
+          </label>
+          <button class="send-button committee-run" id="committee-run-button" type="button">Analisar frame</button>
+        </div>
+        <div class="committee-status" id="committee-status">Selecione uma sessão com frame válido para iniciar a análise.</div>
+        <div class="committee-scene-report" id="committee-scene-report">A leitura-base dos modelos de visão aparecerá aqui antes do comitê responder.</div>
+        <div class="committee-grid">
+          <article class="committee-card">
+            <h4 id="committee-title-vision_primary">Visão A</h4>
+            <div class="meta" id="committee-meta-vision_primary">Aguardando configuração.</div>
+            <div class="committee-output" id="committee-output-vision_primary">Sem análise ainda.</div>
+          </article>
+          <article class="committee-card">
+            <h4 id="committee-title-vision_secondary">Visão B</h4>
+            <div class="meta" id="committee-meta-vision_secondary">Aguardando configuração.</div>
+            <div class="committee-output" id="committee-output-vision_secondary">Sem análise ainda.</div>
+          </article>
+          <article class="committee-card">
+            <h4 id="committee-title-lead">Relator principal</h4>
+            <div class="meta" id="committee-meta-lead">Aguardando configuração.</div>
+            <div class="committee-output" id="committee-output-lead">Sem análise ainda.</div>
+          </article>
+        </div>
+      </section>
     </main>
   </div>
   <script>
@@ -896,10 +1338,19 @@ function renderDashboard() {
     const batLink = document.getElementById("bat-link");
     const downloadBatButton = document.getElementById("download-bat-button");
     const downloadStatus = document.getElementById("download-status");
+    const committeeVisionPrimary = document.getElementById("committee-vision-primary");
+    const committeeVisionSecondary = document.getElementById("committee-vision-secondary");
+    const committeeLead = document.getElementById("committee-lead");
+    const committeeRunButton = document.getElementById("committee-run-button");
+    const committeeStatus = document.getElementById("committee-status");
+    const committeeSceneReport = document.getElementById("committee-scene-report");
     const ALERT_POSITION_KEY = "redseb.monitor.alertPosition.v1";
+    const COMMITTEE_MODELS_KEY = "redseb.committee.models.v1";
     let activeSessionId = null;
     let activeViewId = null;
     const knownViewIdsBySession = new Map();
+    let committeeCatalog = null;
+    let committeeBusy = false;
 
     function escapeHtml(value) {
       return String(value || "")
@@ -940,6 +1391,86 @@ function renderDashboard() {
       } catch {
         // ignore
       }
+    }
+
+    function readCommitteePreferences() {
+      try {
+        const raw = window.localStorage.getItem(COMMITTEE_MODELS_KEY);
+        return raw ? JSON.parse(raw) : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function persistCommitteePreferences() {
+      try {
+        window.localStorage.setItem(COMMITTEE_MODELS_KEY, JSON.stringify({
+          visionPrimary: committeeVisionPrimary.value,
+          visionSecondary: committeeVisionSecondary.value,
+          lead: committeeLead.value
+        }));
+      } catch {
+        // ignore
+      }
+    }
+
+    function populateSelect(select, models, selectedId) {
+      if (!select) return;
+      select.innerHTML = (models || []).map((model) => {
+        const selected = String(model.id || "") === String(selectedId || "") ? " selected" : "";
+        const note = model.note ? " - " + model.note : "";
+        return '<option value="' + escapeHtml(model.id) + '"' + selected + '>' + escapeHtml(model.id + note) + '</option>';
+      }).join("");
+    }
+
+    function setCommitteeCardMeta(memberId, title, meta, text) {
+      const titleNode = document.getElementById("committee-title-" + memberId);
+      const metaNode = document.getElementById("committee-meta-" + memberId);
+      const outputNode = document.getElementById("committee-output-" + memberId);
+      if (titleNode) titleNode.textContent = title;
+      if (metaNode) metaNode.textContent = meta;
+      if (outputNode && text !== undefined) outputNode.textContent = text;
+    }
+
+    function resetCommitteeOutputs() {
+      committeeSceneReport.textContent = "A leitura-base dos modelos de visão aparecerá aqui antes do comitê responder.";
+      setCommitteeCardMeta("vision_primary", "Visão A", committeeVisionPrimary.value || "Modelo não definido.", "Sem análise ainda.");
+      setCommitteeCardMeta("vision_secondary", "Visão B", committeeVisionSecondary.value || "Modelo não definido.", "Sem análise ainda.");
+      setCommitteeCardMeta("lead", "Relator principal", committeeLead.value || "Modelo não definido.", "Sem análise ainda.");
+    }
+
+    async function loadCommitteeCatalog() {
+      const response = await fetch("/api/committee/models", { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || "Falha ao carregar catálogo do comitê.");
+      }
+
+      committeeCatalog = payload;
+      const preferences = readCommitteePreferences();
+      const defaults = payload.defaults || {};
+      populateSelect(committeeVisionPrimary, payload.visionModels || [], preferences.visionPrimary || defaults.visionPrimary || "");
+      populateSelect(committeeVisionSecondary, payload.visionModels || [], preferences.visionSecondary || defaults.visionSecondary || "");
+      populateSelect(committeeLead, payload.leadModels || [], preferences.lead || defaults.lead || "");
+      persistCommitteePreferences();
+      resetCommitteeOutputs();
+    }
+
+    function updateCommitteeBusy(busy) {
+      committeeBusy = Boolean(busy);
+      if (committeeRunButton) {
+        committeeRunButton.disabled = committeeBusy;
+        committeeRunButton.textContent = committeeBusy ? "Analisando..." : "Analisar frame";
+      }
+    }
+
+    function appendCommitteeOutput(memberId, delta) {
+      const outputNode = document.getElementById("committee-output-" + memberId);
+      if (!outputNode) return;
+      if (outputNode.textContent === "Sem análise ainda.") {
+        outputNode.textContent = "";
+      }
+      outputNode.textContent += delta;
     }
 
     function getActiveView(session) {
@@ -1120,6 +1651,122 @@ function renderDashboard() {
       }
     }
 
+    async function runCommitteeAnalysis() {
+      if (!activeSessionId) {
+        committeeStatus.textContent = "Selecione uma sessão ativa antes de analisar.";
+        return;
+      }
+
+      if (!activeViewId) {
+        committeeStatus.textContent = "Selecione uma view com frame válido antes de analisar.";
+        return;
+      }
+
+      if (committeeBusy) {
+        return;
+      }
+
+      updateCommitteeBusy(true);
+      resetCommitteeOutputs();
+      committeeStatus.textContent = "Preparando análise da frame atual...";
+
+      try {
+        persistCommitteePreferences();
+        const response = await fetch("/api/committee/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: activeSessionId,
+            viewId: activeViewId,
+            visionPrimaryModel: committeeVisionPrimary.value,
+            visionSecondaryModel: committeeVisionSecondary.value,
+            leadModel: committeeLead.value
+          })
+        });
+
+        if (!response.ok || !response.body) {
+          const payload = await response.json().catch(() => ({}));
+          throw new Error(payload.error || "Falha ao iniciar o comitê de análise.");
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+          let boundary = buffer.indexOf("\n");
+
+          while (boundary !== -1) {
+            const line = buffer.slice(0, boundary).trim();
+            buffer = buffer.slice(boundary + 1);
+
+            if (line) {
+              let event;
+              try {
+                event = JSON.parse(line);
+              } catch {
+                event = null;
+              }
+
+              if (event) {
+                if (event.type === "status") {
+                  committeeStatus.textContent = event.message || "Analisando...";
+                }
+
+                if (event.type === "vision_begin") {
+                  setCommitteeCardMeta(event.memberId, event.role || event.memberId, event.model || "modelo", "Lendo a frame...");
+                }
+
+                if (event.type === "vision_result") {
+                  const prefix = event.error ? "[Falha] " : "";
+                  setCommitteeCardMeta(event.memberId, event.role || event.memberId, event.model || "modelo", prefix + (event.text || "Sem leitura."));
+                  const current = committeeSceneReport.textContent === "A leitura-base dos modelos de visão aparecerá aqui antes do comitê responder."
+                    ? ""
+                    : (committeeSceneReport.textContent + "\n\n");
+                  committeeSceneReport.textContent = current + (event.role || event.memberId) + " (" + (event.model || "modelo") + "):\n" + (event.text || "Sem leitura.");
+                }
+
+                if (event.type === "member_begin") {
+                  setCommitteeCardMeta(event.memberId, event.role || event.memberId, event.model || "modelo", "");
+                }
+
+                if (event.type === "member_delta") {
+                  appendCommitteeOutput(event.memberId, event.delta || "");
+                }
+
+                if (event.type === "member_done") {
+                  const outputNode = document.getElementById("committee-output-" + event.memberId);
+                  if (outputNode && !outputNode.textContent.trim()) {
+                    outputNode.textContent = event.text || "Sem resposta.";
+                  }
+                }
+
+                if (event.type === "member_error") {
+                  setCommitteeCardMeta(event.memberId, event.role || event.memberId, event.model || "modelo", "Erro: " + (event.error || "falha desconhecida"));
+                }
+
+                if (event.type === "done") {
+                  committeeStatus.textContent = event.ok ? "Comitê concluído." : "Comitê concluído com avisos.";
+                }
+              }
+            }
+
+            boundary = buffer.indexOf("\n");
+          }
+
+          if (done) {
+            break;
+          }
+        }
+      } catch (error) {
+        committeeStatus.textContent = error.message;
+      } finally {
+        updateCommitteeBusy(false);
+      }
+    }
+
     async function refresh() {
       try {
         const response = await fetch("/api/sessions", { cache: "no-store" });
@@ -1176,10 +1823,26 @@ function renderDashboard() {
 
     refresh();
     hydrateAlertPreferences();
+    loadCommitteeCatalog().catch((error) => {
+      committeeStatus.textContent = error.message;
+    });
     setInterval(refresh, 1000);
     sendAlertButton.addEventListener("click", sendAlert);
     alertPosition.addEventListener("change", () => persistAlertPosition(alertPosition.value));
     downloadBatButton.addEventListener("click", downloadBat);
+    committeeRunButton.addEventListener("click", runCommitteeAnalysis);
+    committeeVisionPrimary.addEventListener("change", () => {
+      persistCommitteePreferences();
+      resetCommitteeOutputs();
+    });
+    committeeVisionSecondary.addEventListener("change", () => {
+      persistCommitteePreferences();
+      resetCommitteeOutputs();
+    });
+    committeeLead.addEventListener("change", () => {
+      persistCommitteePreferences();
+      resetCommitteeOutputs();
+    });
   </script>
 </body>
 </html>`;
@@ -1211,6 +1874,116 @@ const server = http.createServer((request, response) => {
 
   if (pathname === "/api/summary") {
     return sendJson(response, 200, getSummary());
+  }
+
+  if (pathname === "/api/committee/models") {
+    return fetchCommitteeModelCatalog()
+      .then((payload) => sendJson(response, 200, { ok: true, ...payload }))
+      .catch((error) => sendJson(response, 500, { ok: false, error: error.message }));
+  }
+
+  if (pathname === "/api/committee/analyze" && request.method === "POST") {
+    return readRequestBody(request)
+      .then(async (body) => {
+        let payload;
+
+        try {
+          payload = JSON.parse(body || "{}");
+        } catch {
+          return sendJson(response, 400, { ok: false, error: "Payload inválido." });
+        }
+
+        const sessionId = String(payload.sessionId || "");
+        const viewId = String(payload.viewId || "");
+        if (!sessionId) {
+          return sendJson(response, 400, { ok: false, error: "Selecione uma sessão ativa antes de analisar." });
+        }
+
+        let target;
+        try {
+          target = resolveActiveSessionAndView(sessionId, viewId);
+        } catch (error) {
+          return sendJson(response, 409, { ok: false, error: error.message });
+        }
+
+        const catalog = await fetchCommitteeModelCatalog();
+        const defaults = catalog.defaults || {};
+        const visionPrimaryModel = String(payload.visionPrimaryModel || defaults.visionPrimary || "").trim();
+        const visionSecondaryModel = String(payload.visionSecondaryModel || defaults.visionSecondary || "").trim();
+        const leadModel = String(payload.leadModel || defaults.lead || "").trim();
+
+        response.writeHead(200, {
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          "Connection": "keep-alive",
+          "X-Accel-Buffering": "no"
+        });
+
+        writeNdjsonEvent(response, {
+          type: "status",
+          stage: "capture",
+          message: "Frame atual capturada. Iniciando leitura visual."
+        });
+
+        const visionMembers = [
+          { id: "vision_primary", role: "Visão A", model: visionPrimaryModel },
+          { id: "vision_secondary", role: "Visão B", model: visionSecondaryModel }
+        ].filter((member) => member.model);
+
+        const visionResults = {};
+        visionMembers.forEach((member) => {
+          writeNdjsonEvent(response, { type: "vision_begin", memberId: member.id, role: member.role, model: member.model });
+        });
+        await Promise.all(
+          visionMembers.map(async (member) => {
+            try {
+              const text = await requestVisionExtraction(member.model, target.view.imageBase64);
+              visionResults[member.id] = text;
+              writeNdjsonEvent(response, { type: "vision_result", memberId: member.id, role: member.role, model: member.model, text });
+            } catch (error) {
+              const text = "Falha ao obter leitura visual: " + error.message;
+              visionResults[member.id] = text;
+              writeNdjsonEvent(response, { type: "vision_result", memberId: member.id, role: member.role, model: member.model, text, error: true });
+            }
+          })
+        );
+
+        const prompt = buildCommitteeBrief({
+          session: target.session,
+          view: target.view,
+          visionPrimary: visionResults.vision_primary || "Sem relatório da visão A.",
+          visionSecondary: visionResults.vision_secondary || "Sem relatório da visão B."
+        });
+
+        writeNdjsonEvent(response, {
+          type: "status",
+          stage: "committee",
+          message: "Relatório visual consolidado. Iniciando respostas em paralelo."
+        });
+
+        const committeeMembers = [
+          { id: "vision_primary", role: "Revisor visual A", model: visionPrimaryModel },
+          { id: "vision_secondary", role: "Revisor visual B", model: visionSecondaryModel },
+          { id: "lead", role: "Relator principal", model: leadModel }
+        ].filter((member) => member.model);
+
+        const results = await Promise.allSettled(
+          committeeMembers.map((member) =>
+            streamCommitteeMember(member, prompt, response).catch((error) => {
+              writeNdjsonEvent(response, { type: "member_error", memberId: member.id, role: member.role, model: member.model, error: error.message });
+            })
+          )
+        );
+
+        writeNdjsonEvent(response, {
+          type: "done",
+          ok: results.every((item) => item.status === "fulfilled"),
+          sessionId,
+          viewId: target.view.viewId
+        });
+        response.end();
+      })
+      .catch((error) => sendJson(response, 500, { ok: false, error: error.message }));
   }
 
   if (pathname === "/api/alert" && request.method === "POST") {
