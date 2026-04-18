@@ -1318,7 +1318,7 @@ function renderDashboard() {
       margin-top: 0;
       max-height: 220px;
       overflow: auto;
-      white-space: pre-wrap;
+      line-height: 1.6;
     }
     .committee-grid {
       display: grid;
@@ -1350,13 +1350,75 @@ function renderDashboard() {
       border-radius: 14px;
       background: rgba(16, 2, 2, 0.92);
       border: 1px solid rgba(232,228,227,0.08);
-      white-space: pre-wrap;
       line-height: 1.6;
       color: var(--text);
-      font-family: "IBM Plex Mono", Consolas, monospace;
-      font-size: 12px;
+      font-family: inherit;
+      font-size: 14px;
       word-break: break-word;
       overflow-wrap: anywhere;
+    }
+    .markdown-content {
+      display: grid;
+      gap: 10px;
+    }
+    .markdown-content > :first-child {
+      margin-top: 0;
+    }
+    .markdown-content > :last-child {
+      margin-bottom: 0;
+    }
+    .markdown-content p,
+    .markdown-content ul,
+    .markdown-content ol,
+    .markdown-content blockquote,
+    .markdown-content pre,
+    .markdown-content h1,
+    .markdown-content h2,
+    .markdown-content h3,
+    .markdown-content h4 {
+      margin: 0;
+    }
+    .markdown-content ul,
+    .markdown-content ol {
+      padding-left: 20px;
+    }
+    .markdown-content li + li {
+      margin-top: 6px;
+    }
+    .markdown-content blockquote {
+      border-left: 3px solid rgba(238,77,49,0.45);
+      padding-left: 12px;
+      color: rgba(232,228,227,0.86);
+    }
+    .markdown-content code {
+      font-family: "IBM Plex Mono", Consolas, monospace;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(232,228,227,0.08);
+      border-radius: 8px;
+      padding: 1px 6px;
+      font-size: 0.95em;
+    }
+    .markdown-content pre {
+      overflow: auto;
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(8, 3, 4, 0.95);
+      border: 1px solid rgba(232,228,227,0.08);
+    }
+    .markdown-content pre code {
+      background: transparent;
+      border: 0;
+      padding: 0;
+      border-radius: 0;
+      display: block;
+      white-space: pre-wrap;
+    }
+    .markdown-content a {
+      color: #ff8c74;
+      text-decoration: none;
+    }
+    .markdown-content a:hover {
+      text-decoration: underline;
     }
     .stage {
       border-radius: 24px;
@@ -1683,6 +1745,80 @@ function renderDashboard() {
         .replace(/'/g, "&#39;");
     }
 
+    function renderInlineMarkdown(text) {
+      const tick = String.fromCharCode(96);
+      let html = escapeHtml(text || "");
+      html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_match, label, url) => {
+        const safeUrl = escapeHtml(url);
+        return '<a href="' + safeUrl + '" target="_blank" rel="noopener noreferrer">' + label + "</a>";
+      });
+      html = html.replace(new RegExp(tick + "([^" + tick + "]+)" + tick, "g"), "<code>$1</code>");
+      html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      html = html.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+      html = html.replace(/(^|[\s(])\*([^*]+)\*(?=[\s).,!?:;]|$)/g, "$1<em>$2</em>");
+      html = html.replace(/(^|[\s(])_([^_]+)_(?=[\s).,!?:;]|$)/g, "$1<em>$2</em>");
+      return html;
+    }
+
+    function renderMarkdownHtml(source) {
+      const tick = String.fromCharCode(96);
+      const fence = tick + tick + tick;
+      const text = String(source || "").replace(/\r\n/g, "\n");
+      if (!text.trim()) {
+        return "<p></p>";
+      }
+
+      const codeBlocks = [];
+      const withPlaceholders = text.replace(new RegExp(fence + "([\\\\w-]*)\\n([\\\\s\\\\S]*?)" + fence, "g"), (_match, language, code) => {
+        const token = "@@CODEBLOCK_" + codeBlocks.length + "@@";
+        const langClass = language ? ' class="language-' + escapeHtml(language) + '"' : "";
+        codeBlocks.push("<pre><code" + langClass + ">" + escapeHtml(code.replace(/\n$/, "")) + "</code></pre>");
+        return token;
+      });
+
+      const blocks = withPlaceholders.split(/\n\s*\n/).map((block) => block.trim()).filter(Boolean);
+      const htmlBlocks = blocks.map((block) => {
+        if (/^@@CODEBLOCK_\d+@@$/.test(block)) {
+          return block;
+        }
+
+        const lines = block.split("\n").map((line) => line.trimRight());
+        if (!lines.length) {
+          return "";
+        }
+
+        if (/^#{1,4}\s+/.test(lines[0])) {
+          const level = Math.min(4, lines[0].match(/^#+/)[0].length);
+          return "<h" + level + ">" + renderInlineMarkdown(lines[0].replace(/^#{1,4}\s+/, "")) + "</h" + level + ">";
+        }
+
+        if (lines.every((line) => /^>\s?/.test(line))) {
+          return "<blockquote>" + lines.map((line) => renderInlineMarkdown(line.replace(/^>\s?/, ""))).join("<br>") + "</blockquote>";
+        }
+
+        if (lines.every((line) => /^[-*+]\s+/.test(line))) {
+          return "<ul>" + lines.map((line) => "<li>" + renderInlineMarkdown(line.replace(/^[-*+]\s+/, "")) + "</li>").join("") + "</ul>";
+        }
+
+        if (lines.every((line) => /^\d+\.\s+/.test(line))) {
+          return "<ol>" + lines.map((line) => "<li>" + renderInlineMarkdown(line.replace(/^\d+\.\s+/, "")) + "</li>").join("") + "</ol>";
+        }
+
+        return "<p>" + lines.map((line) => renderInlineMarkdown(line)).join("<br>") + "</p>";
+      });
+
+      let html = htmlBlocks.join("");
+      html = html.replace(/@@CODEBLOCK_(\d+)@@/g, (_match, index) => codeBlocks[Number(index)] || "");
+      return html;
+    }
+
+    function setMarkdownContent(node, source) {
+      if (!node) return;
+      const text = String(source || "");
+      node.dataset.markdownSource = text;
+      node.innerHTML = '<div class="markdown-content">' + renderMarkdownHtml(text) + "</div>";
+    }
+
     function formatDate(value) {
       if (!value) return "n/a";
       const date = new Date(value);
@@ -1895,11 +2031,11 @@ function renderDashboard() {
       const outputNode = document.getElementById("committee-output-" + memberId);
       if (titleNode) titleNode.textContent = title;
       if (metaNode) metaNode.textContent = meta;
-      if (outputNode && text !== undefined) outputNode.textContent = text;
+      if (outputNode && text !== undefined) setMarkdownContent(outputNode, text);
     }
 
     function resetCommitteeOutputs() {
-      committeeSceneReport.textContent = "O relatório visual consolidado aparecerá aqui antes do trio textual responder.";
+      setMarkdownContent(committeeSceneReport, "O relatório visual consolidado aparecerá aqui antes do trio textual responder.");
       setCommitteeCardMeta("text_a", "Analista A", committeeTextA.value || "Modelo não definido.", "Sem análise ainda.");
       setCommitteeCardMeta("text_b", "Analista B", committeeTextB.value || "Modelo não definido.", "Sem análise ainda.");
       setCommitteeCardMeta("text_c", "Analista C", committeeTextC.value || "Modelo não definido.", "Sem análise ainda.");
@@ -1945,10 +2081,9 @@ function renderDashboard() {
     function appendCommitteeOutput(memberId, delta) {
       const outputNode = document.getElementById("committee-output-" + memberId);
       if (!outputNode) return;
-      if (outputNode.textContent === "Sem análise ainda.") {
-        outputNode.textContent = "";
-      }
-      outputNode.textContent += delta;
+      const current = outputNode.dataset.markdownSource || "";
+      const next = (current === "Sem análise ainda." ? "" : current) + String(delta || "");
+      setMarkdownContent(outputNode, next);
     }
 
     function renderCommitteeSnapshot(base64) {
@@ -2257,7 +2392,7 @@ function renderDashboard() {
                 }
 
                 if (event.type === "vision_begin") {
-                  committeeSceneReport.textContent = "Lendo a frame com o modelo de visão principal...";
+                  setMarkdownContent(committeeSceneReport, "Lendo a frame com o modelo de visão principal...");
                 }
 
                 if (event.type === "vision_result") {
@@ -2270,7 +2405,7 @@ function renderDashboard() {
                     blocks.push("Falha: " + event.error);
                   }
                   blocks.push(event.text || "Sem leitura.");
-                  committeeSceneReport.textContent = blocks.join("\\n\\n");
+                  setMarkdownContent(committeeSceneReport, blocks.join("\\n\\n"));
                 }
 
                 if (event.type === "member_begin") {
@@ -2283,8 +2418,8 @@ function renderDashboard() {
 
                 if (event.type === "member_done") {
                   const outputNode = document.getElementById("committee-output-" + event.memberId);
-                  if (outputNode && !outputNode.textContent.trim()) {
-                    outputNode.textContent = event.text || "Sem resposta.";
+                  if (outputNode && !(outputNode.dataset.markdownSource || "").trim()) {
+                    setMarkdownContent(outputNode, event.text || "Sem resposta.");
                   }
                 }
 
