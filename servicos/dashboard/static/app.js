@@ -808,11 +808,27 @@ function renderStackServiceViews() {
 function normalizeSebMonitorPayload(payload = {}) {
     const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
     const summary = payload.summary && typeof payload.summary === "object" ? payload.summary : {};
-    const selectedSessionId = String(state.sebMonitor?.selectedSessionId || "");
+    const previousSeb = state.sebMonitor && typeof state.sebMonitor === "object" ? state.sebMonitor : {};
+    const previousSessions = Array.isArray(previousSeb.sessions) ? previousSeb.sessions : [];
+    const selectedSessionId = String(previousSeb.selectedSessionId || "");
     const activeSession = sessions.find((session) => session.sessionId === selectedSessionId) || sessions[0] || null;
-    const selectedViewId = String(state.sebMonitor?.selectedViewId || "");
+    const selectedViewId = String(previousSeb.selectedViewId || "");
     const views = Array.isArray(activeSession?.views) ? activeSession.views : [];
-    const activeView = views.find((view) => String(view.viewId || "") === selectedViewId) || views[0] || null;
+    const previousSession = previousSessions.find((session) => String(session.sessionId || "") === String(activeSession?.sessionId || ""));
+    const previousViewIds = new Set(
+        Array.isArray(previousSession?.views)
+            ? previousSession.views.map((view) => String(view.viewId || "")).filter(Boolean)
+            : []
+    );
+    const addedViews = views.filter((view) => {
+        const viewId = String(view.viewId || "");
+        return viewId && !previousViewIds.has(viewId);
+    });
+    const addedView = addedViews
+        .slice()
+        .sort((left, right) => String(right.timestamp || "").localeCompare(String(left.timestamp || "")))[0] || null;
+    const requestedView = views.find((view) => String(view.viewId || "") === selectedViewId) || null;
+    const activeView = addedView || requestedView || views[0] || null;
     return {
         ok: Boolean(payload.ok),
         serviceUrl: String(payload.service_url || ""),

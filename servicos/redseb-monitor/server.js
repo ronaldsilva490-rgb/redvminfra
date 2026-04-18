@@ -835,6 +835,7 @@ function renderDashboard() {
     const ALERT_POSITION_KEY = "redseb.monitor.alertPosition.v1";
     let activeSessionId = null;
     let activeViewId = null;
+    const knownViewIdsBySession = new Map();
 
     function escapeHtml(value) {
       return String(value || "")
@@ -891,6 +892,26 @@ function renderDashboard() {
       return views.find((view) => view.viewId === activeViewId) || views[0];
     }
 
+    function syncKnownViews(sessions) {
+      const liveSessionIds = new Set();
+
+      for (const session of sessions) {
+        const sessionId = String(session.sessionId || "");
+        if (!sessionId) continue;
+        liveSessionIds.add(sessionId);
+        knownViewIdsBySession.set(
+          sessionId,
+          new Set((Array.isArray(session.views) ? session.views : []).map((view) => String(view.viewId || "")).filter(Boolean))
+        );
+      }
+
+      for (const sessionId of Array.from(knownViewIdsBySession.keys())) {
+        if (!liveSessionIds.has(sessionId)) {
+          knownViewIdsBySession.delete(sessionId);
+        }
+      }
+    }
+
     function renderSessions(sessions) {
       metricSessions.textContent = String(sessions.length);
       metricFrames.textContent = String(sessions.reduce((total, session) => total + (Array.isArray(session.views) ? session.views.filter((view) => view.imageBase64).length : 0), 0));
@@ -940,8 +961,21 @@ function renderDashboard() {
       }
 
       const active = sessions.find((session) => session.sessionId === activeSessionId) || sessions[0];
-      const activeView = getActiveView(active);
       const views = Array.isArray(active.views) ? active.views : [];
+      const previousViewIds = knownViewIdsBySession.get(String(active.sessionId || "")) || new Set();
+      const addedView = views
+        .filter((view) => {
+          const viewId = String(view.viewId || "");
+          return viewId && !previousViewIds.has(viewId);
+        })
+        .sort((left, right) => String(right.timestamp || "").localeCompare(String(left.timestamp || "")))[0] || null;
+
+      if (addedView?.viewId) {
+        activeViewId = addedView.viewId;
+      }
+
+      syncKnownViews(sessions);
+      const activeView = getActiveView(active);
 
       viewTabs.innerHTML = views.map((view, index) => {
         const activeClass = view.viewId === activeViewId ? "active" : "";
