@@ -437,10 +437,11 @@ function renderDashboard() {
     }
     .shell {
       display: grid;
-      grid-template-columns: 370px minmax(0, 1fr);
-      gap: 20px;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 18px;
       min-height: 100vh;
-      padding: 20px;
+      padding: 18px;
+      align-items: start;
     }
     .glass {
       border: 1px solid var(--line);
@@ -450,12 +451,15 @@ function renderDashboard() {
       box-shadow: var(--shadow);
     }
     .sidebar {
-      border-radius: 28px;
-      padding: 22px;
+      border-radius: 24px;
+      padding: 18px;
       display: flex;
       flex-direction: column;
-      gap: 18px;
+      gap: 14px;
       overflow: hidden;
+      position: sticky;
+      top: 18px;
+      max-height: calc(100vh - 36px);
     }
     .brand {
       display: flex;
@@ -485,13 +489,13 @@ function renderDashboard() {
       font-weight: 800;
       font-size: 28px;
     }
-    .brand-copy h1 { margin: 0; font-size: 24px; letter-spacing: 0.04em; }
-    .brand-copy p { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .brand-copy h1 { margin: 0; font-size: 22px; letter-spacing: 0.04em; }
+    .brand-copy p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
     .summary, .insights { display: grid; gap: 12px; }
     .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .metric, .insight, .command-panel {
-      padding: 16px;
-      border-radius: 20px;
+      padding: 14px;
+      border-radius: 18px;
       background: var(--panel-strong);
     }
     .metric span, .insight span, .field label {
@@ -507,15 +511,15 @@ function renderDashboard() {
     .session-list {
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
       min-height: 0;
       overflow: auto;
       padding-right: 4px;
     }
     .session {
       position: relative;
-      padding: 16px;
-      border-radius: 20px;
+      padding: 14px;
+      border-radius: 18px;
       border: 1px solid rgba(232,228,227,0.08);
       background: linear-gradient(180deg, rgba(232,68,44,0.08), rgba(255,255,255,0.02));
       cursor: pointer;
@@ -571,12 +575,35 @@ function renderDashboard() {
     .viewer {
       min-width: 0;
       display: grid;
-      grid-template-rows: auto auto auto minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
       gap: 18px;
+      align-items: start;
+    }
+    .viewer > .hero {
+      grid-column: 1 / -1;
+    }
+    .viewer > .insights {
+      grid-column: 2;
+      grid-row: 2;
+      height: fit-content;
+    }
+    .viewer > .command-panel:first-of-type {
+      grid-column: 2;
+      grid-row: 3;
+      height: fit-content;
+    }
+    .viewer > .stage {
+      grid-column: 1;
+      grid-row: 2 / span 3;
+    }
+    .viewer > .command-panel:last-of-type {
+      grid-column: 2;
+      grid-row: 4;
+      height: fit-content;
     }
     .hero {
-      border-radius: 30px;
-      padding: 22px 24px;
+      border-radius: 24px;
+      padding: 18px 20px;
       background:
         radial-gradient(circle at top, rgba(238,77,49,0.12), transparent 18rem),
         linear-gradient(180deg, rgba(20, 2, 2, 0.96), rgba(24, 3, 3, 0.99));
@@ -587,14 +614,14 @@ function renderDashboard() {
       gap: 16px;
       align-items: center;
     }
-    .hero h2 { margin: 0; font-size: 28px; }
+    .hero h2 { margin: 0; font-size: 26px; }
     .hero p, .stage-header p, .command-panel p {
-      margin: 10px 0 0;
+      margin: 8px 0 0;
       color: var(--muted);
-      line-height: 1.6;
+      line-height: 1.55;
     }
     .hero-badge {
-      padding: 10px 14px;
+      padding: 8px 12px;
       border-radius: 999px;
       border: 1px solid rgba(232,228,227,0.08);
       background: rgba(232,228,227,0.08);
@@ -602,15 +629,30 @@ function renderDashboard() {
       font-family: "IBM Plex Mono", Consolas, monospace;
       white-space: nowrap;
     }
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+    .workspace-stage,
+    .workspace-side {
+      min-width: 0;
+      display: grid;
+      gap: 14px;
+    }
+    .workspace-side {
+      align-content: start;
+    }
     .insights { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .insight strong { font-size: 18px; line-height: 1.35; word-break: break-word; }
-    .command-panel h3, .stage-header h3 { margin: 0; font-size: 20px; }
+    .insight strong { font-size: 17px; line-height: 1.35; word-break: break-word; }
+    .command-panel h3, .stage-header h3 { margin: 0; font-size: 18px; }
     .command-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 170px 150px auto;
+      grid-template-columns: minmax(0, 1fr) 160px 140px auto;
       gap: 12px;
       align-items: end;
-      margin-top: 14px;
+      margin-top: 12px;
     }
     .field { display: grid; gap: 8px; }
     .field input, .field select {
@@ -640,7 +682,7 @@ function renderDashboard() {
       grid-template-columns: minmax(0, 1fr) auto auto;
       gap: 12px;
       align-items: end;
-      margin-top: 14px;
+      margin-top: 12px;
     }
     .download-button {
       height: 48px;
@@ -660,17 +702,17 @@ function renderDashboard() {
     }
     .download-status { min-height: 20px; color: var(--muted); font-size: 13px; margin-top: 12px; }
     .stage {
-      border-radius: 32px;
-      padding: 18px;
+      border-radius: 24px;
+      padding: 16px;
       min-height: 0;
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 14px;
     }
     .frame {
       flex: 1;
-      min-height: 420px;
-      border-radius: 24px;
+      min-height: 400px;
+      border-radius: 20px;
       background: linear-gradient(180deg, rgba(232,68,44,0.08), rgba(255,255,255,0.02)), #080304;
       border: 1px solid rgba(232,228,227,0.08);
       overflow: auto;
@@ -686,6 +728,9 @@ function renderDashboard() {
       line-height: 1.7;
       padding: 32px;
     }
+    .toolbar {
+      padding-top: 2px;
+    }
     .toolbar code {
       color: var(--text);
       background: rgba(232,228,227,0.08);
@@ -696,13 +741,32 @@ function renderDashboard() {
     .live { color: var(--text); font-size: 13px; display: inline-flex; align-items: center; gap: 8px; }
     @media (max-width: 1200px) {
       .shell { grid-template-columns: 1fr; }
+      .sidebar {
+        position: static;
+        max-height: none;
+      }
+      .viewer {
+        grid-template-columns: 1fr;
+      }
+      .viewer > .hero,
+      .viewer > .insights,
+      .viewer > .stage,
+      .viewer > .command-panel:first-of-type,
+      .viewer > .command-panel:last-of-type {
+        grid-column: auto;
+        grid-row: auto;
+      }
+      .workspace {
+        grid-template-columns: 1fr;
+      }
       .summary, .insights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .command-grid { grid-template-columns: 1fr 1fr; }
     }
     @media (max-width: 720px) {
       .shell { padding: 12px; }
-      .summary, .insights, .command-grid { grid-template-columns: 1fr; }
+      .summary, .insights, .command-grid, .download-grid { grid-template-columns: 1fr; }
       .hero-top, .stage-header, .toolbar { flex-direction: column; align-items: start; }
+      .frame { min-height: 280px; }
     }
   </style>
 </head>
