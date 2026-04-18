@@ -604,6 +604,7 @@ button {
 .search,
 .path-input,
 .terminal-input,
+.field select,
 .field input,
 .file-editor {
     width: 100%;
@@ -616,8 +617,33 @@ button {
 .search,
 .path-input,
 .terminal-input,
+.field select,
 .field input {
     padding: 0.78rem 0.95rem;
+}
+
+.field select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background:
+        linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+        linear-gradient(135deg, var(--muted) 50%, transparent 50%),
+        linear-gradient(to right, rgba(232, 228, 227, 0.08), rgba(232, 228, 227, 0.08)),
+        rgba(16, 2, 2, 0.94);
+    background-position:
+        calc(100% - 18px) calc(50% - 2px),
+        calc(100% - 12px) calc(50% - 2px),
+        calc(100% - 2.6rem) 50%,
+        0 0;
+    background-size: 6px 6px, 6px 6px, 1px 60%, 100% 100%;
+    background-repeat: no-repeat;
+    padding-right: 3.2rem;
+}
+
+.field select option {
+    background: var(--bg-elevated);
+    color: var(--text);
 }
 
 .kv-grid {

@@ -72,6 +72,7 @@ const VM_ASSISTANT_STORAGE_KEY = "redvm.vmAssistant.v1";
 const PROJECT_WIZARD_MODE_KEY = "redvm.projects.mode.v1";
 const WHATSAPP_TAB_STORAGE_KEY = "redvm.whatsapp.tab.v1";
 const REDIA_TAB_STORAGE_KEY = "redvm.redia.tab.v1";
+const SEB_MONITOR_ALERT_POSITION_KEY = "redvm.sebMonitor.alertPosition.v1";
 const REDIA_HIDDEN_ACTIVITY_TYPES = new Set([
     "whatsapp:start",
     "whatsapp:connection",
@@ -3727,6 +3728,29 @@ async function refreshSebMonitor(showMessage = false) {
     }
 }
 
+function hydrateSebMonitorAlertPreferences() {
+    try {
+        const storedPosition = window.localStorage.getItem(SEB_MONITOR_ALERT_POSITION_KEY) || "top-right";
+        const field = qs("#sebMonitorAlertPosition");
+        if (field) {
+            field.value = storedPosition;
+        }
+    } catch (_) {
+        const field = qs("#sebMonitorAlertPosition");
+        if (field) {
+            field.value = "top-right";
+        }
+    }
+}
+
+function persistSebMonitorAlertPosition(position) {
+    try {
+        window.localStorage.setItem(SEB_MONITOR_ALERT_POSITION_KEY, String(position || "top-right"));
+    } catch (_) {
+        // ignore
+    }
+}
+
 async function sendSebMonitorAlert() {
     const seb = normalizeSebMonitorPayload(state.sebMonitor || {});
     const sessionId = seb.selectedSessionId;
@@ -3738,6 +3762,7 @@ async function sendSebMonitorAlert() {
         throw new Error("Escreva a mensagem do alerta.");
     }
     const position = String(qs("#sebMonitorAlertPosition")?.value || "top-right");
+    persistSebMonitorAlertPosition(position);
     const durationMs = Number(qs("#sebMonitorAlertDuration")?.value || 3000);
     const payload = await api("/api/seb-monitor/alert", {
         method: "POST",
@@ -4461,6 +4486,9 @@ function wireAuthenticatedUi() {
     qs("#rediaRunBenchmarkButton")?.addEventListener("click", () => runUiTask(() => runRediaBenchmark()));
     qs("#sebMonitorRefreshButton")?.addEventListener("click", () => runUiTask(() => refreshSebMonitor(true)));
     qs("#sebMonitorSendAlertButton")?.addEventListener("click", () => runUiTask(() => sendSebMonitorAlert()));
+    qs("#sebMonitorAlertPosition")?.addEventListener("change", (event) => {
+        persistSebMonitorAlertPosition(event.target.value);
+    });
     qs("#rediaConversationsSearchInput")?.addEventListener("input", renderRediaConversations);
     qsa("[data-redia-tab]").forEach((button) => {
         button.addEventListener("click", () => setRediaTab(button.dataset.rediaTab));
@@ -4904,6 +4932,7 @@ function wireAuthenticatedUi() {
         } catch (_) {
             setRediaTab("overview");
         }
+        hydrateSebMonitorAlertPreferences();
         syncProjectManagedCheckoutUi();
         resizeProxyChatInput();
         openDirectory("/");

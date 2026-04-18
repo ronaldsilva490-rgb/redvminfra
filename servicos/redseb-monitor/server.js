@@ -792,6 +792,7 @@ function renderDashboard() {
     const batLink = document.getElementById("bat-link");
     const downloadBatButton = document.getElementById("download-bat-button");
     const downloadStatus = document.getElementById("download-status");
+    const ALERT_POSITION_KEY = "redseb.monitor.alertPosition.v1";
     let activeSessionId = null;
     let activeViewId = null;
 
@@ -817,6 +818,23 @@ function renderDashboard() {
         return match[1];
       }
       return fallbackName;
+    }
+
+    function hydrateAlertPreferences() {
+      try {
+        const savedPosition = window.localStorage.getItem(ALERT_POSITION_KEY) || "top-right";
+        alertPosition.value = savedPosition;
+      } catch {
+        alertPosition.value = "top-right";
+      }
+    }
+
+    function persistAlertPosition(value) {
+      try {
+        window.localStorage.setItem(ALERT_POSITION_KEY, String(value || "top-right"));
+      } catch {
+        // ignore
+      }
     }
 
     function getActiveView(session) {
@@ -1019,8 +1037,10 @@ function renderDashboard() {
     }
 
     refresh();
+    hydrateAlertPreferences();
     setInterval(refresh, 1000);
     sendAlertButton.addEventListener("click", sendAlert);
+    alertPosition.addEventListener("change", () => persistAlertPosition(alertPosition.value));
     downloadBatButton.addEventListener("click", downloadBat);
   </script>
 </body>
