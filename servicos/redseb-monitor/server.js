@@ -69,6 +69,44 @@ function now() {
   return new Date().toISOString();
 }
 
+function slugifyFragment(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+function deriveViewId(payload) {
+  const explicit = String(pick(payload, "viewId", "ViewId") || "").trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const windowId = Number(pick(payload, "windowId", "WindowId") || 0);
+  if (Number.isFinite(windowId) && windowId > 0) {
+    return `window-${windowId}`;
+  }
+
+  if (Boolean(pick(payload, "isMainWindow", "IsMainWindow"))) {
+    return "main-window";
+  }
+
+  const titleFragment = slugifyFragment(pick(payload, "title", "Title"));
+  if (titleFragment) {
+    return `title-${titleFragment}`;
+  }
+
+  const urlFragment = slugifyFragment(pick(payload, "url", "Url"));
+  if (urlFragment) {
+    return `url-${urlFragment}`;
+  }
+
+  return `view-${Date.now()}`;
+}
+
 function resolveAsset(type) {
   for (const candidate of assetCandidates[type] || []) {
     if (fs.existsSync(candidate)) {
@@ -305,9 +343,11 @@ function sendAlertToSession(sessionId, alert) {
 }
 
 function createViewState(payload) {
+  const windowId = Number(pick(payload, "windowId", "WindowId") || 0);
+
   return {
-    viewId: pick(payload, "viewId", "ViewId") || "",
-    windowId: pick(payload, "windowId", "WindowId") || 0,
+    viewId: deriveViewId(payload),
+    windowId: Number.isFinite(windowId) ? windowId : 0,
     isMainWindow: Boolean(pick(payload, "isMainWindow", "IsMainWindow")),
     title: pick(payload, "title", "Title") || "",
     url: pick(payload, "url", "Url") || "",
@@ -1208,7 +1248,7 @@ wss.on("connection", (socket, request) => {
         }));
       }
 
-      current.views.set(view.viewId || `window-${view.windowId || Date.now()}`, view);
+      current.views.set(view.viewId, view);
       current.timestamp = view.timestamp;
       sessions.set(sessionId, current);
     } catch (error) {
