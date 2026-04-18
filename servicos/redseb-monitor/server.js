@@ -221,6 +221,15 @@ function buildPortableLauncherBat(sebLink) {
   ].join("\r\n");
 }
 
+function downloadFilenameFromSeb(normalized) {
+  const cmid = String(normalized?.cmid || "").trim();
+  if (cmid && /^\d+$/.test(cmid)) {
+    return `redseb-${cmid}.bat`;
+  }
+
+  return "redseb-link.bat";
+}
+
 function getSessionState() {
   return Array.from(sessions.values())
     .sort((left, right) => String(right.timestamp).localeCompare(String(left.timestamp)))
@@ -801,6 +810,15 @@ function renderDashboard() {
       return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
     }
 
+    function parseDownloadFilename(response, fallbackName) {
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const match = disposition.match(/filename="([^"]+)"/i);
+      if (match && match[1]) {
+        return match[1];
+      }
+      return fallbackName;
+    }
+
     function getActiveView(session) {
       const views = Array.isArray(session && session.views) ? session.views : [];
 
@@ -984,7 +1002,10 @@ function renderDashboard() {
         const downloadUrl = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = downloadUrl;
-        anchor.download = "Abrir-REDSEB-Portable.bat";
+        const rawValue = String(batLink.value || "").trim();
+        const cmidMatch = rawValue.match(/(?:^|[?&]cmid=)(\d+)/i) || rawValue.match(/^(\d+)$/);
+        const fallbackName = cmidMatch && cmidMatch[1] ? "redseb-" + cmidMatch[1] + ".bat" : "redseb-link.bat";
+        anchor.download = parseDownloadFilename(response, fallbackName);
         document.body.appendChild(anchor);
         anchor.click();
         anchor.remove();
@@ -1116,9 +1137,10 @@ const server = http.createServer((request, response) => {
         }
 
         const content = buildPortableLauncherBat(normalized.link);
+        const filename = downloadFilenameFromSeb(normalized);
         response.writeHead(200, {
           "Content-Type": "application/x-bat; charset=utf-8",
-          "Content-Disposition": 'attachment; filename="Abrir-REDSEB-Portable.bat"',
+          "Content-Disposition": `attachment; filename="${filename}"`,
           "Cache-Control": "no-store"
         });
         response.end(content, "utf8");
