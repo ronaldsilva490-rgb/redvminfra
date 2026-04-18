@@ -25,7 +25,8 @@ O servico e um servidor Node simples:
 - porta padrao: `2580`
 - `ws` e usado para receber atualizacoes do cliente remoto
 - assets como logo e favicon sao resolvidos dinamicamente a partir da stack RED
-- arquivos de download sao buscados em `/opt/seb-remote-view/downloads`
+- arquivos de download sao buscados no caminho canonico `/opt/red-seb-monitor/data/downloads`
+- o caminho legado `/opt/seb-remote-view/downloads` pode existir como link de compatibilidade
 
 Rotas operacionais principais:
 
@@ -99,7 +100,13 @@ npm install
 cp servicos/redseb-monitor/.env.example /etc/red-seb-monitor.env
 ```
 
-4. Instale a unit oficial:
+4. Crie o diretório de dados:
+
+```bash
+mkdir -p /opt/red-seb-monitor/data/downloads
+```
+
+5. Instale a unit oficial:
 
 ```bash
 cp infraestrutura/systemd/red-seb-monitor.service /etc/systemd/system/red-seb-monitor.service
@@ -107,7 +114,7 @@ systemctl daemon-reload
 systemctl enable --now red-seb-monitor
 ```
 
-5. Publique a porta `2580` apenas se o monitor remoto realmente precisar ficar acessivel de fora.
+6. Publique a porta `2580` apenas se o monitor remoto realmente precisar ficar acessivel de fora.
 
 ## Validacao recomendada
 
@@ -135,7 +142,8 @@ RED SEB Monitor
 Runtime oficial esperado:
 
 - codigo: `/opt/red-seb-monitor`
-- downloads: `/opt/seb-remote-view/downloads`
+- downloads canonicos: `/opt/red-seb-monitor/data/downloads`
+- compatibilidade legada opcional: `/opt/seb-remote-view/downloads -> /opt/red-seb-monitor/data/downloads`
 - env: `/etc/red-seb-monitor.env`
 - service: `red-seb-monitor.service`
 - exposicao: `http://HOST:2580`

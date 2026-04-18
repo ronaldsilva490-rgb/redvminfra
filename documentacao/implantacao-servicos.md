@@ -304,7 +304,7 @@ Responsabilidade:
 Instalacao:
 
 ```bash
-mkdir -p "$RED_ROOT/redseb-monitor" /opt/seb-remote-view/downloads
+mkdir -p "$RED_ROOT/redseb-monitor" /opt/red-seb-monitor/data/downloads
 rsync -av servicos/redseb-monitor/ "$RED_ROOT/redseb-monitor/"
 cd "$RED_ROOT/redseb-monitor"
 npm install
@@ -314,7 +314,7 @@ Ambiente recomendado em `/etc/red-seb-monitor.env`:
 
 ```env
 PORT=2580
-SEB_REMOTE_VIEW_DOWNLOADS_DIR=/opt/seb-remote-view/downloads
+SEB_REMOTE_VIEW_DOWNLOADS_DIR=/opt/red-seb-monitor/data/downloads
 REDVM_REPO_DIR=/opt/redvm-repo
 RED_DASHBOARD_DIR=/opt/redvm-dashboard
 REDIA_DIR=/opt/redia

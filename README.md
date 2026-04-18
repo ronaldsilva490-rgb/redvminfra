@@ -153,7 +153,7 @@ Regra pratica:
 - redia: `/opt/redia/data`
 - redtrader: `/opt/redtrader/data`
 - proxy-lab: `/opt/red-proxy-lab/data`
-- red seb monitor downloads: `/opt/seb-remote-view/downloads`
+- red seb monitor downloads: `/opt/red-seb-monitor/data/downloads`
 - iq bridge: `/opt/red-iq-vision-bridge/data`
 
 ---

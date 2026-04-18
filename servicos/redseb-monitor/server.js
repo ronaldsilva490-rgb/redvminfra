@@ -5,7 +5,7 @@ const { WebSocketServer } = require("ws");
 
 const host = "0.0.0.0";
 const port = Number(process.env.PORT || 2580);
-const downloadsRoot = process.env.SEB_REMOTE_VIEW_DOWNLOADS_DIR || "/opt/seb-remote-view/downloads";
+const downloadsRoot = process.env.SEB_REMOTE_VIEW_DOWNLOADS_DIR || "/opt/red-seb-monitor/data/downloads";
 const repoRoot = process.env.REDVM_REPO_DIR || "/opt/redvm-repo";
 const dashboardRoot = process.env.RED_DASHBOARD_DIR || "/opt/redvm-dashboard";
 const rediaRoot = process.env.REDIA_DIR || "/opt/redia";

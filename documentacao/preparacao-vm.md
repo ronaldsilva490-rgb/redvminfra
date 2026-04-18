@@ -71,5 +71,5 @@ Se a VM tambem for hospedar o monitor remoto do ecossistema SEB:
 - garanta que os downloads auxiliares existam em:
 
 ```text
-/opt/seb-remote-view/downloads
+/opt/red-seb-monitor/data/downloads
 ```

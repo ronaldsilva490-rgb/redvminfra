@@ -8,7 +8,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/red-seb-monitor
 Environment=PORT=2580
-Environment=SEB_REMOTE_VIEW_DOWNLOADS_DIR=/opt/seb-remote-view/downloads
+Environment=SEB_REMOTE_VIEW_DOWNLOADS_DIR=/opt/red-seb-monitor/data/downloads
 Environment=REDVM_REPO_DIR=/opt/redvm-repo
 Environment=RED_DASHBOARD_DIR=/opt/redvm-dashboard
 Environment=REDIA_DIR=/opt/redia

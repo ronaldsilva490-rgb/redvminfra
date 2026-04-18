@@ -244,7 +244,7 @@ Dados:
 - redtrader data: `/opt/redtrader/data`
 - proxy-lab data: `/opt/red-proxy-lab/data`
 - iq bridge data: `/opt/red-iq-vision-bridge/data`
-- red seb monitor downloads: `/opt/seb-remote-view/downloads`
+- red seb monitor downloads: `/opt/red-seb-monitor/data/downloads`
 
 ---
 

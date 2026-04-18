@@ -178,7 +178,7 @@ STACK_BLUEPRINT = [
         "route": ":2580",
         "runtime_path": "/opt/red-seb-monitor",
         "repo_path": "servicos/redseb-monitor",
-        "data_path": "/opt/seb-remote-view/downloads",
+        "data_path": "/opt/red-seb-monitor/data/downloads",
         "local_url": "http://127.0.0.1:2580/healthz",
     },
     {
