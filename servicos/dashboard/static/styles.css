@@ -230,6 +230,10 @@ body {
     min-height: 100vh;
 }
 
+body.sidebar-open {
+    overflow: hidden;
+}
+
 button,
 input,
 textarea {
@@ -350,6 +354,7 @@ button {
     display: grid;
     grid-template-columns: 18rem 1fr;
     min-height: 100vh;
+    position: relative;
 }
 
 .sidebar {
@@ -361,12 +366,24 @@ button {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    position: relative;
+    z-index: 30;
 }
 
 .brand {
     display: flex;
     align-items: center;
     gap: 1rem;
+}
+
+.sidebar-close-button,
+.sidebar-toggle-button {
+    display: none;
+}
+
+.sidebar-close-button {
+    margin-left: auto;
+    padding-inline: 0.8rem;
 }
 
 .brand-logo {
@@ -457,6 +474,7 @@ button {
     display: flex;
     flex-direction: column;
     gap: 1.3rem;
+    min-width: 0;
 }
 
 .topbar {
@@ -464,6 +482,13 @@ button {
     justify-content: space-between;
     gap: 1rem;
     align-items: center;
+}
+
+.topbar-intro {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    min-width: 0;
 }
 
 .topbar h1 {
@@ -475,12 +500,26 @@ button {
     display: flex;
     align-items: center;
     gap: 0.8rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
 }
 
 .clock {
     font-family: var(--mono);
     color: var(--muted);
     font-size: 0.95rem;
+}
+
+.sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(3, 0, 0, 0.62);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 24;
 }
 
 .view {
@@ -2377,5 +2416,124 @@ button {
     .whatsapp-target-flags {
         display: grid;
         grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 1180px) {
+    .shell {
+        display: block;
+        min-height: 100dvh;
+    }
+
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: min(22rem, calc(100vw - 1rem));
+        max-width: 100%;
+        border-right: 1px solid var(--line);
+        border-bottom: 0;
+        overflow: auto;
+        transform: translateX(-102%);
+        transition: transform 0.22s ease;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+    }
+
+    body.sidebar-open .sidebar {
+        transform: translateX(0);
+    }
+
+    .sidebar-close-button,
+    .sidebar-toggle-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    body.sidebar-open .sidebar-backdrop {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .main {
+        width: 100%;
+        min-height: 100dvh;
+        padding: 1rem 1rem 1.4rem;
+    }
+
+    .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        margin: -1rem -1rem 0;
+        padding: 0.95rem 1rem;
+        background: rgba(19, 2, 2, 0.94);
+        border-bottom: 1px solid var(--line);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+    }
+
+    .topbar h1 {
+        font-size: clamp(1.35rem, 5.2vw, 2.05rem);
+        line-height: 1.02;
+    }
+
+    .topbar-actions .ghost-button,
+    .sidebar-toggle-button {
+        min-height: 2.75rem;
+    }
+}
+
+@media (max-width: 720px) {
+    .brand {
+        align-items: flex-start;
+    }
+
+    .brand-logo {
+        width: 3rem;
+        height: 3rem;
+    }
+
+    .nav {
+        gap: 0.25rem;
+    }
+
+    .nav-item {
+        padding: 0.8rem 0.9rem;
+    }
+
+    .topbar {
+        flex-direction: row;
+        align-items: flex-start;
+        justify-content: space-between;
+    }
+
+    .topbar-intro {
+        align-items: flex-start;
+        flex: 1 1 auto;
+    }
+
+    .topbar-actions {
+        width: auto;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 0.55rem;
+    }
+
+    .clock {
+        font-size: 0.82rem;
+    }
+
+    .status-pill {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .sidebar-footer {
+        position: sticky;
+        bottom: 0;
+        padding-top: 0.8rem;
+        background: linear-gradient(180deg, rgba(15, 2, 2, 0), rgba(15, 2, 2, 0.96) 38%);
     }
 }

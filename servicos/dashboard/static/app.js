@@ -3799,6 +3799,50 @@ function wireShellNavigation() {
     }
 }
 
+function shellUsesDrawer() {
+    return window.matchMedia("(max-width: 1180px)").matches;
+}
+
+function setSidebarOpen(open) {
+    document.body.classList.toggle("sidebar-open", Boolean(open));
+    const backdrop = qs("#sidebarBackdrop");
+    if (backdrop) {
+        backdrop.hidden = !open;
+    }
+}
+
+function wireResponsiveShell() {
+    const openButton = qs("#sidebarOpenButton");
+    const closeButton = qs("#sidebarCloseButton");
+    const backdrop = qs("#sidebarBackdrop");
+    const closeSidebar = () => setSidebarOpen(false);
+    const openSidebar = () => setSidebarOpen(true);
+
+    if (openButton && openButton.dataset.bound !== "true") {
+        openButton.dataset.bound = "true";
+        openButton.addEventListener("click", openSidebar);
+    }
+
+    if (closeButton && closeButton.dataset.bound !== "true") {
+        closeButton.dataset.bound = "true";
+        closeButton.addEventListener("click", closeSidebar);
+    }
+
+    if (backdrop && backdrop.dataset.bound !== "true") {
+        backdrop.dataset.bound = "true";
+        backdrop.addEventListener("click", closeSidebar);
+    }
+
+    if (!window.__redvmShellResizeBound) {
+        window.__redvmShellResizeBound = true;
+        window.addEventListener("resize", () => {
+            if (!shellUsesDrawer()) {
+                setSidebarOpen(false);
+            }
+        });
+    }
+}
+
 function setView(view) {
     state.currentView = view;
     qsa(".nav-item").forEach((item) => {
@@ -3809,6 +3853,9 @@ function setView(view) {
     });
     const label = (DASHBOARD_VIEW_CONFIG[view] || DASHBOARD_VIEW_CONFIG.overview).label;
     qs("#pageTitle").textContent = label || "Visão geral";
+    if (shellUsesDrawer()) {
+        setSidebarOpen(false);
+    }
 }
 
 function updateSocketStatus(connected) {
@@ -4426,6 +4473,7 @@ function sendTerminalInput(data) {
 }
 
 function wireAuthenticatedUi() {
+    wireResponsiveShell();
     setView(dashboardViewFromLocation(), { syncHistory: false });
     wireShellNavigation();
     hydrateProxyChatState();
@@ -4989,6 +5037,7 @@ setView = function(view, options = {}) {
 
 document.addEventListener("DOMContentLoaded", () => {
     wireShellNavigation();
+    wireResponsiveShell();
     try {
         window.lucide?.createIcons?.();
     } catch (error) {
