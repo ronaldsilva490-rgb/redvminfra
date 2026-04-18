@@ -12,6 +12,7 @@ proxy-lab/              Laboratorio de benchmark pago
 redia/                  Runtime da RED I.A
 redtrader/              Trader demo/paper
 openclaw/               Assistente operacional privado
+redseb-monitor/         Painel remoto do ecossistema SEB
 extensao-iq-demo/       Extensao Chrome e IQ Bridge
 extensao-iq-motor-lab/  Motor secundario de experimentacao remota na IQ
 deploy-agent/           Legado
@@ -26,6 +27,7 @@ deploy-agent/           Legado
 - [redia/README.md](redia/README.md)
 - [redtrader/README.md](redtrader/README.md)
 - [openclaw/README.md](openclaw/README.md)
+- [redseb-monitor/README.md](redseb-monitor/README.md)
 - [extensao-iq-demo/README.md](extensao-iq-demo/README.md)
 - [extensao-iq-motor-lab/README.md](extensao-iq-motor-lab/README.md)
 - [deploy-agent/README.md](deploy-agent/README.md)
@@ -36,6 +38,7 @@ deploy-agent/           Legado
 - `redia/` continua existindo como runtime proprio, mas o caminho principal de operacao e `/dashboard/redia`.
 - `proxy-lab/` e laboratorio; nao trate como producao.
 - `openclaw/` e assistente operacional privado da stack, exposto por `/openclaw/`.
+- `redseb-monitor/` e o painel remoto oficial do ecossistema RED SEB / Safe Exam Browser, hoje exposto em `:2580`.
 - `extensao-iq-motor-lab/` existe para iteracao rapida por JSON remoto antes de tocar a extensao principal.
 - `deploy-agent/` e legado; so mexa se houver motivo real.
 

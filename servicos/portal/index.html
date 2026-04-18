@@ -343,6 +343,7 @@
           <p><span>&gt;</span> dashboard, redia e trader em localhost</p>
           <p><span>&gt;</span> proxy principal e proxy-lab separados</p>
           <p><span>&gt;</span> iq bridge limpo e pronto para novos snapshots</p>
+          <p><span>&gt;</span> red seb monitor dedicado em :2580</p>
           <p><span>&gt;</span> repo centralizado em /opt/redvm-repo</p>
         </aside>
       </section>
@@ -384,6 +385,18 @@
           <p>Bridge da extensao Chrome da IQ demo com snapshots, logs e comandos remotos para observabilidade.</p>
           <span class="path">/iq-bridge/healthz</span>
         </a>
+        <a class="card" href="/openclaw/">
+          <small>Ops AI</small>
+          <h2>OpenClaw</h2>
+          <p>Assistente operacional privado da stack, ligado ao proxy RED e aos canais internos de automacao.</p>
+          <span class="path">/openclaw/</span>
+        </a>
+        <a class="card" href="http://redsystems.ddns.net:2580/" target="_blank" rel="noreferrer">
+          <small>SEB Ops</small>
+          <h2>RED SEB Monitor</h2>
+          <p>Painel remoto do ecossistema Safe Exam Browser com viewport ao vivo, alertas e downloads auxiliares.</p>
+          <span class="path">:2580</span>
+        </a>
       </section>
 
       <section class="section-grid" aria-label="Espelho da VM e do repo">
@@ -412,6 +425,11 @@
               <span>Bridge reiniciado do zero, so com a base, pronto para telemetria nova.</span>
               <code>/opt/red-iq-vision-bridge</code>
             </div>
+            <div class="line-item">
+              <strong>RED SEB Monitor</strong>
+              <span>Observacao remota do ecossistema SEB em porta dedicada, fora do nginx principal.</span>
+              <code>/opt/red-seb-monitor :: /opt/seb-remote-view/downloads</code>
+            </div>
           </div>
         </article>
 
@@ -422,7 +440,7 @@
           <div class="line-list">
             <div class="line-item">
               <strong>servicos/</strong>
-              <span>Portal, dashboard, proxy, proxy-lab, REDIA, RED Trader e extensao IQ demo.</span>
+              <span>Portal, dashboard, proxy, proxy-lab, REDIA, RED Trader, OpenClaw, RED SEB Monitor e extensao IQ demo.</span>
               <code>servicos/*</code>
             </div>
             <div class="line-item">

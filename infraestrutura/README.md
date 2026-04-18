@@ -30,6 +30,7 @@ Na VM principal, `infraestrutura/nginx/red-friendly-paths.nginx.conf` expoe:
 /proxy-lab/   Proxy Lab
 /iq-bridge/   IQ Bridge
 /openclaw/    OpenClaw
+:2580         RED SEB Monitor
 ```
 
 ## Dashboard com subrotas
@@ -54,3 +55,4 @@ O dashboard principal tambem responde por caminho real:
 
 - Evolution nao e mais parte central da stack.
 - Artefatos legados em `docker/` ou `systemd/` devem ser tratados como compatibilidade, nao como eixo da arquitetura.
+- `red-seb-monitor.service` e parte oficial da stack, mas hoje vive em porta dedicada `2580`, fora do nginx principal.

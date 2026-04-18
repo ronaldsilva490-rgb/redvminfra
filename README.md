@@ -5,7 +5,7 @@
 <h1 align="center">RED Systems Unified VM</h1>
 
 <p align="center">
-  <strong>Repositorio oficial da stack consolidada em uma VM unica: portal, dashboard, proxy IA, RED I.A, RED Trader, OpenClaw, Proxy Lab e bridge da extensao IQ.</strong>
+  <strong>Repositorio oficial da stack consolidada em uma VM unica: portal, dashboard, proxy IA, RED I.A, RED Trader, OpenClaw, Proxy Lab, monitor SEB e bridge da extensao IQ.</strong>
 </p>
 
 ---
@@ -25,6 +25,7 @@ Hoje a RED Systems roda com uma arquitetura de VM unica. O objetivo deste reposi
 - `/proxy-lab/` -> laboratorio de benchmark
 - `/iq-bridge/` -> bridge da extensao IQ
 - `/openclaw/` -> assistente operacional privado
+- `:2580` -> RED SEB Monitor
 
 ### Servicos principais
 
@@ -37,6 +38,7 @@ Hoje a RED Systems roda com uma arquitetura de VM unica. O objetivo deste reposi
 | RED Trader | `servicos/redtrader` | `/opt/redtrader` | `redtrader.service` |
 | OpenClaw | `servicos/openclaw` | `/opt/red-openclaw` | `red-openclaw.service` |
 | Proxy Lab | `servicos/proxy-lab` | `/opt/red-proxy-lab` | `red-proxy-lab.service` |
+| RED SEB Monitor | `servicos/redseb-monitor` | `/opt/red-seb-monitor` | `red-seb-monitor.service` |
 | IQ Bridge | `servicos/extensao-iq-demo/bridge` | `/opt/red-iq-vision-bridge` | `red-iq-vision-bridge.service` |
 | Deploy Agent | `servicos/deploy-agent` | legado | `red-webhook.service` |
 
@@ -53,6 +55,7 @@ servicos/
   redia/                 Runtime da RED I.A
   redtrader/             Trader demo e paper
   openclaw/              Assistente operacional privado
+  redseb-monitor/        Painel remoto do ecossistema SEB
   extensao-iq-demo/      Extensao Chrome e IQ Bridge
   extensao-iq-motor-lab/ Motor de laboratorio remoto para IQ
   deploy-agent/          Legado
@@ -113,6 +116,7 @@ Cada servico agora tem um guia proprio de instalacao em qualquer VM:
 - [servicos/redia/README.md](servicos/redia/README.md)
 - [servicos/redtrader/README.md](servicos/redtrader/README.md)
 - [servicos/openclaw/README.md](servicos/openclaw/README.md)
+- [servicos/redseb-monitor/README.md](servicos/redseb-monitor/README.md)
 - [servicos/extensao-iq-demo/README.md](servicos/extensao-iq-demo/README.md)
 - [servicos/extensao-iq-motor-lab/README.md](servicos/extensao-iq-motor-lab/README.md)
 - [servicos/deploy-agent/README.md](servicos/deploy-agent/README.md)
@@ -138,6 +142,7 @@ Regra pratica:
 - redtrader: `/opt/redtrader`
 - openclaw: `/opt/red-openclaw`
 - proxy-lab: `/opt/red-proxy-lab`
+- red seb monitor: `/opt/red-seb-monitor`
 - iq bridge: `/opt/red-iq-vision-bridge`
 - portal: `/var/www/red-portal`
 
@@ -148,6 +153,7 @@ Regra pratica:
 - redia: `/opt/redia/data`
 - redtrader: `/opt/redtrader/data`
 - proxy-lab: `/opt/red-proxy-lab/data`
+- red seb monitor downloads: `/opt/seb-remote-view/downloads`
 - iq bridge: `/opt/red-iq-vision-bridge/data`
 
 ---

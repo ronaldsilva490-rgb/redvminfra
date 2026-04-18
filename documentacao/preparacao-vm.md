@@ -6,7 +6,9 @@ Use este arquivo como checklist para uma VM nova. Valores reais ficam fora do re
 
 ```bash
 apt update
-apt install -y git curl python3 python3-venv python3-pip nodejs npm ffmpeg nginx
+apt install -y git curl rsync \
+  python3 python3-venv python3-pip \
+  nodejs npm ffmpeg nginx ufw sqlite3 jq
 ```
 
 ## Systemd
@@ -16,8 +18,13 @@ Units versionadas:
 ```text
 infraestrutura/systemd/red-dashboard.service
 infraestrutura/systemd/red-ollama-proxy.service
+infraestrutura/systemd/redia.service
+infraestrutura/systemd/redtrader.service
+infraestrutura/systemd/red-proxy-lab.service
+infraestrutura/systemd/red-iq-vision-bridge.service
+infraestrutura/systemd/red-openclaw.service
+infraestrutura/systemd/red-seb-monitor.service
 infraestrutura/systemd/red-webhook.service
-infraestrutura/systemd/red-evolution.service
 ```
 
 Copie a unit necessaria para `/etc/systemd/system/`, rode:
@@ -33,7 +40,7 @@ systemctl status NOME.service --no-pager
 Configs versionadas:
 
 ```text
-infraestrutura/nginx/red-dashboard.nginx.conf
+infraestrutura/nginx/red-friendly-paths.nginx.conf
 ```
 
 Validar antes de reload:
@@ -53,3 +60,16 @@ RED_PROXY_DATA_DIR=/var/lib/redvm-proxy
 ```
 
 Nunca escrever a key real em arquivo versionado.
+
+## RED SEB Monitor
+
+Se a VM tambem for hospedar o monitor remoto do ecossistema SEB:
+
+- instale `servicos/redseb-monitor`
+- copie `infraestrutura/systemd/red-seb-monitor.service`
+- publique a porta `2580/tcp` apenas se o monitor realmente precisar ser acessado de fora
+- garanta que os downloads auxiliares existam em:
+
+```text
+/opt/seb-remote-view/downloads
+```

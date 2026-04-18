@@ -10,6 +10,7 @@ Home publica da stack. Hoje ela e um front estatico servido pelo nginx e funcion
   - proxy IA
   - RED I.A
   - RED Trader
+  - RED SEB Monitor
   - Proxy Lab
   - IQ Bridge
   - OpenClaw

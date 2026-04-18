@@ -1,0 +1,22 @@
+[Unit]
+Description=RED SEB Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/red-seb-monitor
+Environment=PORT=2580
+Environment=SEB_REMOTE_VIEW_DOWNLOADS_DIR=/opt/seb-remote-view/downloads
+Environment=REDVM_REPO_DIR=/opt/redvm-repo
+Environment=RED_DASHBOARD_DIR=/opt/redvm-dashboard
+Environment=REDIA_DIR=/opt/redia
+Environment=RED_PORTAL_DIR=/var/www/red-portal
+EnvironmentFile=-/etc/red-seb-monitor.env
+ExecStart=/usr/bin/node /opt/red-seb-monitor/server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

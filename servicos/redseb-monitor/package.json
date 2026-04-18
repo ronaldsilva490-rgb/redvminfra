@@ -1,0 +1,13 @@
+﻿{
+  "name": "seb-remote-view",
+  "version": "3.10.1.864",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "8.18.3"
+  }
+}
+

@@ -120,6 +120,7 @@ const IMPORTANT_SERVICES = [
     "red-ollama-proxy.service",
     "redia.service",
     "redtrader.service",
+    "red-seb-monitor.service",
     "red-proxy-lab.service",
     "red-iq-vision-bridge.service",
     "rapidleech.service",

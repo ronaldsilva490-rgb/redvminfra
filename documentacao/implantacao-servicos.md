@@ -12,6 +12,7 @@ Exemplo de layout remoto:
   dashboard/
   redia/
   redtrader/
+  redseb-monitor/
   deploy-agent/
 /etc/systemd/system/
 /etc/nginx/conf.d/
@@ -288,7 +289,61 @@ Health check:
 curl -I http://127.0.0.1:3100/
 ```
 
-## 5. Deploy Agent Legado
+## 5. RED SEB Monitor
+
+Servico: `servicos/redseb-monitor`
+
+Responsabilidade:
+
+- receber sessoes remotas do cliente RED SEB / Safe Exam Browser por WebSocket;
+- exibir viewport e metadados do candidato em tempo real;
+- enviar alertas temporarios para a sessao ativa;
+- servir downloads do ecossistema SEB;
+- gerar `.bat` para abrir links `seb://` ou `sebs://` no RED SEB Portable.
+
+Instalacao:
+
+```bash
+mkdir -p "$RED_ROOT/redseb-monitor" /opt/seb-remote-view/downloads
+rsync -av servicos/redseb-monitor/ "$RED_ROOT/redseb-monitor/"
+cd "$RED_ROOT/redseb-monitor"
+npm install
+```
+
+Ambiente recomendado em `/etc/red-seb-monitor.env`:
+
+```env
+PORT=2580
+SEB_REMOTE_VIEW_DOWNLOADS_DIR=/opt/seb-remote-view/downloads
+REDVM_REPO_DIR=/opt/redvm-repo
+RED_DASHBOARD_DIR=/opt/redvm-dashboard
+REDIA_DIR=/opt/redia
+RED_PORTAL_DIR=/var/www/red-portal
+```
+
+Systemd:
+
+```bash
+cp infraestrutura/systemd/red-seb-monitor.service /etc/systemd/system/red-seb-monitor.service
+systemctl daemon-reload
+systemctl enable --now red-seb-monitor
+systemctl status red-seb-monitor --no-pager
+```
+
+Health check:
+
+```bash
+curl -s http://127.0.0.1:2580/healthz | python3 -m json.tool
+curl -s http://127.0.0.1:2580/api/summary | python3 -m json.tool
+```
+
+Observacao:
+
+- a exposicao publica e dedicada em `:2580`
+- nao depende do nginx principal
+- publique essa porta so se a operacao remota do SEB realmente precisar dela
+
+## 6. Deploy Agent Legado
 
 Servico: `servicos/deploy-agent`
 
@@ -325,7 +380,8 @@ systemctl status red-webhook --no-pager
 2. dashboard
 3. redia
 4. redtrader
-5. deploy-agent, se ainda for usado
+5. redseb-monitor, se o ecossistema SEB estiver ativo
+6. deploy-agent, se ainda for usado
 ```
 
 ## Checklist Pos-Deploy

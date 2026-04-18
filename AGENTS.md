@@ -48,6 +48,9 @@ Hoje a RED Systems roda consolidada em **uma VM principal**.
 - `servicos/openclaw`
   - assistente operacional privado / chatops
   - rota: `/openclaw/`
+- `servicos/redseb-monitor`
+  - painel remoto do ecossistema RED SEB / Safe Exam Browser
+  - rota: `:2580`
 - `servicos/proxy-lab`
   - laboratorio pago de benchmark
   - rota: `/proxy-lab/`
@@ -83,6 +86,7 @@ servicos/
   redia/                 Runtime da RED I.A
   redtrader/             Trader demo/paper
   openclaw/              Assistente operacional privado OpenClaw
+  redseb-monitor/        Painel remoto do ecossistema RED SEB
   extensao-iq-demo/      Extensao Chrome e bridge
   deploy-agent/          Legado
 
@@ -227,6 +231,7 @@ Use estes caminhos como referencia operacional:
 - redia: `/opt/redia`
 - redtrader: `/opt/redtrader`
 - openclaw: `/opt/red-openclaw`
+- red seb monitor: `/opt/red-seb-monitor`
 - proxy-lab: `/opt/red-proxy-lab`
 - iq bridge: `/opt/red-iq-vision-bridge`
 - portal: `/var/www/red-portal`
@@ -239,6 +244,7 @@ Dados:
 - redtrader data: `/opt/redtrader/data`
 - proxy-lab data: `/opt/red-proxy-lab/data`
 - iq bridge data: `/opt/red-iq-vision-bridge/data`
+- red seb monitor downloads: `/opt/seb-remote-view/downloads`
 
 ---
 
@@ -258,6 +264,7 @@ Atalhos importantes:
 - `/proxy-lab/`
 - `/iq-bridge/`
 - `/openclaw/`
+- `:2580`
 
 ### Rotas internas do dashboard
 

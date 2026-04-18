@@ -213,6 +213,30 @@ python -m redtrader.app
 
 Nunca usar chaves reais de exchange no MVP paper.
 
+## 10A. RED SEB Monitor
+
+Papel:
+
+- espelhar sessoes remotas do RED SEB / Safe Exam Browser;
+- servir downloads do ecossistema SEB;
+- permitir alertas e observacao operacional em tempo real.
+
+Comandos locais:
+
+```powershell
+cd servicos/redseb-monitor
+npm install
+node --check server.js
+npm start
+```
+
+Health:
+
+```text
+http://127.0.0.1:2580/healthz
+http://127.0.0.1:2580/api/summary
+```
+
 ## 11. Deploy Seguro
 
 Fluxo recomendado:
@@ -263,6 +287,12 @@ RED Trader:
 journalctl -u redtrader -f
 ```
 
+RED SEB Monitor:
+
+```bash
+journalctl -u red-seb-monitor -f
+```
+
 ## 13. Nginx
 
 Sempre validar antes de reload:
@@ -294,6 +324,7 @@ Nao inclua backups com dados reais no repo.
 [ ] Configurar Nginx.
 [ ] Instalar REDIA se a VM for de WhatsApp.
 [ ] Instalar RED Trader se a VM for de trading.
+[ ] Instalar RED SEB Monitor se a VM tambem operar o ecossistema SEB.
 [ ] Configurar backups.
 [ ] Rodar secret scan antes de qualquer push.
 ```
