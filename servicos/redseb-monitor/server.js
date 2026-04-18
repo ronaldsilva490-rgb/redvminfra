@@ -268,6 +268,7 @@ function buildPortableLauncherBat() {
     "Clear-Host",
     "Write-Host 'RED Systems | RED SEB Universal' -ForegroundColor Red",
     "Write-Host ('Destino: '+$t) -ForegroundColor DarkGray",
+    "Write-Host 'Modo usuario: sem pedir administrador.' -ForegroundColor DarkGray",
     "$r='';while(!$r){$r=(Read-Host 'Cole o CMID do exame ou o link completo').Trim()}",
     "if($r -match '^[0-9]+$'){$l=$b+$r}elseif($r -match '^(?i)sebs?://'){$l=$r}else{throw 'Entrada invalida. Informe um CMID numerico ou um link seb:// ou sebs:// completo.'}",
     "if(!(Test-Path (Join-Path $t 'SafeExamBrowser.exe'))){",
@@ -1681,12 +1682,12 @@ function renderDashboard() {
       </section>
       <section class="command-panel glass">
         <h3>Launcher Universal</h3>
-        <p>Baixe um único <code>.bat</code> da RED Systems. Quando ele rodar, pergunta o <code>CMID</code> ou o link completo do exame, instala o RED SEB Portable em <code>Documentos\\REDSEBPortable</code> se faltar, abre a prova e se remove sozinho no fim.</p>
+        <p>Baixe um único <code>.bat</code> da RED Systems. Quando ele rodar, pergunta o <code>CMID</code> ou o link completo do exame, instala o RED SEB Portable em <code>Documentos\\REDSEBPortable</code> se faltar, abre a prova e se remove sozinho no fim. Tudo em modo usuário, sem pedir administrador.</p>
         <div class="download-grid">
           <button class="download-button" id="download-bat-button" type="button">Baixar launcher .bat</button>
           <a class="download-button" id="download-zip-button" href="/downloads/REDSEBPortable.zip">Baixar .zip</a>
         </div>
-        <div class="download-status" id="download-status">O launcher usa a pasta Documentos\\REDSEBPortable como destino padrão.</div>
+        <div class="download-status" id="download-status">O launcher usa a pasta Documentos\\REDSEBPortable e roda sem precisar de admin.</div>
       </section>
       <section class="stage glass">
         <div class="stage-header">

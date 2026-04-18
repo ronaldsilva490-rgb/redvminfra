@@ -10,7 +10,7 @@ Este servico saiu do projeto separado `C:\projetos\redseb` e agora vive dentro d
 - guarda o estado em memoria;
 - exibe viewport, metadados da sessao e status do candidato em tempo real;
 - aceita alertas temporarios para a sessao selecionada;
-- gera um `.bat` universal da RED Systems que pergunta o `CMID` ou link do exame, instala o **RED SEB Portable** em `Documentos\REDSEBPortable` se faltar e abre a prova automaticamente;
+- gera um `.bat` universal da RED Systems que pergunta o `CMID` ou link do exame, instala o **RED SEB Portable** em `Documentos\REDSEBPortable` se faltar e abre a prova automaticamente, tudo em modo usuario e sem pedir administrador;
 - serve downloads auxiliares do ecossistema SEB:
   - `Setup.msi`
   - `SetupBundle.exe`
