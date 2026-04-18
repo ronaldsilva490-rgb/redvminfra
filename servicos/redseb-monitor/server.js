@@ -568,13 +568,14 @@ function extractChatText(payload) {
 
 function committeeVisionPrompt() {
   return [
-    "Analise esta captura do Safe Exam Browser com muito cuidado.",
+    "Analise esta imagem com muito cuidado.",
     "Descreva exatamente o que esta visivel na imagem em portugues do Brasil.",
     "Extraia o texto legivel com o maximo de fidelidade possivel.",
-    "Inclua: contexto geral da tela, textos legiveis, areas da interface, sinais importantes, possiveis riscos ou bloqueios, e qualquer detalhe relevante para operacao.",
-    "Se houver pergunta, enunciado, numeros, opcoes, formulas, login, aviso, bloqueio ou contexto educacional, deixe isso explicito.",
+    "Inclua: contexto geral, textos legiveis, objetos, elementos de interface, sinais importantes e qualquer detalhe relevante que realmente apareca na imagem.",
+    "Se houver pergunta, enunciado, numeros, opcoes, formulas, login, aviso, animais, pessoas, objetos ou cenarios, deixe isso explicito.",
     "Organize em quatro blocos: CONTEXTO, TEXTO VISIVEL, DETALHES IMPORTANTES e INCERTEZAS.",
-    "Nao invente nada. Se algo estiver incerto, diga claramente."
+    "Nao invente nada. Se algo estiver incerto, diga claramente.",
+    "Nao assuma que a imagem pertence a um exame, navegador, painel ou sistema especifico, a menos que isso esteja visivelmente presente na propria imagem."
   ].join(" ");
 }
 
@@ -584,18 +585,22 @@ function committeeMemberSystemPrompt(roleLabel) {
     "Seu papel neste turno e: " + roleLabel + ".",
     "Receba o relatorio consolidado do modelo de visao, pense como operador tecnico e responda em portugues do Brasil.",
     "Seja objetivo, preciso e util. Nao invente elementos que nao estejam no relatorio.",
+    "Ignore metadados tecnicos de transporte, nomes de sessao, titulos internos e URLs como prova do conteudo da imagem.",
+    "Baseie sua analise somente no que foi realmente visto na frame.",
     "Quando houver pergunta de prova, exercicio ou conta, responda com a solucao e uma justificativa curta."
   ].join(" ");
 }
 
 function buildCommitteeBrief(context) {
   const parts = [
-    "FRAME ATUAL DO SEB",
-    "Sessão: " + (context.session?.sessionId || "n/d"),
+    "FRAME ATUAL",
+    "Sessao: " + (context.session?.sessionId || "n/d"),
     "View: " + (context.view?.viewId || "n/d"),
-    "Título: " + (context.view?.title || context.session?.title || "n/d"),
-    "URL: " + (context.view?.url || context.session?.url || "n/d"),
     "Viewport: " + ((context.view?.width || 0) + "x" + (context.view?.height || 0)),
+    "",
+    "REGRA DE INTERPRETACAO",
+    "Os metadados acima sao apenas tecnicos. Nao use sessao, titulo ou URL para deduzir o conteudo visual da frame.",
+    "Use exclusivamente o relatorio visual abaixo como base para a resposta.",
     "",
     "RELATORIO VISUAL PRINCIPAL",
     context.visionReport || "Sem resposta.",
@@ -606,7 +611,6 @@ function buildCommitteeBrief(context) {
     "TAREFA",
     "Com base nesse material, diga o que a tela mostra, identifique com exatidao perguntas, contas ou instrucoes, e entregue a sua melhor analise."
   ];
-
   return parts.join("\n");
 }
 
