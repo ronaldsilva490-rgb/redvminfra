@@ -6,8 +6,9 @@ Fluxo:
 
 1. escolha uma `.jpg` ou `.png`;
 2. informe a URL do monitor;
-3. envie uma vez ou inicie o stream;
-4. abra o painel do SEB e use o comite de IA em cima dessa sessao fake.
+3. a ferramenta abre um WebSocket em `/seb-live`;
+4. envie uma vez ou inicie o stream;
+5. abra o painel do SEB e use o comite de IA em cima dessa sessao fake.
 
 ## Executar
 
@@ -19,17 +20,13 @@ python -m ferramentas.seb_frame_streamer
 ## Campos principais
 
 - `Base URL do SEB`: ex. `http://redsystems.ddns.net:2580`
-- `Token debug`: token configurado no `RED_SEB_DEBUG_TOKEN` da VM
 - `Session ID`: nome da sessao fake
 - `View ID`: id da view fake
 - `Titulo` e `URL`: ajudam a identificar a sessao no painel
 - `Intervalo (ms)`: frequencia do stream
 
-## Endpoints usados
+## Canal usado
 
-- `POST /api/debug/fake-frame`
-- `POST /api/debug/session/clear`
+- `WS /seb-live`
 
-## Observacao
-
-O endpoint de debug deve ficar protegido por token na VM. A GUI envia esse token no header `x-red-seb-debug-token`.
+O payload enviado segue a mesma estrutura que o monitor espera do navegador SEB: `sessionId`, `viewId`, `windowId`, `isMainWindow`, `title`, `url`, `width`, `height` e `imageBase64`.

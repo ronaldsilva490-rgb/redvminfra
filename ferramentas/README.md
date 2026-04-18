@@ -10,7 +10,7 @@ avaliacoes/   Benchmarks de modelos.
 nvidia/       Testes e utilitarios NVIDIA NIM/NVCF.
 red_model_studio/ App desktop PySide6 para testar chat/imagem do proxy.
 redclaudecode/  Launcher visual do Claude Code usando o proxy da RED Systems.
-seb_frame_streamer/ GUI simples para injetar uma frame fake no RED SEB Monitor.
+seb_frame_streamer/ GUI simples para simular uma sessao SEB real via WebSocket.
 ```
 
 Scripts antigos com senha hardcoded foram preservados em `.privado/legacy-vm-scripts/` e nao devem ser publicados.

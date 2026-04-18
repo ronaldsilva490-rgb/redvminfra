@@ -16,7 +16,7 @@ const proxyBase = String(process.env.RED_PROXY_BASE || "http://127.0.0.1:8080").
 const committeeDefaultVisionPrimary = process.env.RED_SEB_COMMITTEE_VISION_PRIMARY || "NIM - meta/llama-3.2-11b-vision-instruct";
 const committeeDefaultVisionSecondary = process.env.RED_SEB_COMMITTEE_VISION_SECONDARY || "NIM - nvidia/nemotron-nano-12b-v2-vl";
 const committeeDefaultLead = process.env.RED_SEB_COMMITTEE_LEAD || "NIM - nvidia/llama-3.1-nemotron-nano-8b-v1";
-const debugStreamToken = String(process.env.RED_SEB_DEBUG_TOKEN || "").trim();
+const sessionStaleMs = Math.max(60000, Number(process.env.RED_SEB_SESSION_STALE_MS || 300000));
 const sessions = new Map();
 const downloadCandidates = {
   setupMsi: [
@@ -204,28 +204,6 @@ function normalizePosition(value) {
   return allowed.has(normalized) ? normalized : "top-right";
 }
 
-function requestToken(request) {
-  const authHeader = String(request.headers.authorization || "").trim();
-  if (/^bearer\s+/i.test(authHeader)) {
-    return authHeader.replace(/^bearer\s+/i, "").trim();
-  }
-
-  return String(request.headers["x-red-seb-debug-token"] || "").trim();
-}
-
-function isLoopbackRequest(request) {
-  const remoteAddress = String(request?.socket?.remoteAddress || "").trim();
-  return remoteAddress === "::1" || remoteAddress === "127.0.0.1" || remoteAddress === "::ffff:127.0.0.1";
-}
-
-function authorizeDebugRequest(request) {
-  if (debugStreamToken) {
-    return requestToken(request) === debugStreamToken;
-  }
-
-  return isLoopbackRequest(request);
-}
-
 function normalizeSebLink(value) {
   const raw = String(value || "").trim();
 
@@ -322,6 +300,7 @@ function getSessionState() {
         height: primaryView.height || 0,
         timestamp: session.timestamp,
         connectedAt: session.connectedAt,
+        disconnectedAt: session.disconnectedAt || null,
         remoteAddress: session.remoteAddress,
         lastAlert: session.lastAlert || null,
         imageBase64: primaryView.imageBase64 || "",
@@ -396,6 +375,7 @@ function ensureSession(sessionId, request, socket, payload) {
     connectedAt: current.connectedAt || now(),
     remoteAddress: request?.socket?.remoteAddress || current.remoteAddress || "debug",
     socket: socket || current.socket || null,
+    disconnectedAt: null,
     timestamp: pick(payload, "timestamp", "Timestamp") || current.timestamp || now(),
     views
   };
@@ -425,30 +405,26 @@ function ingestSebPayload(payload, request, socket = null) {
   return { sessionId, viewId: view.viewId };
 }
 
-function normalizeDebugFramePayload(payload) {
-  const sessionId = String(payload.sessionId || payload.SessionId || "").trim() || "debug-session";
-  const viewId = String(payload.viewId || payload.ViewId || "").trim() || "main-window";
-  const imageBase64 = String(payload.imageBase64 || payload.ImageBase64 || "").trim();
-  const width = Number(payload.width || payload.Width || 1280);
-  const height = Number(payload.height || payload.Height || 720);
-
-  if (!imageBase64) {
-    throw new Error("imageBase64 obrigatorio.");
+function markSocketClosed(socket) {
+  for (const [sessionId, session] of sessions.entries()) {
+    if (session.socket === socket) {
+      sessions.set(sessionId, {
+        ...session,
+        socket: null,
+        disconnectedAt: now()
+      });
+    }
   }
+}
 
-  return {
-    sessionId,
-    viewId,
-    application: String(payload.application || payload.Application || "SafeExamBrowser"),
-    title: String(payload.title || payload.Title || "RED SEB Debug Session"),
-    url: String(payload.url || payload.Url || "https://debug.local/frame"),
-    width: Number.isFinite(width) ? Math.max(1, Math.round(width)) : 1280,
-    height: Number.isFinite(height) ? Math.max(1, Math.round(height)) : 720,
-    imageBase64,
-    isMainWindow: Boolean(payload.isMainWindow ?? payload.IsMainWindow ?? true),
-    windowId: Number(payload.windowId || payload.WindowId || 1) || 1,
-    timestamp: now()
-  };
+function pruneStaleSessions() {
+  const cutoff = Date.now() - sessionStaleMs;
+  for (const [sessionId, session] of sessions.entries()) {
+    const lastTimestamp = Date.parse(String(session.timestamp || session.disconnectedAt || session.connectedAt || ""));
+    if (Number.isFinite(lastTimestamp) && lastTimestamp < cutoff) {
+      sessions.delete(sessionId);
+    }
+  }
 }
 
 function resolveCommitteeDefaults(models) {
@@ -2099,59 +2075,6 @@ const server = http.createServer((request, response) => {
       .catch((error) => sendJson(response, 500, { ok: false, error: error.message }));
   }
 
-  if (pathname === "/api/debug/fake-frame" && request.method === "POST") {
-    if (!authorizeDebugRequest(request)) {
-      return sendJson(response, 403, { ok: false, error: "Debug frame nao autorizado." });
-    }
-
-    return readRequestBody(request)
-      .then((body) => {
-        let payload;
-
-        try {
-          payload = JSON.parse(body || "{}");
-        } catch {
-          return sendJson(response, 400, { ok: false, error: "Payload invalido." });
-        }
-
-        const normalized = normalizeDebugFramePayload(payload || {});
-        const result = ingestSebPayload(normalized, request, null);
-        return sendJson(response, 200, {
-          ok: true,
-          sessionId: result.sessionId,
-          viewId: result.viewId,
-          timestamp: normalized.timestamp
-        });
-      })
-      .catch((error) => sendJson(response, 500, { ok: false, error: error.message }));
-  }
-
-  if (pathname === "/api/debug/session/clear" && request.method === "POST") {
-    if (!authorizeDebugRequest(request)) {
-      return sendJson(response, 403, { ok: false, error: "Debug frame nao autorizado." });
-    }
-
-    return readRequestBody(request)
-      .then((body) => {
-        let payload;
-
-        try {
-          payload = JSON.parse(body || "{}");
-        } catch {
-          return sendJson(response, 400, { ok: false, error: "Payload invalido." });
-        }
-
-        const sessionId = String(payload.sessionId || "").trim();
-        if (!sessionId) {
-          return sendJson(response, 400, { ok: false, error: "sessionId obrigatorio." });
-        }
-
-        const removed = sessions.delete(sessionId);
-        return sendJson(response, 200, { ok: true, sessionId, removed });
-      })
-      .catch((error) => sendJson(response, 500, { ok: false, error: error.message }));
-  }
-
   if (pathname === "/assets/logo") {
     return serveAsset(response, resolvedAssets.logo);
   }
@@ -2235,13 +2158,11 @@ wss.on("connection", (socket, request) => {
   });
 
   socket.on("close", () => {
-    for (const [sessionId, session] of sessions.entries()) {
-      if (session.socket === socket) {
-        sessions.delete(sessionId);
-      }
-    }
+    markSocketClosed(socket);
   });
 });
+
+setInterval(pruneStaleSessions, 30000).unref();
 
 server.listen(port, host, () => {
   console.log(`seb-remote-view listening on http://${host}:${port}`);

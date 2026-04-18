@@ -34,9 +34,8 @@ Rotas operacionais principais:
 - `GET /api/sessions`
 - `GET /api/summary`
 - `POST /api/alert`
-- `POST /api/debug/fake-frame`
-- `POST /api/debug/session/clear`
 - `POST /api/generate-bat`
+- `WS /seb-live`
 - `GET /downloads/Setup.msi`
 - `GET /downloads/SetupBundle.exe`
 - `GET /downloads/REDSEBPortable.zip`
@@ -63,9 +62,9 @@ Variaveis principais:
 - `RED_DASHBOARD_DIR`
 - `REDIA_DIR`
 - `RED_PORTAL_DIR`
-- `RED_SEB_DEBUG_TOKEN`
+- `RED_SEB_SESSION_STALE_MS`
 
-O `RED_SEB_DEBUG_TOKEN` protege os endpoints de injecao de frame para debug. Se ele estiver vazio, apenas requests vindos do loopback local conseguem usar esses endpoints.
+`RED_SEB_SESSION_STALE_MS` controla por quanto tempo o monitor mantem a ultima frame de uma sessao depois que o socket fecha. Isso ajuda a nao perder a visualizacao por oscilacoes curtas.
 
 ## Rodar localmente
 
