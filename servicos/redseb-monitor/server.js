@@ -13,11 +13,11 @@ const dashboardRoot = process.env.RED_DASHBOARD_DIR || "/opt/redvm-dashboard";
 const rediaRoot = process.env.REDIA_DIR || "/opt/redia";
 const portalRoot = process.env.RED_PORTAL_DIR || "/var/www/red-portal";
 const proxyBase = String(process.env.RED_PROXY_BASE || "http://127.0.0.1:8080").replace(/\/+$/, "");
-const committeeDefaultVisionPrimary = process.env.RED_SEB_COMMITTEE_VISION_PRIMARY || "NIM - meta/llama-3.2-11b-vision-instruct";
-const committeeDefaultVisionFallback = process.env.RED_SEB_COMMITTEE_VISION_FALLBACK || process.env.RED_SEB_COMMITTEE_VISION_SECONDARY || "NIM - nvidia/nemotron-nano-12b-v2-vl";
-const committeeDefaultTextA = process.env.RED_SEB_COMMITTEE_TEXT_A || process.env.RED_SEB_COMMITTEE_LEAD || "NIM - nvidia/llama-3.1-nemotron-nano-8b-v1";
-const committeeDefaultTextB = process.env.RED_SEB_COMMITTEE_TEXT_B || "NIM - abacusai/dracarys-llama-3.1-70b-instruct";
-const committeeDefaultTextC = process.env.RED_SEB_COMMITTEE_TEXT_C || "NIM - z-ai/glm5";
+const committeeDefaultVisionPrimary = process.env.RED_SEB_COMMITTEE_VISION_PRIMARY || "NIM - nvidia/nemotron-nano-12b-v2-vl";
+const committeeDefaultVisionFallback = process.env.RED_SEB_COMMITTEE_VISION_FALLBACK || process.env.RED_SEB_COMMITTEE_VISION_SECONDARY || "NIM - meta/llama-3.2-90b-vision-instruct";
+const committeeDefaultTextA = process.env.RED_SEB_COMMITTEE_TEXT_A || process.env.RED_SEB_COMMITTEE_LEAD || "NIM - qwen/qwen3-next-80b-a3b-instruct";
+const committeeDefaultTextB = process.env.RED_SEB_COMMITTEE_TEXT_B || "NIM - meta/llama-4-maverick-17b-128e-instruct";
+const committeeDefaultTextC = process.env.RED_SEB_COMMITTEE_TEXT_C || "gpt-oss:120b";
 const sessionStaleMs = Math.max(1000, Number(process.env.RED_SEB_SESSION_STALE_MS || 5000));
 const sessions = new Map();
 const committeeRuns = new Map();
@@ -451,8 +451,9 @@ function resolveCommitteeDefaults(models) {
     visionPrimary: pickFirst(
       [
         committeeDefaultVisionPrimary,
-        "NIM - meta/llama-3.2-11b-vision-instruct",
+        "NIM - meta/llama-3.2-90b-vision-instruct",
         "NIM - nvidia/nemotron-nano-12b-v2-vl",
+        "NIM - meta/llama-3.2-11b-vision-instruct",
         "qwen3-vl:235b-instruct"
       ],
       committeeDefaultVisionPrimary
@@ -460,8 +461,8 @@ function resolveCommitteeDefaults(models) {
     visionFallback: pickFirst(
       [
         committeeDefaultVisionFallback,
-        "NIM - nvidia/nemotron-nano-12b-v2-vl",
         "NIM - meta/llama-3.2-90b-vision-instruct",
+        "NIM - nvidia/nemotron-nano-12b-v2-vl",
         "qwen3-vl:235b-instruct"
       ],
       committeeDefaultVisionFallback
@@ -469,6 +470,7 @@ function resolveCommitteeDefaults(models) {
     textA: pickFirst(
       [
         committeeDefaultTextA,
+        "NIM - qwen/qwen3-next-80b-a3b-instruct",
         "NIM - nvidia/llama-3.1-nemotron-nano-8b-v1",
         "NIM - abacusai/dracarys-llama-3.1-70b-instruct",
         "NIM - z-ai/glm5",
@@ -479,9 +481,10 @@ function resolveCommitteeDefaults(models) {
     textB: pickFirst(
       [
         committeeDefaultTextB,
+        "NIM - meta/llama-4-maverick-17b-128e-instruct",
         "NIM - abacusai/dracarys-llama-3.1-70b-instruct",
         "NIM - z-ai/glm5",
-        "qwen3-next:80b",
+        "NIM - qwen/qwen3-next-80b-a3b-instruct",
         "NIM - nvidia/llama-3.1-nemotron-nano-8b-v1"
       ],
       committeeDefaultTextB
@@ -489,8 +492,9 @@ function resolveCommitteeDefaults(models) {
     textC: pickFirst(
       [
         committeeDefaultTextC,
+        "gpt-oss:120b",
         "NIM - z-ai/glm5",
-        "qwen3-next:80b",
+        "NIM - qwen/qwen3-next-80b-a3b-instruct",
         "NIM - abacusai/dracarys-llama-3.1-70b-instruct",
         "NIM - nvidia/llama-3.1-nemotron-nano-8b-v1"
       ],
@@ -648,11 +652,11 @@ async function fetchCommitteeModelCatalog() {
   const defaults = resolveCommitteeDefaults(models);
   const visionModels = prioritizeModels(
     models.filter((model) => model.capabilities.includes("vision")),
-    [defaults.visionPrimary, defaults.visionFallback, "NIM - meta/llama-3.2-90b-vision-instruct", "qwen3-vl:235b-instruct"]
+    [defaults.visionPrimary, defaults.visionFallback, "NIM - nvidia/nemotron-nano-12b-v2-vl", "NIM - meta/llama-3.2-90b-vision-instruct", "qwen3-vl:235b-instruct"]
   );
   const textModels = prioritizeModels(
     models.filter((model) => model.capabilities.includes("chat") && !model.capabilities.includes("vision")),
-    [defaults.textA, defaults.textB, defaults.textC, "NIM - deepseek-ai/deepseek-v3.1", "qwen3-next:80b"]
+    [defaults.textA, defaults.textB, defaults.textC, "NIM - qwen/qwen3-next-80b-a3b-instruct", "NIM - meta/llama-4-maverick-17b-128e-instruct", "gpt-oss:120b", "NIM - deepseek-ai/deepseek-v3.1", "qwen3-next:80b"]
   );
   return {
     visionModels,
@@ -1731,7 +1735,7 @@ function renderDashboard() {
     const committeeFrameEmpty = document.getElementById("committee-frame-empty");
     const ALERT_POSITION_KEY = "redseb.monitor.alertPosition.v1";
     const FRAME_SIZE_KEY = "redseb.monitor.frameSize.v1";
-    const COMMITTEE_MODELS_KEY = "redseb.committee.models.v2";
+    const COMMITTEE_MODELS_KEY = "redseb.committee.models.v3";
     let activeSessionId = null;
     let activeViewId = null;
     const knownViewIdsBySession = new Map();
