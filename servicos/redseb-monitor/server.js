@@ -1400,6 +1400,7 @@ function renderDashboard() {
     const knownViewIdsBySession = new Map();
     let committeeCatalog = null;
     let committeeBusy = false;
+    let frameRenderToken = 0;
 
     function escapeHtml(value) {
       return String(value || "")
@@ -1414,6 +1415,65 @@ function renderDashboard() {
       if (!value) return "n/a";
       const date = new Date(value);
       return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+    }
+
+    function inferImageMimeType(base64) {
+      const sample = String(base64 || "").slice(0, 16);
+      if (sample.startsWith("/9j/")) return "image/jpeg";
+      if (sample.startsWith("iVBOR")) return "image/png";
+      if (sample.startsWith("UklGR")) return "image/webp";
+      if (sample.startsWith("R0lGOD")) return "image/gif";
+      return "image/jpeg";
+    }
+
+    function buildImageDataUrl(base64, mimeType) {
+      return "data:" + mimeType + ";base64," + base64;
+    }
+
+    function renderViewerFrame(base64) {
+      const value = String(base64 || "").trim();
+      if (!value) {
+        viewerImage.hidden = true;
+        viewerImage.removeAttribute("src");
+        emptyState.hidden = false;
+        return;
+      }
+
+      const orderedMimes = [...new Set([
+        inferImageMimeType(value),
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+      ])];
+      const token = ++frameRenderToken;
+      let attempt = 0;
+
+      const tryLoad = () => {
+        const mime = orderedMimes[attempt] || "image/jpeg";
+        viewerImage.onload = () => {
+          if (token !== frameRenderToken) return;
+          viewerImage.hidden = false;
+          emptyState.hidden = true;
+        };
+        viewerImage.onerror = () => {
+          if (token !== frameRenderToken) return;
+          attempt += 1;
+          if (attempt < orderedMimes.length) {
+            tryLoad();
+            return;
+          }
+          viewerImage.hidden = true;
+          viewerImage.removeAttribute("src");
+          emptyState.hidden = false;
+          emptyState.textContent = "A frame chegou, mas o navegador nao conseguiu renderizar a imagem desta view.";
+        };
+        viewerImage.src = buildImageDataUrl(value, mime);
+      };
+
+      viewerImage.hidden = true;
+      emptyState.hidden = false;
+      emptyState.textContent = "Carregando frame da view selecionada...";
+      tryLoad();
     }
 
     function parseDownloadFilename(response, fallbackName) {
@@ -1646,12 +1706,12 @@ function renderDashboard() {
       sendAlertButton.disabled = false;
 
       if (activeView && activeView.imageBase64) {
-        viewerImage.src = "data:image/jpeg;base64," + activeView.imageBase64;
-        viewerImage.hidden = false;
-        emptyState.hidden = true;
+        renderViewerFrame(activeView.imageBase64);
       } else {
         viewerImage.hidden = true;
+        viewerImage.removeAttribute("src");
         emptyState.hidden = false;
+        emptyState.textContent = "Assim que o Safe Exam Browser publicar frames em /seb-live, o dashboard exibira a sessao aqui com visualizacao em tempo real.";
       }
     }
 
