@@ -5,6 +5,7 @@ const { WebSocketServer } = require("ws");
 
 const host = "0.0.0.0";
 const port = Number(process.env.PORT || 2580);
+const buildLabel = process.env.RED_SEB_MONITOR_BUILD || "RED 2026.04.18";
 const downloadsRoot = process.env.SEB_REMOTE_VIEW_DOWNLOADS_DIR || "/opt/red-seb-monitor/data/downloads";
 const repoRoot = process.env.REDVM_REPO_DIR || "/opt/redvm-repo";
 const dashboardRoot = process.env.RED_DASHBOARD_DIR || "/opt/redvm-dashboard";
@@ -641,6 +642,7 @@ function renderDashboard() {
         <div class="brand-copy">
           <h1>RED SEB Monitor</h1>
           <p>Painel de observação em tempo real para sessões do Safe Exam Browser com identidade visual da RED.</p>
+          <p><strong>Build:</strong> ${buildLabel}</p>
         </div>
       </div>
       <div class="summary">
@@ -662,7 +664,7 @@ function renderDashboard() {
             <h2>Observação sincronizada do SEB</h2>
             <p>Viewer em tema vermelho, pronto para acompanhar a tela do candidato em tempo real com atualização contínua do viewport e dos metadados da sessão.</p>
           </div>
-          <div class="hero-badge" id="hero-last-update">Sem atualização</div>
+          <div class="hero-badge" id="hero-last-update">${buildLabel}</div>
         </div>
       </section>
       <section class="insights">
@@ -1102,7 +1104,10 @@ const server = http.createServer((request, response) => {
   }
 
   if (pathname === "/" || pathname === "/dashboard") {
-    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    response.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, must-revalidate"
+    });
     response.end(renderDashboard());
     return;
   }

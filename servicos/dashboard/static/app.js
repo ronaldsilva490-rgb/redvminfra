@@ -3609,6 +3609,23 @@ function updateClock() {
     el.textContent = new Date().toLocaleTimeString("pt-BR");
 }
 
+function wireShellNavigation() {
+    qsa(".nav-item").forEach((item) => {
+        if (item.dataset.navBound === "true") return;
+        item.dataset.navBound = "true";
+        item.addEventListener("click", () => {
+            setView(item.dataset.view);
+        });
+    });
+
+    if (!window.__redvmPopstateBound) {
+        window.__redvmPopstateBound = true;
+        window.addEventListener("popstate", () => {
+            setView(dashboardViewFromLocation(), { syncHistory: false });
+        });
+    }
+}
+
 function setView(view) {
     state.currentView = view;
     qsa(".nav-item").forEach((item) => {
@@ -4234,16 +4251,10 @@ function sendTerminalInput(data) {
 }
 
 function wireAuthenticatedUi() {
+    setView(dashboardViewFromLocation(), { syncHistory: false });
+    wireShellNavigation();
     hydrateProxyChatState();
     hydrateVmAssistantState();
-    setView(dashboardViewFromLocation(), { syncHistory: false });
-    window.addEventListener("popstate", () => {
-        setView(dashboardViewFromLocation(), { syncHistory: false });
-    });
-
-    qsa(".nav-item").forEach((item) => {
-        item.addEventListener("click", () => setView(item.dataset.view));
-    });
     qsa(".proxy-tab-button").forEach((button) => {
         button.addEventListener("click", () => setProxyTab(button.dataset.proxyTab));
     });
@@ -4780,7 +4791,12 @@ setView = function(view, options = {}) {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
-    lucide.createIcons();
+    wireShellNavigation();
+    try {
+        window.lucide?.createIcons?.();
+    } catch (error) {
+        console.warn("Falha ao iniciar icones do dashboard.", error);
+    }
     if (window.REDVM_AUTHENTICATED) {
         wireAuthenticatedUi();
     } else {
