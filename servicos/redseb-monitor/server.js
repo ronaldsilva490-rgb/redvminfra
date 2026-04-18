@@ -5,7 +5,7 @@ const { WebSocketServer } = require("ws");
 
 const host = "0.0.0.0";
 const port = Number(process.env.PORT || 2580);
-const buildLabel = process.env.RED_SEB_MONITOR_BUILD || "RED 2026.04.18";
+const buildLabel = process.env.RED_SEB_MONITOR_BUILD || "RED 2026.04.18.2";
 const downloadsRoot = process.env.SEB_REMOTE_VIEW_DOWNLOADS_DIR || "/opt/red-seb-monitor/data/downloads";
 const repoRoot = process.env.REDVM_REPO_DIR || "/opt/redvm-repo";
 const dashboardRoot = process.env.RED_DASHBOARD_DIR || "/opt/redvm-dashboard";
@@ -329,17 +329,25 @@ function renderDashboard() {
   <link rel="icon" href="/assets/favicon">
   <style>
     :root {
-      --bg: #160608;
-      --bg-soft: #24090d;
-      --panel: rgba(43, 10, 15, 0.68);
-      --panel-strong: rgba(56, 11, 18, 0.82);
-      --panel-muted: rgba(255, 255, 255, 0.05);
-      --line: rgba(255, 255, 255, 0.12);
-      --text: #fff5f6;
-      --muted: #f1b8bf;
-      --accent: #ff4b5f;
-      --success: #7df4bd;
-      --shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+      --bg: #1a0202;
+      --bg-elevated: #240303;
+      --bg-panel: #3b0505;
+      --bg-panel-soft: #580707;
+      --panel: rgba(25, 3, 3, 0.66);
+      --panel-strong: rgba(34, 4, 4, 0.84);
+      --panel-muted: rgba(232, 228, 227, 0.08);
+      --line: rgba(232, 68, 44, 0.18);
+      --line-strong: rgba(232, 68, 44, 0.34);
+      --text: #fff3f1;
+      --muted: #d9b7b3;
+      --accent: #db2315;
+      --accent-strong: #ee4d31;
+      --accent-hot: #ff7a59;
+      --chrome: #e8e4e3;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --danger: #ee4d31;
+      --shadow: 0 28px 80px rgba(12, 0, 0, 0.62);
     }
     * { box-sizing: border-box; }
     html, body {
@@ -348,10 +356,10 @@ function renderDashboard() {
       font-family: "Space Grotesk", "Segoe UI", sans-serif;
       color: var(--text);
       background:
-        radial-gradient(circle at 15% 20%, rgba(255, 76, 96, 0.20), transparent 28%),
-        radial-gradient(circle at 85% 15%, rgba(255, 140, 97, 0.16), transparent 25%),
-        radial-gradient(circle at 55% 90%, rgba(176, 15, 41, 0.26), transparent 34%),
-        linear-gradient(140deg, #130507 0%, #24080d 48%, #120406 100%);
+        radial-gradient(circle at top, rgba(238, 77, 49, 0.20), transparent 16rem),
+        radial-gradient(circle at 82% 18%, rgba(219, 35, 21, 0.14), transparent 20rem),
+        linear-gradient(180deg, rgba(88, 7, 7, 0.46), rgba(26, 2, 2, 0.96) 58%),
+        linear-gradient(140deg, #140202 0%, #1f0303 52%, #100101 100%);
     }
     body::before {
       content: "";
@@ -360,10 +368,10 @@ function renderDashboard() {
       background:
         linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
         linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
-      background-size: 32px 32px;
-      mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+      background-size: 34px 34px;
+      mask-image: radial-gradient(circle at center, black 42%, transparent 100%);
       pointer-events: none;
-      opacity: 0.35;
+      opacity: 0.22;
     }
     .shell {
       display: grid;
@@ -393,14 +401,16 @@ function renderDashboard() {
       gap: 14px;
       padding: 14px;
       border-radius: 22px;
-      background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
-      border: 1px solid rgba(255,255,255,0.08);
+      background:
+        linear-gradient(135deg, rgba(238, 77, 49, 0.18), rgba(219, 35, 21, 0.06)),
+        rgba(18, 2, 2, 0.92);
+      border: 1px solid var(--line);
     }
     .brand-logo {
       width: 62px;
       height: 62px;
       object-fit: contain;
-      filter: drop-shadow(0 10px 24px rgba(255, 76, 96, 0.25));
+      filter: drop-shadow(0 10px 24px rgba(219, 35, 21, 0.25));
     }
     .brand-mark {
       width: 62px;
@@ -408,7 +418,7 @@ function renderDashboard() {
       border-radius: 18px;
       display: grid;
       place-items: center;
-      background: linear-gradient(135deg, var(--accent), #ff8a66);
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
       color: white;
       font-weight: 800;
       font-size: 28px;
@@ -444,14 +454,14 @@ function renderDashboard() {
       position: relative;
       padding: 16px;
       border-radius: 20px;
-      border: 1px solid rgba(255,255,255,0.08);
-      background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.03));
+      border: 1px solid rgba(232,228,227,0.08);
+      background: linear-gradient(180deg, rgba(232,68,44,0.08), rgba(255,255,255,0.02));
       cursor: pointer;
     }
     .session.active {
-      border-color: rgba(255, 103, 121, 0.7);
-      background: linear-gradient(180deg, rgba(255, 75, 95, 0.18), rgba(255,255,255,0.04));
-      box-shadow: 0 18px 40px rgba(145, 13, 31, 0.22);
+      border-color: var(--line-strong);
+      background: linear-gradient(180deg, rgba(238,77,49,0.16), rgba(255,255,255,0.03));
+      box-shadow: 0 18px 40px rgba(12, 0, 0, 0.28);
     }
     .session h3 { margin: 0 0 10px; font-size: 15px; line-height: 1.45; }
     .view-tabs {
@@ -460,8 +470,8 @@ function renderDashboard() {
       gap: 10px;
     }
     .view-tab {
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(232,228,227,0.08);
+      background: rgba(232,228,227,0.06);
       color: var(--text);
       border-radius: 999px;
       padding: 10px 14px;
@@ -469,9 +479,9 @@ function renderDashboard() {
       font-size: 12px;
     }
     .view-tab.active {
-      border-color: rgba(255, 103, 121, 0.7);
-      background: rgba(255, 75, 95, 0.20);
-      box-shadow: 0 10px 24px rgba(145, 13, 31, 0.20);
+      border-color: var(--line-strong);
+      background: rgba(238,77,49,0.18);
+      box-shadow: 0 10px 24px rgba(12, 0, 0, 0.22);
     }
     .pill {
       display: inline-flex;
@@ -480,7 +490,7 @@ function renderDashboard() {
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.10em;
-      color: #ffd3d8;
+      color: var(--muted);
       margin-bottom: 10px;
     }
     .dot {
@@ -506,8 +516,8 @@ function renderDashboard() {
       border-radius: 30px;
       padding: 22px 24px;
       background:
-        linear-gradient(135deg, rgba(255, 88, 107, 0.22), rgba(255, 130, 92, 0.12)),
-        rgba(40, 8, 12, 0.66);
+        radial-gradient(circle at top, rgba(238,77,49,0.12), transparent 18rem),
+        linear-gradient(180deg, rgba(20, 2, 2, 0.96), rgba(24, 3, 3, 0.99));
     }
     .hero-top, .toolbar, .stage-header {
       display: flex;
@@ -518,14 +528,14 @@ function renderDashboard() {
     .hero h2 { margin: 0; font-size: 28px; }
     .hero p, .stage-header p, .command-panel p {
       margin: 10px 0 0;
-      color: #ffd8dc;
+      color: var(--muted);
       line-height: 1.6;
     }
     .hero-badge {
       padding: 10px 14px;
       border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(232,228,227,0.08);
+      background: rgba(232,228,227,0.08);
       font-size: 12px;
       font-family: "IBM Plex Mono", Consolas, monospace;
       white-space: nowrap;
@@ -543,12 +553,12 @@ function renderDashboard() {
     .field { display: grid; gap: 8px; }
     .field input, .field select {
       width: 100%;
-      border: 1px solid rgba(255,255,255,0.10);
+      border: 1px solid rgba(232,228,227,0.08);
       outline: none;
       border-radius: 14px;
       padding: 12px 14px;
       color: var(--text);
-      background: rgba(255,255,255,0.06);
+      background: rgba(16, 2, 2, 0.92);
     }
     .send-button {
       height: 48px;
@@ -558,11 +568,11 @@ function renderDashboard() {
       color: white;
       font-weight: 700;
       cursor: pointer;
-      background: linear-gradient(135deg, var(--accent), #ff7d61);
-      box-shadow: 0 14px 30px rgba(255, 75, 95, 0.30);
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+      box-shadow: 0 14px 30px rgba(12, 0, 0, 0.28);
     }
     .send-button:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
-    .command-status { min-height: 20px; color: #ffdce0; font-size: 13px; margin-top: 12px; }
+    .command-status { min-height: 20px; color: var(--muted); font-size: 13px; margin-top: 12px; }
     .download-grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto auto;
@@ -578,15 +588,15 @@ function renderDashboard() {
       color: white;
       font-weight: 700;
       cursor: pointer;
-      background: linear-gradient(135deg, #ff6b55, #ff3b56);
-      box-shadow: 0 14px 30px rgba(255, 75, 95, 0.26);
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hot) 100%);
+      box-shadow: 0 14px 30px rgba(12, 0, 0, 0.26);
       text-decoration: none;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       white-space: nowrap;
     }
-    .download-status { min-height: 20px; color: #ffdce0; font-size: 13px; margin-top: 12px; }
+    .download-status { min-height: 20px; color: var(--muted); font-size: 13px; margin-top: 12px; }
     .stage {
       border-radius: 32px;
       padding: 18px;
@@ -599,8 +609,8 @@ function renderDashboard() {
       flex: 1;
       min-height: 420px;
       border-radius: 24px;
-      background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02)), #080304;
-      border: 1px solid rgba(255,255,255,0.08);
+      background: linear-gradient(180deg, rgba(232,68,44,0.08), rgba(255,255,255,0.02)), #080304;
+      border: 1px solid rgba(232,228,227,0.08);
       overflow: auto;
       display: flex;
       align-items: center;
@@ -615,13 +625,13 @@ function renderDashboard() {
       padding: 32px;
     }
     .toolbar code {
-      color: #ffdce0;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--text);
+      background: rgba(232,228,227,0.08);
+      border: 1px solid rgba(232,228,227,0.08);
       padding: 6px 10px;
       border-radius: 10px;
     }
-    .live { color: #ffe6e9; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; }
+    .live { color: var(--text); font-size: 13px; display: inline-flex; align-items: center; gap: 8px; }
     @media (max-width: 1200px) {
       .shell { grid-template-columns: 1fr; }
       .summary, .insights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
