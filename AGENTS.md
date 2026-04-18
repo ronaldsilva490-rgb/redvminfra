@@ -48,6 +48,9 @@ Hoje a RED Systems roda consolidada em **uma VM principal**.
 - `servicos/openclaw`
   - assistente operacional privado / chatops
   - rota: `/openclaw/`
+- `servicos/rapidleech`
+  - transfer hub legado oficializado
+  - rota: `/rapidleech/`
 - `servicos/redseb-monitor`
   - painel remoto do ecossistema RED SEB / Safe Exam Browser
   - rota: `:2580`
@@ -63,10 +66,6 @@ Hoje a RED Systems roda consolidada em **uma VM principal**.
 - `servicos/deploy-agent`
   - legado
   - so tocar se houver motivo real
-- `rapidleech`
-  - legado mantido na VM
-  - nao e parte central da stack
-
 ### O que NAO e mais pilar da stack
 
 - Evolution nao e mais necessaria para o fluxo principal.
@@ -86,6 +85,7 @@ servicos/
   redia/                 Runtime da RED I.A
   redtrader/             Trader demo/paper
   openclaw/              Assistente operacional privado OpenClaw
+  rapidleech/            Transfer hub legado oficializado
   redseb-monitor/        Painel remoto do ecossistema RED SEB
   extensao-iq-demo/      Extensao Chrome e bridge
   deploy-agent/          Legado
@@ -231,6 +231,7 @@ Use estes caminhos como referencia operacional:
 - redia: `/opt/redia`
 - redtrader: `/opt/redtrader`
 - openclaw: `/opt/red-openclaw`
+- rapidleech: `/opt/rapidleech`
 - red seb monitor: `/opt/red-seb-monitor`
 - proxy-lab: `/opt/red-proxy-lab`
 - iq bridge: `/opt/red-iq-vision-bridge`
@@ -243,6 +244,7 @@ Dados:
 - redia data: `/opt/redia/data`
 - redtrader data: `/opt/redtrader/data`
 - proxy-lab data: `/opt/red-proxy-lab/data`
+- rapidleech files: `/opt/rapidleech/files`
 - iq bridge data: `/opt/red-iq-vision-bridge/data`
 - red seb monitor downloads: `/opt/red-seb-monitor/data/downloads`
 
@@ -264,6 +266,7 @@ Atalhos importantes:
 - `/proxy-lab/`
 - `/iq-bridge/`
 - `/openclaw/`
+- `/rapidleech/`
 - `:2580`
 
 ### Rotas internas do dashboard

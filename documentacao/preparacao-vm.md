@@ -23,6 +23,7 @@ infraestrutura/systemd/redtrader.service
 infraestrutura/systemd/red-proxy-lab.service
 infraestrutura/systemd/red-iq-vision-bridge.service
 infraestrutura/systemd/red-openclaw.service
+infraestrutura/systemd/rapidleech.service
 infraestrutura/systemd/red-seb-monitor.service
 infraestrutura/systemd/red-webhook.service
 ```
@@ -72,4 +73,17 @@ Se a VM tambem for hospedar o monitor remoto do ecossistema SEB:
 
 ```text
 /opt/red-seb-monitor/data/downloads
+```
+
+## Rapidleech
+
+Se a VM tambem for hospedar o hub legado de transferencia:
+
+- instale `servicos/rapidleech`
+- copie `infraestrutura/systemd/rapidleech.service`
+- publique a rota `/rapidleech/` pelo include nginx oficial
+- garanta que a pasta de runtime exista em:
+
+```text
+/opt/rapidleech/files
 ```

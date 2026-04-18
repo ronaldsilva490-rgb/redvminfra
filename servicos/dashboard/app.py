@@ -97,6 +97,7 @@ IMPORTANT_SYSTEMD_UNITS = {
     "red-ollama-proxy.service",
     "redia.service",
     "redtrader.service",
+    "red-openclaw.service",
     "red-seb-monitor.service",
     "red-proxy-lab.service",
     "red-iq-vision-bridge.service",
@@ -171,6 +172,17 @@ STACK_BLUEPRINT = [
         "local_url": "http://127.0.0.1:8090/healthz",
     },
     {
+        "id": "openclaw",
+        "name": "OpenClaw",
+        "summary": "Assistente operacional privado da stack RED, ligado ao proxy local e aos canais internos.",
+        "unit": "red-openclaw.service",
+        "route": "/openclaw/",
+        "runtime_path": "/opt/red-openclaw",
+        "repo_path": "servicos/openclaw",
+        "data_path": "/home/openclaw/.openclaw",
+        "local_url": "http://127.0.0.1:18789/openclaw/",
+    },
+    {
         "id": "redseb_monitor",
         "name": "RED SEB Monitor",
         "summary": "Painel remoto do ecossistema RED SEB com viewport ao vivo, alertas e downloads auxiliares.",
@@ -195,14 +207,23 @@ STACK_BLUEPRINT = [
     {
         "id": "rapidleech",
         "name": "Rapidleech",
-        "summary": "Servico legado mantido na VM unica enquanto o descomissionamento nao acontece.",
+        "summary": "Hub legado de transferencia remota, upload e gerenciamento de arquivos agora alinhado ao padrao visual RED.",
         "unit": "rapidleech.service",
-        "route": "",
+        "route": "/rapidleech/",
         "runtime_path": "/opt/rapidleech",
-        "repo_path": "",
-        "data_path": "",
+        "repo_path": "servicos/rapidleech",
+        "data_path": "/opt/rapidleech/files",
         "local_url": "http://127.0.0.1:2581/",
     },
+]
+STACK_SERVICE_VIEWS = [
+    {"view": "portal", "label": "Portal", "stack_id": "portal", "icon": "globe"},
+    {"view": "redtrader", "label": "Trader", "stack_id": "redtrader", "icon": "candlestick-chart"},
+    {"view": "proxy_lab", "label": "Proxy Lab", "stack_id": "proxy_lab", "icon": "flask-conical"},
+    {"view": "iq_bridge", "label": "IQ Bridge", "stack_id": "iq_bridge", "icon": "waypoints"},
+    {"view": "openclaw", "label": "OpenClaw", "stack_id": "openclaw", "icon": "brain-circuit"},
+    {"view": "redseb_monitor", "label": "SEB Monitor", "stack_id": "redseb_monitor", "icon": "monitor-play"},
+    {"view": "rapidleech", "label": "Rapidleech", "stack_id": "rapidleech", "icon": "download"},
 ]
 REPO_BLUEPRINT = [
     {
@@ -217,6 +238,7 @@ REPO_BLUEPRINT = [
             {"path": "servicos/redtrader", "summary": "Paper trading e pesquisa operacional."},
             {"path": "servicos/openclaw", "summary": "Assistente operacional privado da stack."},
             {"path": "servicos/redseb-monitor", "summary": "Painel remoto do ecossistema RED SEB / Safe Exam Browser."},
+            {"path": "servicos/rapidleech", "summary": "Hub legado de transferencia remota agora oficializado na stack RED."},
             {"path": "servicos/extensao-iq-demo", "summary": "Extensao e bridge da IQ demo."},
             {"path": "servicos/deploy-agent", "summary": "Legado mantido apenas por compatibilidade."},
         ],
@@ -238,8 +260,15 @@ DASHBOARD_VIEW_ROUTES = {
     "overview": {"path": "", "aliases": ["overview", "visao-geral"]},
     "services": {"path": "servicos", "aliases": ["services"]},
     "docker": {"path": "docker", "aliases": []},
+    "portal": {"path": "portal", "aliases": []},
     "proxy": {"path": "proxyia", "aliases": ["proxy"]},
     "redia": {"path": "redia", "aliases": []},
+    "redtrader": {"path": "trader", "aliases": []},
+    "proxy_lab": {"path": "proxy-lab", "aliases": ["proxylab"]},
+    "iq_bridge": {"path": "iq-bridge", "aliases": ["iqbridge"]},
+    "openclaw": {"path": "openclaw", "aliases": []},
+    "redseb_monitor": {"path": "seb-monitor", "aliases": ["seb"]},
+    "rapidleech": {"path": "rapidleech", "aliases": []},
     "projects": {"path": "projetos", "aliases": ["projects"]},
     "logs": {"path": "logs", "aliases": []},
     "terminal": {"path": "terminal", "aliases": []},
@@ -5140,6 +5169,7 @@ def dashboard_template_context(request: Request, authenticated: bool) -> dict[st
         "app_base_path": app_base_path,
         "app_base_href": app_base_href,
         "current_view": resolve_dashboard_view(request.url.path),
+        "stack_service_views": STACK_SERVICE_VIEWS,
     }
 
 

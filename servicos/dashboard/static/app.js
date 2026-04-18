@@ -98,8 +98,15 @@ const DASHBOARD_VIEW_CONFIG = {
     overview: { label: "Visão geral", path: "", aliases: ["overview", "visao-geral"] },
     services: { label: "Serviços", path: "servicos", aliases: ["services"] },
     docker: { label: "Docker", path: "docker", aliases: [] },
+    portal: { label: "Portal", path: "portal", aliases: [] },
     proxy: { label: "Proxy IA", path: "proxyia", aliases: ["proxy"] },
     redia: { label: "RED I.A", path: "redia", aliases: [] },
+    redtrader: { label: "RED Trader", path: "trader", aliases: [] },
+    proxy_lab: { label: "Proxy Lab", path: "proxy-lab", aliases: ["proxylab"] },
+    iq_bridge: { label: "IQ Bridge", path: "iq-bridge", aliases: ["iqbridge"] },
+    openclaw: { label: "OpenClaw", path: "openclaw", aliases: [] },
+    redseb_monitor: { label: "RED SEB Monitor", path: "seb-monitor", aliases: ["seb"] },
+    rapidleech: { label: "Rapidleech", path: "rapidleech", aliases: [] },
     projects: { label: "Projetos", path: "projetos", aliases: ["projects"] },
     logs: { label: "Logs", path: "logs", aliases: [] },
     terminal: { label: "Terminal", path: "terminal", aliases: [] },
@@ -117,14 +124,27 @@ const IMPORTANT_SERVICES = [
     "nginx.service",
     "docker.service",
     "ssh.service",
+    "red-dashboard.service",
     "red-ollama-proxy.service",
     "redia.service",
     "redtrader.service",
+    "red-openclaw.service",
     "red-seb-monitor.service",
     "red-proxy-lab.service",
     "red-iq-vision-bridge.service",
     "rapidleech.service",
 ];
+const STACK_SERVICE_SHORTCUT_VIEW_MAP = {
+    portal: "portal",
+    "red-ollama-proxy": "proxy",
+    redia: "redia",
+    redtrader: "redtrader",
+    "red-proxy-lab": "proxy_lab",
+    "red-iq-vision-bridge": "iq_bridge",
+    "red-openclaw": "openclaw",
+    "red-seb-monitor": "redseb_monitor",
+    rapidleech: "rapidleech",
+};
 
 function qs(selector) {
     return document.querySelector(selector);
@@ -685,6 +705,102 @@ function renderOverview() {
     renderStackOverview();
     renderRepoOverview();
     renderOverviewAssistant();
+}
+
+function stackItemById(stackId) {
+    return (state.stack || []).find((item) => item.id === stackId) || null;
+}
+
+function renderStackServiceViews() {
+    qsa("[data-stack-service-host]").forEach((host) => {
+        const stackId = host.dataset.stackServiceHost;
+        const item = stackItemById(stackId);
+        if (!item) {
+            host.innerHTML = `<section class="panel stretch-panel"><div class="empty">Aguardando espelho da stack para este serviço.</div></section>`;
+            return;
+        }
+
+        const publicRoute = item.route || "interno";
+        const publicUrl = item.public_url || "";
+        const repoPath = item.repo_path || "fora do repo";
+        const runtimePath = item.runtime_path || "n/d";
+        const dataPath = item.data_path || "n/d";
+        const canOpenRepo = Boolean(item.repo_runtime_path || item.repo_path);
+        const canOpenData = Boolean(item.data_path);
+        const unit = item.unit || "";
+
+        host.innerHTML = `
+            <section class="panel stretch-panel stack-service-panel">
+                <div class="panel-head stack-service-head">
+                    <div>
+                        <div class="eyebrow">STACK APP</div>
+                        <h2>${escapeHtml(item.name)}</h2>
+                        <div class="panel-subtitle">${escapeHtml(item.summary || "")}</div>
+                    </div>
+                    <div class="inline-actions">
+                        <span class="chat-status-pill ${escapeHtml(item.active || "unknown")}">${escapeHtml(translateServiceState(item.active || "unknown"))}</span>
+                        ${publicUrl ? `<button class="ghost-button" type="button" data-stack-open-url="${escapeHtml(publicUrl)}">Abrir rota</button>` : ""}
+                    </div>
+                </div>
+
+                <div class="project-kpis stack-service-kpis">
+                    <article class="metric-card compact">
+                        <div class="metric-label">Unit</div>
+                        <div class="metric-value mono">${escapeHtml(unit || "sem unit")}</div>
+                        <div class="metric-meta">${escapeHtml(item.description || "")}</div>
+                    </article>
+                    <article class="metric-card compact">
+                        <div class="metric-label">Rota pública</div>
+                        <div class="metric-value mono">${escapeHtml(publicRoute)}</div>
+                        <div class="metric-meta">${escapeHtml(publicUrl || "interno")}</div>
+                    </article>
+                    <article class="metric-card compact">
+                        <div class="metric-label">Runtime</div>
+                        <div class="metric-value mono">${escapeHtml(runtimePath)}</div>
+                        <div class="metric-meta">${escapeHtml(dataPath)}</div>
+                    </article>
+                </div>
+
+                <div class="panel-grid panel-grid-two">
+                    <section class="panel">
+                        <div class="panel-head slim">
+                            <div>
+                                <div class="eyebrow">INSPEÇÃO</div>
+                                <h3>Caminhos e contexto</h3>
+                            </div>
+                        </div>
+                        <div class="kv-grid">
+                            <div class="kv-item"><span>Repo</span><strong>${escapeHtml(repoPath)}</strong></div>
+                            <div class="kv-item"><span>Repo runtime</span><strong>${escapeHtml(item.repo_runtime_path || "n/d")}</strong></div>
+                            <div class="kv-item"><span>Runtime</span><strong>${escapeHtml(runtimePath)}</strong></div>
+                            <div class="kv-item"><span>Dados</span><strong>${escapeHtml(dataPath)}</strong></div>
+                            <div class="kv-item"><span>Unit file</span><strong>${escapeHtml(translateServiceState(item.unit_file_state || "unknown"))}</strong></div>
+                            <div class="kv-item"><span>URL local</span><strong>${escapeHtml(item.local_url || "n/d")}</strong></div>
+                        </div>
+                    </section>
+
+                    <section class="panel">
+                        <div class="panel-head slim">
+                            <div>
+                                <div class="eyebrow">AÇÕES</div>
+                                <h3>Controle rápido</h3>
+                            </div>
+                        </div>
+                        <div class="quick-actions stack-service-actions">
+                            ${unit ? `<button class="action-tile" type="button" data-stack-service-command="${escapeHtml(item.id)}:start">Iniciar</button>` : ""}
+                            ${unit ? `<button class="action-tile" type="button" data-stack-service-command="${escapeHtml(item.id)}:restart">Reiniciar</button>` : ""}
+                            ${unit ? `<button class="action-tile" type="button" data-stack-service-command="${escapeHtml(item.id)}:stop">Parar</button>` : ""}
+                            ${unit ? `<button class="action-tile" type="button" data-stack-service-logs="${escapeHtml(item.id)}">Logs</button>` : ""}
+                            <button class="action-tile" type="button" data-stack-service-open-runtime="${escapeHtml(item.id)}">Runtime</button>
+                            ${canOpenData ? `<button class="action-tile" type="button" data-stack-service-open-data="${escapeHtml(item.id)}">Dados</button>` : ""}
+                            ${canOpenRepo ? `<button class="action-tile" type="button" data-stack-service-open-repo="${escapeHtml(item.id)}">Repo</button>` : ""}
+                            ${publicUrl ? `<button class="action-tile" type="button" data-stack-open-url="${escapeHtml(publicUrl)}">Abrir serviço</button>` : ""}
+                        </div>
+                    </section>
+                </div>
+            </section>
+        `;
+    });
 }
 
 function renderServices() {
@@ -3483,6 +3599,7 @@ function renderAll() {
     renderFirewall();
     renderProxy();
     renderRedia();
+    renderStackServiceViews();
     renderProjects();
 }
 
@@ -3500,19 +3617,7 @@ function setView(view) {
     qsa(".view").forEach((panel) => {
         panel.classList.toggle("active", panel.id === `view-${view}`);
     });
-    const label = {
-        overview: "Visão geral",
-        services: "Serviços",
-        docker: "Docker",
-        proxy: "Proxy IA",
-        whatsapp: "WhatsApp",
-        projects: "Projetos",
-        logs: "Logs",
-        terminal: "Terminal",
-        files: "Arquivos",
-        firewall: "Firewall",
-        processes: "Processos",
-    }[view];
+    const label = (DASHBOARD_VIEW_CONFIG[view] || DASHBOARD_VIEW_CONFIG.overview).label;
     qs("#pageTitle").textContent = label || "Visão geral";
 }
 
@@ -4025,6 +4130,42 @@ async function serviceAction(unit, action) {
     state.socket?.send(JSON.stringify({ type: "request.snapshot" }));
 }
 
+function stackItemByCommandId(stackId) {
+    const item = stackItemById(stackId);
+    if (!item) {
+        throw new Error("Serviço da stack ainda não apareceu no espelho do dashboard.");
+    }
+    return item;
+}
+
+async function openStackPath(stackId, kind) {
+    const item = stackItemByCommandId(stackId);
+    const targetPath = {
+        runtime: item.runtime_path || "",
+        data: item.data_path || "",
+        repo: item.repo_runtime_path || item.repo_path || "",
+    }[kind] || "";
+    if (!targetPath) {
+        throw new Error("Este caminho não está disponível para o serviço selecionado.");
+    }
+    setView("files");
+    if (targetPath.includes(".") && !targetPath.endsWith("/")) {
+        await openFile(targetPath);
+        return;
+    }
+    await openDirectory(targetPath);
+}
+
+async function openStackLogs(stackId) {
+    const item = stackItemByCommandId(stackId);
+    if (!item.unit) {
+        throw new Error("Este item da stack não possui unit systemd para logs.");
+    }
+    setView("terminal");
+    ensureTerminal();
+    sendTerminalInput(`journalctl -u ${item.unit} -n 120 --no-pager\n`);
+}
+
 async function containerAction(name, action) {
     const payload = await api(`/api/docker/container/${encodeURIComponent(name)}/${action}`, { method: "POST" });
     showToast(
@@ -4258,6 +4399,35 @@ function wireAuthenticatedUi() {
                 setView(target.dataset.viewShortcut);
             }
 
+            if (target.dataset.stackOpenUrl) {
+                window.open(target.dataset.stackOpenUrl, "_blank", "noopener,noreferrer");
+            }
+
+            if (target.dataset.stackServiceCommand) {
+                const [stackId, action] = target.dataset.stackServiceCommand.split(":");
+                const item = stackItemByCommandId(stackId);
+                if (!item.unit) {
+                    throw new Error("Este item da stack não possui serviço systemd controlável.");
+                }
+                await serviceAction(item.unit, action);
+            }
+
+            if (target.dataset.stackServiceLogs) {
+                await openStackLogs(target.dataset.stackServiceLogs);
+            }
+
+            if (target.dataset.stackServiceOpenRuntime) {
+                await openStackPath(target.dataset.stackServiceOpenRuntime, "runtime");
+            }
+
+            if (target.dataset.stackServiceOpenData) {
+                await openStackPath(target.dataset.stackServiceOpenData, "data");
+            }
+
+            if (target.dataset.stackServiceOpenRepo) {
+                await openStackPath(target.dataset.stackServiceOpenRepo, "repo");
+            }
+
             if (target.dataset.projectSelect) {
                 selectProject(target.dataset.projectSelect);
             }
@@ -4365,9 +4535,14 @@ function wireAuthenticatedUi() {
             }
 
             if (target.dataset.serviceShortcut) {
-                setView("services");
-                qs("#serviceSearch").value = target.dataset.serviceShortcut;
-                renderServices();
+                const shortcutView = STACK_SERVICE_SHORTCUT_VIEW_MAP[target.dataset.serviceShortcut];
+                if (shortcutView) {
+                    setView(shortcutView);
+                } else {
+                    setView("services");
+                    qs("#serviceSearch").value = target.dataset.serviceShortcut;
+                    renderServices();
+                }
             }
 
             if (target.dataset.proxyKeyEdit) {

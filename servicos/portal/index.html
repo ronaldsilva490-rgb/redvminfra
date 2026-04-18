@@ -343,6 +343,7 @@
           <p><span>&gt;</span> dashboard, redia e trader em localhost</p>
           <p><span>&gt;</span> proxy principal e proxy-lab separados</p>
           <p><span>&gt;</span> iq bridge limpo e pronto para novos snapshots</p>
+          <p><span>&gt;</span> rapidleech oficializado em /rapidleech/</p>
           <p><span>&gt;</span> red seb monitor dedicado em :2580</p>
           <p><span>&gt;</span> repo centralizado em /opt/redvm-repo</p>
         </aside>
@@ -391,6 +392,12 @@
           <p>Assistente operacional privado da stack, ligado ao proxy RED e aos canais internos de automacao.</p>
           <span class="path">/openclaw/</span>
         </a>
+        <a class="card" href="/rapidleech/">
+          <small>Transfer Hub</small>
+          <h2>Rapidleech</h2>
+          <p>Hub legado de transferencia remota, uploads e gerenciamento de arquivos agora reorganizado como servico oficial da stack RED.</p>
+          <span class="path">/rapidleech/</span>
+        </a>
         <a class="card" href="http://redsystems.ddns.net:2580/" target="_blank" rel="noreferrer">
           <small>SEB Ops</small>
           <h2>RED SEB Monitor</h2>
@@ -430,6 +437,11 @@
               <span>Observacao remota do ecossistema SEB em porta dedicada, fora do nginx principal.</span>
               <code>/opt/red-seb-monitor :: /opt/red-seb-monitor/data/downloads</code>
             </div>
+            <div class="line-item">
+              <strong>Rapidleech</strong>
+              <span>Runtime PHP legado internalizado na stack e publicado pelo nginx com prefixo proprio.</span>
+              <code>/opt/rapidleech :: /opt/rapidleech/files</code>
+            </div>
           </div>
         </article>
 
@@ -440,7 +452,7 @@
           <div class="line-list">
             <div class="line-item">
               <strong>servicos/</strong>
-              <span>Portal, dashboard, proxy, proxy-lab, REDIA, RED Trader, OpenClaw, RED SEB Monitor e extensao IQ demo.</span>
+              <span>Portal, dashboard, proxy, proxy-lab, REDIA, RED Trader, OpenClaw, Rapidleech, RED SEB Monitor e extensao IQ demo.</span>
               <code>servicos/*</code>
             </div>
             <div class="line-item">

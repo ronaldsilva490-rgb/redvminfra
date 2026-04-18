@@ -52,8 +52,15 @@
                 <button class="nav-item active" data-view="overview"><i data-lucide="layout-dashboard"></i><span>Visão geral</span></button>
                 <button class="nav-item" data-view="services"><i data-lucide="server-cog"></i><span>Serviços</span></button>
                 <button class="nav-item" data-view="docker"><i data-lucide="container"></i><span>Docker</span></button>
+                <button class="nav-item" data-view="portal"><i data-lucide="globe"></i><span>Portal</span></button>
                 <button class="nav-item" data-view="proxy"><i data-lucide="bot"></i><span>Proxy IA</span></button>
                 <button class="nav-item" data-view="redia"><i data-lucide="sparkles"></i><span>RED I.A</span></button>
+                <button class="nav-item" data-view="redtrader"><i data-lucide="candlestick-chart"></i><span>Trader</span></button>
+                <button class="nav-item" data-view="proxy_lab"><i data-lucide="flask-conical"></i><span>Proxy Lab</span></button>
+                <button class="nav-item" data-view="iq_bridge"><i data-lucide="waypoints"></i><span>IQ Bridge</span></button>
+                <button class="nav-item" data-view="openclaw"><i data-lucide="brain-circuit"></i><span>OpenClaw</span></button>
+                <button class="nav-item" data-view="redseb_monitor"><i data-lucide="monitor-play"></i><span>SEB Monitor</span></button>
+                <button class="nav-item" data-view="rapidleech"><i data-lucide="download"></i><span>Rapidleech</span></button>
                 <button class="nav-item" data-view="projects"><i data-lucide="folders"></i><span>Projetos</span></button>
                 <button class="nav-item" data-view="logs"><i data-lucide="scroll-text"></i><span>Logs</span></button>
                 <button class="nav-item" data-view="terminal"><i data-lucide="terminal-square"></i><span>Terminal</span></button>
@@ -127,12 +134,15 @@
                         <div class="quick-actions">
                             <button class="action-tile" data-service-shortcut="nginx">Nginx</button>
                             <button class="action-tile" data-service-shortcut="red-dashboard">Dashboard</button>
+                            <button class="action-tile" data-service-shortcut="portal">Portal</button>
                             <button class="action-tile" data-service-shortcut="red-ollama-proxy">Proxy IA</button>
                             <button class="action-tile" data-service-shortcut="redia">REDIA</button>
                             <button class="action-tile" data-service-shortcut="redtrader">RED Trader</button>
+                            <button class="action-tile" data-service-shortcut="red-openclaw">OpenClaw</button>
                             <button class="action-tile" data-service-shortcut="red-seb-monitor">SEB Monitor</button>
                             <button class="action-tile" data-service-shortcut="red-proxy-lab">Proxy Lab</button>
                             <button class="action-tile" data-service-shortcut="red-iq-vision-bridge">IQ Bridge</button>
+                            <button class="action-tile" data-service-shortcut="rapidleech">Rapidleech</button>
                             <button class="action-tile" data-file-shortcut="/etc/nginx/conf.d/redsystems.conf">nginx routes</button>
                             <button class="action-tile" data-terminal-command="systemctl --failed\n">systemctl --failed</button>
                             <button class="action-tile" data-terminal-command="journalctl -u red-dashboard -u redia -u redtrader -u red-ollama-proxy -n 80 --no-pager\n">stack logs</button>
@@ -507,6 +517,12 @@
                     </div>
                 </section>
             </section>
+
+            {% for service_view in stack_service_views %}
+            <section class="view" id="view-{{ service_view.view }}">
+                <div class="stack-service-host" data-stack-service-host="{{ service_view.stack_id }}"></div>
+            </section>
+            {% endfor %}
 
             <section class="view" id="view-projects">
                 <div class="panel-grid panel-grid-two">

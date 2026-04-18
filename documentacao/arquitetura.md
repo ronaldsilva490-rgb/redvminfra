@@ -4,6 +4,7 @@
 WhatsApp -> REDIA -> Proxy RED Systems -> Ollama / NVIDIA NIM
 Dashboard -> Proxy RED Systems -> Ollama / NVIDIA NIM
 RED Trader -> Proxy RED Systems -> modelos de analise
+Operador -> Rapidleech -> arquivos e transferencias remotas
 RED SEB / Safe Exam Browser -> RED SEB Monitor -> operador humano
 GitHub webhook -> deploy-agent/dashboard -> Docker/systemd/Nginx
 ```
@@ -30,6 +31,17 @@ Modelos com prefixo `NIM - ` sao roteados para NVIDIA NIM. O alias legado com su
 ## RED Trader
 
 `servicos/redtrader` e o painel paper/demo de trading. Usa dados de mercado reais, saldo simulado e analise via proxy.
+
+## Rapidleech
+
+`servicos/rapidleech` e o transfer hub legado agora internalizado na stack.
+
+Ele:
+
+- continua em PHP legado;
+- roda no runtime `/opt/rapidleech`;
+- publica por nginx em `/rapidleech/`;
+- usa tema visual RED e suporte a prefixo reverso.
 
 ## RED SEB Monitor
 

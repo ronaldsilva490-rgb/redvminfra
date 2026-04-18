@@ -343,7 +343,55 @@ Observacao:
 - nao depende do nginx principal
 - publique essa porta so se a operacao remota do SEB realmente precisar dela
 
-## 6. Deploy Agent Legado
+## 6. Rapidleech
+
+Servico: `servicos/rapidleech`
+
+Responsabilidade:
+
+- servir o hub legado de downloads/uploads;
+- manter o app atras do nginx em `/rapidleech/`;
+- usar o tema RED e a organizacao oficial da stack.
+
+Instalacao:
+
+```bash
+mkdir -p /opt/rapidleech
+rsync -av servicos/rapidleech/ /opt/rapidleech/
+mkdir -p /opt/rapidleech/files
+```
+
+Ambiente recomendado em `/etc/red-rapidleech.env`:
+
+```env
+RAPIDLEECH_HOST=127.0.0.1
+RAPIDLEECH_PORT=2581
+```
+
+Systemd:
+
+```bash
+cp infraestrutura/systemd/rapidleech.service /etc/systemd/system/rapidleech.service
+systemctl daemon-reload
+systemctl enable --now rapidleech
+systemctl status rapidleech --no-pager
+```
+
+Health check:
+
+```bash
+php -l /opt/rapidleech/index.php
+php -l /opt/rapidleech/rl_init.php
+curl -I http://127.0.0.1:2581/
+```
+
+Nginx:
+
+- publique usando o include oficial em `/rapidleech/`
+- preserve `X-Forwarded-Prefix /rapidleech`
+- mantenha o PHP server preso em `127.0.0.1`
+
+## 7. Deploy Agent Legado
 
 Servico: `servicos/deploy-agent`
 
@@ -380,8 +428,9 @@ systemctl status red-webhook --no-pager
 2. dashboard
 3. redia
 4. redtrader
-5. redseb-monitor, se o ecossistema SEB estiver ativo
-6. deploy-agent, se ainda for usado
+5. rapidleech, se o hub legado ainda for usado
+6. redseb-monitor, se o ecossistema SEB estiver ativo
+7. deploy-agent, se ainda for usado
 ```
 
 ## Checklist Pos-Deploy

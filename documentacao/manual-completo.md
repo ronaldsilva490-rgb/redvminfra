@@ -237,6 +237,29 @@ http://127.0.0.1:2580/healthz
 http://127.0.0.1:2580/api/summary
 ```
 
+## 10B. Rapidleech
+
+Papel:
+
+- centralizar downloads remotos, uploads e gerenciamento de arquivos;
+- manter o legado Rapidleech dentro da stack oficial;
+- publicar o app atras do nginx em `/rapidleech/`.
+
+Comandos locais:
+
+```powershell
+cd servicos/rapidleech
+php -l index.php
+php -l rl_init.php
+```
+
+Runtime oficial:
+
+```text
+/opt/rapidleech
+/opt/rapidleech/files
+```
+
 ## 11. Deploy Seguro
 
 Fluxo recomendado:
@@ -293,6 +316,12 @@ RED SEB Monitor:
 journalctl -u red-seb-monitor -f
 ```
 
+Rapidleech:
+
+```bash
+journalctl -u rapidleech -f
+```
+
 ## 13. Nginx
 
 Sempre validar antes de reload:
@@ -324,6 +353,7 @@ Nao inclua backups com dados reais no repo.
 [ ] Configurar Nginx.
 [ ] Instalar REDIA se a VM for de WhatsApp.
 [ ] Instalar RED Trader se a VM for de trading.
+[ ] Instalar Rapidleech se a VM tambem for operar o transfer hub legado.
 [ ] Instalar RED SEB Monitor se a VM tambem operar o ecossistema SEB.
 [ ] Configurar backups.
 [ ] Rodar secret scan antes de qualquer push.

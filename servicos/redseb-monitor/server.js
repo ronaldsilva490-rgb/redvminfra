@@ -322,6 +322,9 @@ function renderDashboard() {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RED SEB Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="icon" href="/assets/favicon">
   <style>
     :root {
@@ -341,7 +344,7 @@ function renderDashboard() {
     html, body {
       margin: 0;
       min-height: 100%;
-      font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
       color: var(--text);
       background:
         radial-gradient(circle at 15% 20%, rgba(255, 76, 96, 0.20), transparent 28%),
@@ -422,6 +425,7 @@ function renderDashboard() {
       display: block;
       color: var(--muted);
       font-size: 11px;
+      font-family: "IBM Plex Mono", Consolas, monospace;
       text-transform: uppercase;
       letter-spacing: 0.12em;
       margin-bottom: 8px;
@@ -522,6 +526,7 @@ function renderDashboard() {
       border: 1px solid rgba(255,255,255,0.12);
       background: rgba(255,255,255,0.08);
       font-size: 12px;
+      font-family: "IBM Plex Mono", Consolas, monospace;
       white-space: nowrap;
     }
     .insights { grid-template-columns: repeat(3, minmax(0, 1fr)); }

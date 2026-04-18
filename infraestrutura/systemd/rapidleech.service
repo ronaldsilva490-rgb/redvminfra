@@ -1,12 +1,16 @@
 [Unit]
-Description=Rapidleech PHP Server
-After=network.target
+Description=RED Rapidleech
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/opt/rapidleech
-ExecStart=/usr/bin/php -S 0.0.0.0:2581
+Environment=RAPIDLEECH_HOST=127.0.0.1
+Environment=RAPIDLEECH_PORT=2581
+EnvironmentFile=-/etc/red-rapidleech.env
+ExecStart=/bin/sh -lc 'exec /usr/bin/php -S "${RAPIDLEECH_HOST}:${RAPIDLEECH_PORT}" -t .'
 Restart=always
 RestartSec=3
 

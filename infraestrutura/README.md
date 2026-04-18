@@ -30,6 +30,7 @@ Na VM principal, `infraestrutura/nginx/red-friendly-paths.nginx.conf` expoe:
 /proxy-lab/   Proxy Lab
 /iq-bridge/   IQ Bridge
 /openclaw/    OpenClaw
+/rapidleech/  Rapidleech
 :2580         RED SEB Monitor
 ```
 
@@ -55,4 +56,5 @@ O dashboard principal tambem responde por caminho real:
 
 - Evolution nao e mais parte central da stack.
 - Artefatos legados em `docker/` ou `systemd/` devem ser tratados como compatibilidade, nao como eixo da arquitetura.
+- `rapidleech.service` agora e parte oficial da stack e deve ser publicado pelo nginx em `/rapidleech/`.
 - `red-seb-monitor.service` e parte oficial da stack, mas hoje vive em porta dedicada `2580`, fora do nginx principal.
