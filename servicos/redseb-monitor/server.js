@@ -246,37 +246,81 @@ function normalizeSebLink(value) {
   }
 }
 
-function buildPortableLauncherBat(sebLink) {
-  const escapedLink = sebLink.replace(/"/g, '""');
+function buildPortableLauncherBat() {
+  const panelUrl = publicPanelUrl.replace(/\/+$/, "");
+  const zipUrl = `${panelUrl}/downloads/REDSEBPortable.zip`;
+  const escapedPanelUrl = panelUrl.replace(/'/g, "''");
+  const escapedZipUrl = zipUrl.replace(/'/g, "''");
+  const escapedLaunchBase = defaultSebLaunchBase.replace(/'/g, "''");
+  const powershellScript = [
+    "$ErrorActionPreference='Stop'",
+    "$p='" + escapedPanelUrl + "'",
+    "$z='" + escapedZipUrl + "'",
+    "$b='" + escapedLaunchBase + "'",
+    "$d=[Environment]::GetFolderPath('MyDocuments')",
+    "if([string]::IsNullOrWhiteSpace($d)){$d=Join-Path $env:USERPROFILE 'Documents'}",
+    "$t=Join-Path $d 'REDSEBPortable'",
+    "$f=Join-Path $env:TEMP 'REDSEBPortable.zip'",
+    "$x=Join-Path $env:TEMP ('redseb-'+[guid]::NewGuid().ToString('N'))",
+    "$s=$env:REDSEB_SELF",
+    "try{",
+    "if($Host.UI.RawUI){$Host.UI.RawUI.WindowTitle='RED Systems | RED SEB Universal'}",
+    "Clear-Host",
+    "Write-Host 'RED Systems | RED SEB Universal' -ForegroundColor Red",
+    "Write-Host ('Destino: '+$t) -ForegroundColor DarkGray",
+    "$r='';while(!$r){$r=(Read-Host 'Cole o CMID do exame ou o link completo').Trim()}",
+    "if($r -match '^[0-9]+$'){$l=$b+$r}elseif($r -match '^(?i)sebs?://'){$l=$r}else{throw 'Entrada invalida. Informe um CMID numerico ou um link seb:// ou sebs:// completo.'}",
+    "if(!(Test-Path (Join-Path $t 'SafeExamBrowser.exe'))){",
+    "Write-Host 'Baixando RED SEB Portable...' -ForegroundColor Yellow",
+    "Invoke-WebRequest -Uri $z -OutFile $f",
+    "if(Test-Path $x){Remove-Item -LiteralPath $x -Recurse -Force}",
+    "New-Item -ItemType Directory -Path $x -Force|Out-Null",
+    "Expand-Archive -LiteralPath $f -DestinationPath $x -Force",
+    "$i=@(Get-ChildItem -LiteralPath $x)",
+    "if($i.Count -eq 1 -and $i[0].PSIsContainer){$o=$i[0].FullName}else{$o=$x}",
+    "if(Test-Path $t){Remove-Item -LiteralPath $t -Recurse -Force}",
+    "New-Item -ItemType Directory -Path $t -Force|Out-Null",
+    "Copy-Item -Path (Join-Path $o '*') -Destination $t -Recurse -Force",
+    "}",
+    "$e=Get-ChildItem -LiteralPath $t -Filter 'SafeExamBrowser.exe' -Recurse -File|Select-Object -First 1 -ExpandProperty FullName",
+    "if([string]::IsNullOrWhiteSpace($e)){throw 'SafeExamBrowser.exe nao foi encontrado depois da instalacao.'}",
+    "Write-Host 'Abrindo o RED SEB Portable...' -ForegroundColor Green",
+    "Start-Process -FilePath $e -ArgumentList $l|Out-Null",
+    "Start-Sleep -Milliseconds 800",
+    "Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue",
+    "Remove-Item -LiteralPath $x -Recurse -Force -ErrorAction SilentlyContinue",
+    "if($s -and (Test-Path $s)){Start-Process -FilePath 'cmd.exe' -ArgumentList '/c','ping 127.0.0.1 -n 3 > nul & del /f /q \"'+$s+'\"' -WindowStyle Hidden|Out-Null}",
+    "exit 0",
+    "}catch{",
+    "Write-Host ('ERRO: '+$_.Exception.Message) -ForegroundColor Red",
+    "exit 1",
+    "}"
+  ].join(";");
+  const encodedCommand = Buffer.from(powershellScript, "utf16le").toString("base64");
 
   return [
     "@echo off",
-    "setlocal",
-    'set "SEB_PORTABLE=1"',
-    'set "SEB_DIR=%USERPROFILE%\\Desktop\\REDSEBPortable"',
-    'if defined OneDrive set "SEB_DIR_ONEDRIVE=%OneDrive%\\Desktop\\REDSEBPortable"',
-    'if not exist "%SEB_DIR%\\SafeExamBrowser.exe" if defined SEB_DIR_ONEDRIVE if exist "%SEB_DIR_ONEDRIVE%\\SafeExamBrowser.exe" set "SEB_DIR=%SEB_DIR_ONEDRIVE%"',
-    'if not exist "%SEB_DIR%\\SafeExamBrowser.exe" (',
-    "  echo RED SEB Portable nao encontrado.",
+    "setlocal EnableExtensions",
+    "title RED Systems | RED SEB Universal",
+    "color 0C",
+    ">nul 2>&1 chcp 65001",
+    'set "REDSEB_SELF=%~f0"',
+    "cls",
+    `powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encodedCommand}`,
+    'set "REDSEB_EXIT=%ERRORLEVEL%"',
+    'if not "%REDSEB_EXIT%"=="0" (',
     "  echo.",
-    "  echo Coloque a pasta REDSEBPortable na area de trabalho deste usuario.",
-    '  echo Caminho esperado: "%USERPROFILE%\\Desktop\\REDSEBPortable"',
+    "  echo Falha ao preparar o RED SEB Portable.",
+    "  echo Verifique sua conexao e tente novamente.",
     "  pause",
-    "  exit /b 1",
     ")",
-    'start "RED SEB Portable" "%SEB_DIR%\\SafeExamBrowser.exe" "' + escapedLink + '"',
-    "exit /b 0",
+    "endlocal & exit /b %REDSEB_EXIT%",
     ""
   ].join("\r\n");
 }
 
 function downloadFilenameFromSeb(normalized) {
-  const cmid = String(normalized?.cmid || "").trim();
-  if (cmid && /^\d+$/.test(cmid)) {
-    return `redseb-${cmid}.bat`;
-  }
-
-  return "redseb-link.bat";
+  return "redseb-universal.bat";
 }
 
 function getSessionState() {
@@ -1636,17 +1680,13 @@ function renderDashboard() {
         </div>
       </section>
       <section class="command-panel glass">
-        <h3>Gerador de BAT</h3>
-        <p>Cole só o <code>CMID</code> da prova ou, se preferir, o link <code>seb://</code>/<code>sebs://</code> completo. O painel monta o <code>.bat</code> pronto para abrir o RED SEB Portable da área de trabalho, dentro da pasta <code>REDSEBPortable</code>.</p>
+        <h3>Launcher Universal</h3>
+        <p>Baixe um único <code>.bat</code> da RED Systems. Quando ele rodar, pergunta o <code>CMID</code> ou o link completo do exame, instala o RED SEB Portable em <code>Documentos\\REDSEBPortable</code> se faltar, abre a prova e se remove sozinho no fim.</p>
         <div class="download-grid">
-          <div class="field">
-            <label for="bat-link">CMID ou link do SEB</label>
-            <input id="bat-link" type="text" spellcheck="false" placeholder="Ex.: 764281">
-          </div>
-          <button class="download-button" id="download-bat-button" type="button">Baixar .bat</button>
+          <button class="download-button" id="download-bat-button" type="button">Baixar launcher .bat</button>
           <a class="download-button" id="download-zip-button" href="/downloads/REDSEBPortable.zip">Baixar .zip</a>
         </div>
-        <div class="download-status" id="download-status">Cole o CMID da prova ou o link completo do SEB para gerar o arquivo.</div>
+        <div class="download-status" id="download-status">O launcher usa a pasta Documentos\\REDSEBPortable como destino padrão.</div>
       </section>
       <section class="stage glass">
         <div class="stage-header">
@@ -1790,7 +1830,6 @@ function renderDashboard() {
     const alertDuration = document.getElementById("alert-duration");
     const sendAlertButton = document.getElementById("send-alert-button");
     const commandStatus = document.getElementById("command-status");
-    const batLink = document.getElementById("bat-link");
     const downloadBatButton = document.getElementById("download-bat-button");
     const downloadStatus = document.getElementById("download-status");
     const committeeVisionPrimary = document.getElementById("committee-vision-primary");
@@ -2557,22 +2596,14 @@ function renderDashboard() {
     }
 
     async function downloadBat() {
-      const sebLink = batLink.value.trim();
-
-      if (!sebLink) {
-        downloadStatus.textContent = "Cole o CMID da prova ou o link completo do SEB antes de gerar.";
-        batLink.focus();
-        return;
-      }
-
       downloadBatButton.disabled = true;
-      downloadStatus.textContent = "Gerando arquivo...";
+      downloadStatus.textContent = "Gerando launcher universal...";
 
       try {
         const response = await fetch("/api/generate-bat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sebLink })
+          body: JSON.stringify({})
         });
 
         if (!response.ok) {
@@ -2584,15 +2615,12 @@ function renderDashboard() {
         const downloadUrl = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = downloadUrl;
-        const rawValue = String(batLink.value || "").trim();
-        const cmidMatch = rawValue.match(/(?:^|[?&]cmid=)(\d+)/i) || rawValue.match(/^(\d+)$/);
-        const fallbackName = cmidMatch && cmidMatch[1] ? "redseb-" + cmidMatch[1] + ".bat" : "redseb-link.bat";
-        anchor.download = parseDownloadFilename(response, fallbackName);
+        anchor.download = parseDownloadFilename(response, "redseb-universal.bat");
         document.body.appendChild(anchor);
         anchor.click();
         anchor.remove();
         URL.revokeObjectURL(downloadUrl);
-        downloadStatus.textContent = "Arquivo gerado com sucesso.";
+        downloadStatus.textContent = "Launcher universal gerado com sucesso.";
       } catch (error) {
         downloadStatus.textContent = error.message;
       } finally {
@@ -2948,22 +2976,14 @@ const server = http.createServer((request, response) => {
   if (pathname === "/api/generate-bat" && request.method === "POST") {
     return readRequestBody(request)
       .then((body) => {
-        let payload;
-
         try {
-          payload = JSON.parse(body || "{}");
+          JSON.parse(body || "{}");
         } catch {
           return sendJson(response, 400, { ok: false, error: "Payload invalido." });
         }
 
-        const normalized = normalizeSebLink(payload.sebLink);
-
-        if (!normalized.ok) {
-          return sendJson(response, 400, { ok: false, error: normalized.error });
-        }
-
-        const content = buildPortableLauncherBat(normalized.link);
-        const filename = downloadFilenameFromSeb(normalized);
+        const content = buildPortableLauncherBat();
+        const filename = downloadFilenameFromSeb({});
         response.writeHead(200, {
           "Content-Type": "application/x-bat; charset=utf-8",
           "Content-Disposition": `attachment; filename="${filename}"`,
