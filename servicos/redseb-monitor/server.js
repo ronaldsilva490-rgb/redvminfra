@@ -6,6 +6,7 @@ const { WebSocketServer } = require("ws");
 const host = "0.0.0.0";
 const port = Number(process.env.PORT || 2580);
 const buildLabel = process.env.RED_SEB_MONITOR_BUILD || "RED 2026.04.18.2";
+const defaultSebLaunchBase = process.env.RED_SEB_DEFAULT_LINK_BASE || "sebs://digital.uniateneu.edu.br/mod/quiz/accessrule/seb/config.php?cmid=";
 const downloadsRoot = process.env.SEB_REMOTE_VIEW_DOWNLOADS_DIR || "/opt/red-seb-monitor/data/downloads";
 const repoRoot = process.env.REDVM_REPO_DIR || "/opt/redvm-repo";
 const dashboardRoot = process.env.RED_DASHBOARD_DIR || "/opt/redvm-dashboard";
@@ -161,14 +162,25 @@ function normalizePosition(value) {
 }
 
 function normalizeSebLink(value) {
-  const link = String(value || "").trim();
+  const raw = String(value || "").trim();
 
-  if (!link) {
-    return { ok: false, error: "Cole um link sebs:// ou seb://." };
+  if (!raw) {
+    return { ok: false, error: "Cole o CMID ou o link completo do SEB." };
   }
 
+  if (/^\d+$/.test(raw)) {
+    return {
+      ok: true,
+      link: `${defaultSebLaunchBase}${raw}`,
+      cmid: raw,
+      mode: "cmid"
+    };
+  }
+
+  const link = raw;
+
   if (!/^sebs?:\/\//i.test(link)) {
-    return { ok: false, error: "O link precisa comecar com seb:// ou sebs://." };
+    return { ok: false, error: "Informe apenas o CMID numerico ou um link que comece com seb:// ou sebs://." };
   }
 
   try {
@@ -177,11 +189,12 @@ function normalizeSebLink(value) {
     if (!parsed.hostname) {
       return { ok: false, error: "O link informado nao possui host valido." };
     }
+
+    const cmid = parsed.searchParams.get("cmid") || "";
+    return { ok: true, link, cmid, mode: "link" };
   } catch {
     return { ok: false, error: "Nao foi possivel interpretar o link informado." };
   }
-
-  return { ok: true, link };
 }
 
 function buildPortableLauncherBat(sebLink) {
@@ -693,16 +706,16 @@ function renderDashboard() {
       </section>
       <section class="command-panel glass">
         <h3>Gerador de BAT</h3>
-        <p>Cole um link <code>seb://</code> ou <code>sebs://</code>. O painel vai baixar um <code>.bat</code> pronto para abrir o RED SEB Portable da área de trabalho, dentro da pasta <code>REDSEBPortable</code>.</p>
+        <p>Cole só o <code>CMID</code> da prova ou, se preferir, o link <code>seb://</code>/<code>sebs://</code> completo. O painel monta o <code>.bat</code> pronto para abrir o RED SEB Portable da área de trabalho, dentro da pasta <code>REDSEBPortable</code>.</p>
         <div class="download-grid">
           <div class="field">
-            <label for="bat-link">Link do SEB</label>
-            <input id="bat-link" type="text" spellcheck="false" placeholder="Ex.: sebs://digital.uniateneu.edu.br/mod/quiz/accessrule/seb/config.php?cmid=766861">
+            <label for="bat-link">CMID ou link do SEB</label>
+            <input id="bat-link" type="text" spellcheck="false" placeholder="Ex.: 764281">
           </div>
           <button class="download-button" id="download-bat-button" type="button">Baixar .bat</button>
           <a class="download-button" id="download-zip-button" href="/downloads/REDSEBPortable.zip">Baixar .zip</a>
         </div>
-        <div class="download-status" id="download-status">Cole um link do SEB para gerar o arquivo.</div>
+        <div class="download-status" id="download-status">Cole o CMID da prova ou o link completo do SEB para gerar o arquivo.</div>
       </section>
       <section class="stage glass">
         <div class="stage-header">
@@ -947,7 +960,7 @@ function renderDashboard() {
       const sebLink = batLink.value.trim();
 
       if (!sebLink) {
-        downloadStatus.textContent = "Cole um link seb:// ou sebs:// antes de gerar.";
+        downloadStatus.textContent = "Cole o CMID da prova ou o link completo do SEB antes de gerar.";
         batLink.focus();
         return;
       }
