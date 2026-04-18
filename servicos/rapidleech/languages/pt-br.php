@@ -4,7 +4,7 @@ if (!defined('RAPIDLEECH')) {
     require('../deny.php');
     exit;
 }
-// Arquivo para o idioma Portugu�s-BR
+// Arquivo para o idioma Português-BR
 // You should always use this file as a template for translating
 
 $lang[1] = 'Acesso negado';

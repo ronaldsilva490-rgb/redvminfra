@@ -121,7 +121,7 @@ class PlatformRegistry:
     async def _tastytrade_status(self, definition: PlatformDefinition, platform_config: dict[str, Any], enabled: bool) -> dict[str, Any]:
         started = time.perf_counter()
         if not enabled:
-            return self._base_row(definition, platform_config, enabled, "disabled", False, "Desativado na configuraÃ§Ã£o.")
+            return self._base_row(definition, platform_config, enabled, "disabled", False, "Desativado na configuração.")
 
         has_oauth = bool(settings.tastytrade_client_secret and settings.tastytrade_refresh_token)
         has_legacy_session = bool(settings.tastytrade_username and settings.tastytrade_password)
@@ -158,7 +158,7 @@ class PlatformRegistry:
                     enabled,
                     "error",
                     False,
-                    "OAuth validou, mas a conta configurada nÃ£o apareceu na lista do sandbox.",
+                    "OAuth validou, mas a conta configurada não apareceu na lista do sandbox.",
                 )
                 row.update({
                     "base_url": settings.tastytrade_base_url,
@@ -174,7 +174,7 @@ class PlatformRegistry:
                 enabled,
                 "connected",
                 True,
-                "OAuth sandbox conectado; contas sandbox visÃ­veis. ExecuÃ§Ã£o segue em modo demo/paper.",
+                "OAuth sandbox conectado; contas sandbox visíveis. Execução segue em modo demo/paper.",
             )
             row.update({
                 "latency_ms": latency_ms,

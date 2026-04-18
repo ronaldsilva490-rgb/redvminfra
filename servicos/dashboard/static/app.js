@@ -516,12 +516,12 @@ function stopOverviewAssistant() {
         return;
     }
     if (state.vmAssistant.stopping) {
-        showToast("A interrupÃ§Ã£o jÃ¡ foi solicitada.", "info");
+        showToast("A interrupção já foi solicitada.", "info");
         return;
     }
     state.vmAssistant.stopping = true;
     renderOverviewAssistant();
-    showToast("SolicitaÃ§Ã£o de interrupÃ§Ã£o enviada.", "info");
+    showToast("Solicitação de interrupção enviada.", "info");
     state.socket?.send(JSON.stringify({ type: "vm.assistant.stop" }));
 }
 
@@ -871,9 +871,9 @@ function renderSebMonitor() {
     const frames = Number(seb.summary?.sessionsWithFrames || sessions.reduce((total, session) => total + ((session.views || []).filter((view) => view.imageBase64).length), 0));
 
     kpis.innerHTML = `
-        <article class="project-kpi"><strong>${sessions.length}</strong><span>sessoes ativas</span></article>
-        <article class="project-kpi"><strong>${frames}</strong><span>frames validos</span></article>
-        <article class="project-kpi"><strong>${lastUpdate ? formatDate(lastUpdate) : "n/d"}</strong><span>ultima atualizacao</span></article>
+        <article class="project-kpi"><strong>${sessions.length}</strong><span>sessões ativas</span></article>
+        <article class="project-kpi"><strong>${frames}</strong><span>frames válidos</span></article>
+        <article class="project-kpi"><strong>${lastUpdate ? formatDate(lastUpdate) : "n/d"}</strong><span>última atualização</span></article>
     `;
 
     list.innerHTML = sessions.length ? sessions.map((session) => {
@@ -884,10 +884,10 @@ function renderSebMonitor() {
             <button class="seb-monitor-session-card ${isActive ? "active" : ""}" type="button" data-seb-session-id="${escapeHtml(session.sessionId || "")}">
                 <strong>${escapeHtml(session.title || session.application || "SafeExamBrowser")}</strong>
                 <small>${escapeHtml(session.url || "Sem URL ativa")}</small>
-                <div class="meta">Sessao ${escapeHtml(session.sessionId || "")} • ${viewCount} view(s) • ${hasFrame ? "com frame" : "aguardando frame"}</div>
+                <div class="meta">Sessão ${escapeHtml(session.sessionId || "")} • ${viewCount} view(s) • ${hasFrame ? "com frame" : "aguardando frame"}</div>
             </button>
         `;
-    }).join("") : `<div class="empty">Nenhuma sessao ativa no SEB Monitor.</div>`;
+    }).join("") : `<div class="empty">Nenhuma sessão ativa no SEB Monitor.</div>`;
 
     title.textContent = activeSession?.title || activeSession?.application || "Aguardando sessão";
     meta.textContent = activeSession
@@ -3146,15 +3146,15 @@ function renderRediaSummary() {
         <div class="kv-item"><span>Modelos</span><strong>${Number(proxy.models?.length || 0)}</strong></div>
         <div class="kv-item"><span>Conversas</span><strong>${Number(counts.conversations || 0)}</strong></div>
         <div class="kv-item"><span>Agendamentos</span><strong>${Number(counts.schedules_pending || 0)} pendentes</strong></div>
-        <div class="kv-item"><span>C?digo</span><strong>${escapeHtml(runtime.last_disconnect_code ? String(runtime.last_disconnect_code) : "-")}</strong></div>
+        <div class="kv-item"><span>Código</span><strong>${escapeHtml(runtime.last_disconnect_code ? String(runtime.last_disconnect_code) : "-")}</strong></div>
         <div class="kv-item"><span>Retries</span><strong>${Number(runtime.reconnect_attempts || 0)}</strong></div>
-        <div class="kv-item"><span>?ltimo update</span><strong>${escapeHtml(formatDate(runtime.last_update_at) || "n/d")}</strong></div>
+        <div class="kv-item"><span>Último update</span><strong>${escapeHtml(formatDate(runtime.last_update_at) || "n/d")}</strong></div>
         <div class="kv-item"><span>QR</span><strong>${runtime.qr ? "pronto" : "oculto"}</strong></div>
     `;
     renderRediaLiveState();
     renderRediaConfigState();
     const hintEl = qs("#rediaRuntimeHint");
-    if (hintEl) hintEl.textContent = runtime.hint || "Aguardando estado da sess?o da RED I.A.";
+    if (hintEl) hintEl.textContent = runtime.hint || "Aguardando estado da sessão da RED I.A.";
     const errorEl = qs("#rediaRuntimeError");
     if (errorEl) {
         const textValue = String(runtime.last_error || "").trim();
@@ -3185,10 +3185,10 @@ function renderRediaKpis() {
         <article class="metric-card compact">
             <div class="metric-label">WhatsApp</div>
             <div class="metric-value">${escapeHtml(runtime.status || "offline")}</div>
-            <div class="metric-meta">${escapeHtml(runtime.phone || "sem n?mero conectado")}</div>
+            <div class="metric-meta">${escapeHtml(runtime.phone || "sem número conectado")}</div>
         </article>
         <article class="metric-card compact">
-            <div class="metric-label">Modelo padr?o</div>
+            <div class="metric-label">Modelo padrão</div>
             <div class="metric-value">${escapeHtml(normalizeProxyModelValue(state.redia?.config?.chat?.default_model || "auto"))}</div>
             <div class="metric-meta">${Number(proxy.models?.length || 0)} modelos no proxy</div>
         </article>
@@ -3200,7 +3200,7 @@ function renderRediaKpis() {
         <article class="metric-card compact">
             <div class="metric-label">Agenda</div>
             <div class="metric-value">${Number(counts.schedules_pending || 0)}</div>
-            <div class="metric-meta">${schedules.filter((item) => String(item.status).toLowerCase() === "completed").length} conclu?dos</div>
+            <div class="metric-meta">${schedules.filter((item) => String(item.status).toLowerCase() === "completed").length} concluídos</div>
         </article>
     `;
 }
@@ -3214,12 +3214,12 @@ function renderRediaConfigState() {
     const el = qs("#rediaConfigState");
     if (!el) return;
     if (state.rediaUi.configDirty) {
-        el.textContent = "H? altera??es locais na configura??o. Salve para persistir sem perder o que voc? est? editando.";
+        el.textContent = "Há alterações locais na configuração. Salve para persistir sem perder o que você está editando.";
         el.classList.add("active");
         return;
     }
     const when = state.rediaUi.lastSyncAt ? formatDate(state.rediaUi.lastSyncAt) : "agora";
-    el.textContent = `Sincroniza??o autom?tica ativa. ?ltimo refresh: ${when}.`;
+    el.textContent = `Sincronização automática ativa. Último refresh: ${when}.`;
     el.classList.remove("active");
 }
 
@@ -3272,7 +3272,7 @@ function rediaActivityTitle(event) {
         "whatsapp:sent": "Resposta enviada",
         "queue:drain": "Fila processada",
         "learning:start": "Aprendizado iniciado",
-        "learning:done": "Mem?ria atualizada",
+        "learning:done": "Memória atualizada",
         "learning:error": "Aprendizado falhou",
         "proactive:start": "Proativo analisando",
         "proactive:decision": "Proativo decidiu",
@@ -3281,10 +3281,10 @@ function rediaActivityTitle(event) {
         "media:image:start": "Analisando imagem",
         "media:image:done": "Imagem analisada",
         "media:image:error": "Imagem falhou",
-        "media:audio:start": "Transcrevendo ?udio",
-        "media:audio:done": "?udio transcrito",
-        "media:audio:error": "?udio falhou",
-        "schedule:sending": "Agendamento em execu??o",
+        "media:audio:start": "Transcrevendo áudio",
+        "media:audio:done": "Áudio transcrito",
+        "media:audio:error": "Áudio falhou",
+        "schedule:sending": "Agendamento em execução",
         "schedule:sent": "Agendamento enviado",
         "schedule:error": "Agendamento falhou",
     };
@@ -3319,7 +3319,7 @@ function renderRediaActivity() {
                     <strong>${escapeHtml(rediaActivityTitle(row))}</strong>
                     <time>${escapeHtml(formatDate(row.at))}</time>
                 </div>
-                <div class="redia-activity-meta">${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join("<span>?</span>")}</div>
+                <div class="redia-activity-meta">${meta.map((item) => `<span>${escapeHtml(item)}</span>`).join("<span>•</span>")}</div>
                 ${preview ? `<p>${escapeHtml(preview)}</p>` : ""}
             </article>
         `;

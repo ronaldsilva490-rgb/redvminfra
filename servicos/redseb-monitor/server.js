@@ -575,9 +575,9 @@ function committeeMemberSystemPrompt(roleLabel) {
 function buildCommitteeBrief(context) {
   const parts = [
     "FRAME ATUAL DO SEB",
-    "Sessao: " + (context.session?.sessionId || "n/d"),
+    "Sessão: " + (context.session?.sessionId || "n/d"),
     "View: " + (context.view?.viewId || "n/d"),
-    "Titulo: " + (context.view?.title || context.session?.title || "n/d"),
+    "Título: " + (context.view?.title || context.session?.title || "n/d"),
     "URL: " + (context.view?.url || context.session?.url || "n/d"),
     "Viewport: " + ((context.view?.width || 0) + "x" + (context.view?.height || 0)),
     "",
@@ -1372,11 +1372,11 @@ function renderDashboard() {
         <div class="command-status" id="command-status">Selecione uma sessão ativa para enviar um alerta.</div>
       </section>
       <section class="command-panel glass committee-panel">
-        <h3>Comit? de IA</h3>
-        <p>Um modelo de vis?o l? a frame atual, aciona fallback visual se precisar, e tr?s analistas de texto respondem em paralelo usando o proxy da RED Systems.</p>
+        <h3>Comitê de IA</h3>
+        <p>Um modelo de visão lê a frame atual, aciona fallback visual se precisar, e três analistas de texto respondem em paralelo usando o proxy da RED Systems.</p>
         <div class="committee-config-grid">
           <label class="field">
-            <span>Vis?o principal</span>
+            <span>Visão principal</span>
             <select id="committee-vision-primary"></select>
           </label>
           <label class="field">
@@ -1397,23 +1397,23 @@ function renderDashboard() {
           </label>
           <button class="send-button committee-run" id="committee-run-button" type="button">Analisar frame</button>
         </div>
-        <div class="committee-status" id="committee-status">Selecione uma sess?o com frame v?lido para iniciar a an?lise.</div>
-        <div class="committee-scene-report" id="committee-scene-report">O relat?rio visual consolidado aparecer? aqui antes do trio textual responder.</div>
+        <div class="committee-status" id="committee-status">Selecione uma sessão com frame válido para iniciar a análise.</div>
+        <div class="committee-scene-report" id="committee-scene-report">O relatório visual consolidado aparecerá aqui antes do trio textual responder.</div>
         <div class="committee-grid">
           <article class="committee-card">
             <h4 id="committee-title-text_a">Analista A</h4>
-            <div class="meta" id="committee-meta-text_a">Aguardando configura??o.</div>
-            <div class="committee-output" id="committee-output-text_a">Sem an?lise ainda.</div>
+            <div class="meta" id="committee-meta-text_a">Aguardando configuração.</div>
+            <div class="committee-output" id="committee-output-text_a">Sem análise ainda.</div>
           </article>
           <article class="committee-card">
             <h4 id="committee-title-text_b">Analista B</h4>
-            <div class="meta" id="committee-meta-text_b">Aguardando configura??o.</div>
-            <div class="committee-output" id="committee-output-text_b">Sem an?lise ainda.</div>
+            <div class="meta" id="committee-meta-text_b">Aguardando configuração.</div>
+            <div class="committee-output" id="committee-output-text_b">Sem análise ainda.</div>
           </article>
           <article class="committee-card">
             <h4 id="committee-title-text_c">Analista C</h4>
-            <div class="meta" id="committee-meta-text_c">Aguardando configura??o.</div>
-            <div class="committee-output" id="committee-output-text_c">Sem an?lise ainda.</div>
+            <div class="meta" id="committee-meta-text_c">Aguardando configuração.</div>
+            <div class="committee-output" id="committee-output-text_c">Sem análise ainda.</div>
           </article>
         </div>
       </section>
@@ -1598,17 +1598,17 @@ function renderDashboard() {
     }
 
     function resetCommitteeOutputs() {
-      committeeSceneReport.textContent = "O relat?rio visual consolidado aparecer? aqui antes do trio textual responder.";
-      setCommitteeCardMeta("text_a", "Analista A", committeeTextA.value || "Modelo n?o definido.", "Sem an?lise ainda.");
-      setCommitteeCardMeta("text_b", "Analista B", committeeTextB.value || "Modelo n?o definido.", "Sem an?lise ainda.");
-      setCommitteeCardMeta("text_c", "Analista C", committeeTextC.value || "Modelo n?o definido.", "Sem an?lise ainda.");
+      committeeSceneReport.textContent = "O relatório visual consolidado aparecerá aqui antes do trio textual responder.";
+      setCommitteeCardMeta("text_a", "Analista A", committeeTextA.value || "Modelo não definido.", "Sem análise ainda.");
+      setCommitteeCardMeta("text_b", "Analista B", committeeTextB.value || "Modelo não definido.", "Sem análise ainda.");
+      setCommitteeCardMeta("text_c", "Analista C", committeeTextC.value || "Modelo não definido.", "Sem análise ainda.");
     }
 
     async function loadCommitteeCatalog() {
       const response = await fetch("/api/committee/models", { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "Falha ao carregar cat?logo do comit?.");
+        throw new Error(payload.error || "Falha ao carregar catálogo do comitê.");
       }
 
       committeeCatalog = payload;
@@ -1820,12 +1820,12 @@ function renderDashboard() {
 
     async function runCommitteeAnalysis() {
       if (!activeSessionId) {
-        committeeStatus.textContent = "Selecione uma sess?o ativa antes de analisar.";
+        committeeStatus.textContent = "Selecione uma sessão ativa antes de analisar.";
         return;
       }
 
       if (!activeViewId) {
-        committeeStatus.textContent = "Selecione uma view com frame v?lido antes de analisar.";
+        committeeStatus.textContent = "Selecione uma view com frame válido antes de analisar.";
         return;
       }
 
@@ -1835,7 +1835,7 @@ function renderDashboard() {
 
       updateCommitteeBusy(true);
       resetCommitteeOutputs();
-      committeeStatus.textContent = "Preparando an?lise da frame atual...";
+      committeeStatus.textContent = "Preparando análise da frame atual...";
 
       try {
         persistCommitteePreferences();
@@ -1855,7 +1855,7 @@ function renderDashboard() {
 
         if (!response.ok || !response.body) {
           const payload = await response.json().catch(() => ({}));
-          throw new Error(payload.error || "Falha ao iniciar o comit? de an?lise.");
+          throw new Error(payload.error || "Falha ao iniciar o comitê de análise.");
         }
 
         const reader = response.body.getReader();
@@ -1885,12 +1885,12 @@ function renderDashboard() {
                 }
 
                 if (event.type === "vision_begin") {
-                  committeeSceneReport.textContent = "Lendo a frame com o modelo de vis?o principal...";
+                  committeeSceneReport.textContent = "Lendo a frame com o modelo de visão principal...";
                 }
 
                 if (event.type === "vision_result") {
                   const blocks = [];
-                  blocks.push((event.role || "Vis?o") + " (" + (event.model || "modelo") + ")");
+                  blocks.push((event.role || "Visão") + " (" + (event.model || "modelo") + ")");
                   if (event.fallbackUsed) {
                     blocks.push("Fallback acionado.");
                   }
@@ -1921,7 +1921,7 @@ function renderDashboard() {
                 }
 
                 if (event.type === "done") {
-                  committeeStatus.textContent = event.ok ? "Comit? conclu?do." : "Comit? conclu?do com avisos.";
+                  committeeStatus.textContent = event.ok ? "Comitê concluído." : "Comitê concluído com avisos.";
                 }
               }
             }
