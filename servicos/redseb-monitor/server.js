@@ -14,8 +14,10 @@ const rediaRoot = process.env.REDIA_DIR || "/opt/redia";
 const portalRoot = process.env.RED_PORTAL_DIR || "/var/www/red-portal";
 const proxyBase = String(process.env.RED_PROXY_BASE || "http://127.0.0.1:8080").replace(/\/+$/, "");
 const committeeDefaultVisionPrimary = process.env.RED_SEB_COMMITTEE_VISION_PRIMARY || "NIM - meta/llama-3.2-11b-vision-instruct";
-const committeeDefaultVisionSecondary = process.env.RED_SEB_COMMITTEE_VISION_SECONDARY || "NIM - nvidia/nemotron-nano-12b-v2-vl";
-const committeeDefaultLead = process.env.RED_SEB_COMMITTEE_LEAD || "NIM - nvidia/llama-3.1-nemotron-nano-8b-v1";
+const committeeDefaultVisionFallback = process.env.RED_SEB_COMMITTEE_VISION_FALLBACK || process.env.RED_SEB_COMMITTEE_VISION_SECONDARY || "NIM - nvidia/nemotron-nano-12b-v2-vl";
+const committeeDefaultTextA = process.env.RED_SEB_COMMITTEE_TEXT_A || process.env.RED_SEB_COMMITTEE_LEAD || "NIM - nvidia/llama-3.1-nemotron-nano-8b-v1";
+const committeeDefaultTextB = process.env.RED_SEB_COMMITTEE_TEXT_B || "NIM - abacusai/dracarys-llama-3.1-70b-instruct";
+const committeeDefaultTextC = process.env.RED_SEB_COMMITTEE_TEXT_C || "NIM - z-ai/glm5";
 const sessionStaleMs = Math.max(60000, Number(process.env.RED_SEB_SESSION_STALE_MS || 300000));
 const sessions = new Map();
 const downloadCandidates = {
@@ -448,23 +450,44 @@ function resolveCommitteeDefaults(models) {
       ],
       committeeDefaultVisionPrimary
     ),
-    visionSecondary: pickFirst(
+    visionFallback: pickFirst(
       [
-        committeeDefaultVisionSecondary,
+        committeeDefaultVisionFallback,
         "NIM - nvidia/nemotron-nano-12b-v2-vl",
         "NIM - meta/llama-3.2-90b-vision-instruct",
         "qwen3-vl:235b-instruct"
       ],
-      committeeDefaultVisionSecondary
+      committeeDefaultVisionFallback
     ),
-    lead: pickFirst(
+    textA: pickFirst(
       [
-        committeeDefaultLead,
+        committeeDefaultTextA,
         "NIM - nvidia/llama-3.1-nemotron-nano-8b-v1",
         "NIM - abacusai/dracarys-llama-3.1-70b-instruct",
+        "NIM - z-ai/glm5",
         "qwen3-next:80b"
       ],
-      committeeDefaultLead
+      committeeDefaultTextA
+    ),
+    textB: pickFirst(
+      [
+        committeeDefaultTextB,
+        "NIM - abacusai/dracarys-llama-3.1-70b-instruct",
+        "NIM - z-ai/glm5",
+        "qwen3-next:80b",
+        "NIM - nvidia/llama-3.1-nemotron-nano-8b-v1"
+      ],
+      committeeDefaultTextB
+    ),
+    textC: pickFirst(
+      [
+        committeeDefaultTextC,
+        "NIM - z-ai/glm5",
+        "qwen3-next:80b",
+        "NIM - abacusai/dracarys-llama-3.1-70b-instruct",
+        "NIM - nvidia/llama-3.1-nemotron-nano-8b-v1"
+      ],
+      committeeDefaultTextC
     )
   };
 }
@@ -531,7 +554,10 @@ function committeeVisionPrompt() {
   return [
     "Analise esta captura do Safe Exam Browser com muito cuidado.",
     "Descreva exatamente o que esta visivel na imagem em portugues do Brasil.",
+    "Extraia o texto legivel com o maximo de fidelidade possivel.",
     "Inclua: contexto geral da tela, textos legiveis, areas da interface, sinais importantes, possiveis riscos ou bloqueios, e qualquer detalhe relevante para operacao.",
+    "Se houver pergunta, enunciado, numeros, opcoes, formulas, login, aviso, bloqueio ou contexto educacional, deixe isso explicito.",
+    "Organize em quatro blocos: CONTEXTO, TEXTO VISIVEL, DETALHES IMPORTANTES e INCERTEZAS.",
     "Nao invente nada. Se algo estiver incerto, diga claramente."
   ].join(" ");
 }
@@ -540,8 +566,9 @@ function committeeMemberSystemPrompt(roleLabel) {
   return [
     "Voce faz parte do comite de analise visual da RED Systems.",
     "Seu papel neste turno e: " + roleLabel + ".",
-    "Receba os relatórios visuais, pense como operador tecnico e responda em portugues do Brasil.",
-    "Seja objetivo, preciso e util. Nao invente elementos que nao estejam no relatorio."
+    "Receba o relatorio consolidado do modelo de visao, pense como operador tecnico e responda em portugues do Brasil.",
+    "Seja objetivo, preciso e util. Nao invente elementos que nao estejam no relatorio.",
+    "Quando houver pergunta de prova, exercicio ou conta, responda com a solucao e uma justificativa curta."
   ].join(" ");
 }
 
@@ -554,14 +581,14 @@ function buildCommitteeBrief(context) {
     "URL: " + (context.view?.url || context.session?.url || "n/d"),
     "Viewport: " + ((context.view?.width || 0) + "x" + (context.view?.height || 0)),
     "",
-    "RELATORIO VISUAL A",
-    context.visionPrimary || "Sem resposta.",
+    "RELATORIO VISUAL PRINCIPAL",
+    context.visionReport || "Sem resposta.",
     "",
-    "RELATORIO VISUAL B",
-    context.visionSecondary || "Sem resposta.",
+    "RELATORIO VISUAL DE APOIO",
+    context.visionFallback || "Sem resposta.",
     "",
     "TAREFA",
-    "Com base nesses relatórios, diga o que a tela mostra, o que merece atenção e qual seria a próxima ação sensata do operador."
+    "Com base nesse material, diga o que a tela mostra, identifique com exatidao perguntas, contas ou instrucoes, e entregue a sua melhor analise."
   ];
 
   return parts.join("\n");
@@ -595,15 +622,15 @@ async function fetchCommitteeModelCatalog() {
   const defaults = resolveCommitteeDefaults(models);
   const visionModels = prioritizeModels(
     models.filter((model) => model.capabilities.includes("vision")),
-    [defaults.visionPrimary, defaults.visionSecondary, "NIM - meta/llama-3.2-90b-vision-instruct", "qwen3-vl:235b-instruct"]
+    [defaults.visionPrimary, defaults.visionFallback, "NIM - meta/llama-3.2-90b-vision-instruct", "qwen3-vl:235b-instruct"]
   );
-  const leadModels = prioritizeModels(
+  const textModels = prioritizeModels(
     models.filter((model) => model.capabilities.includes("chat") && !model.capabilities.includes("vision")),
-    [defaults.lead, "NIM - abacusai/dracarys-llama-3.1-70b-instruct", "NIM - deepseek-ai/deepseek-v3.1", "qwen3-next:80b"]
+    [defaults.textA, defaults.textB, defaults.textC, "NIM - deepseek-ai/deepseek-v3.1", "qwen3-next:80b"]
   );
   return {
     visionModels,
-    leadModels,
+    textModels,
     defaults
   };
 }
@@ -614,12 +641,20 @@ function resolveActiveSessionAndView(sessionId, viewId) {
     throw new Error("Sessao do SEB nao encontrada.");
   }
 
-  const views = Array.from(session.views || new Map().values());
+  const views = Array.from((session.views instanceof Map ? session.views.values() : [])).filter(Boolean);
   if (!views.length) {
     throw new Error("A sessao atual ainda nao publicou nenhuma view.");
   }
 
-  const view = views.find((item) => String(item.viewId || "") === String(viewId || "")) || views[0];
+  const requestedView = views.find((item) => String(item.viewId || "") === String(viewId || ""));
+  const fallbackView = views
+    .slice()
+    .sort((left, right) => Date.parse(String(right.timestamp || "")) - Date.parse(String(left.timestamp || "")))
+    .find((item) => String(item.imageBase64 || "").trim());
+  const view = (requestedView && String(requestedView.imageBase64 || "").trim() ? requestedView : null)
+    || fallbackView
+    || requestedView
+    || views[0];
   if (!view?.imageBase64) {
     throw new Error("A view atual ainda nao possui frame valido para analise.");
   }
@@ -650,6 +685,15 @@ async function requestVisionExtraction(model, frameBase64) {
   });
 
   return extractChatText(payload);
+}
+
+function shouldUseVisionFallback(text) {
+  const normalized = String(text || "").trim();
+  if (!normalized) {
+    return true;
+  }
+
+  return normalized.length < 120;
 }
 
 function extractStreamDelta(chunkPayload) {
@@ -1091,7 +1135,7 @@ function renderDashboard() {
     .download-status { min-height: 20px; color: var(--muted); font-size: 13px; margin-top: 12px; }
     .committee-config-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
       gap: 12px;
       align-items: end;
       margin-top: 12px;
@@ -1328,40 +1372,48 @@ function renderDashboard() {
         <div class="command-status" id="command-status">Selecione uma sessão ativa para enviar um alerta.</div>
       </section>
       <section class="command-panel glass committee-panel">
-        <h3>Comitê de IA</h3>
-        <p>Dois revisores visuais e um relator principal analisam a frame atual da view selecionada usando o proxy da RED Systems.</p>
+        <h3>Comit? de IA</h3>
+        <p>Um modelo de vis?o l? a frame atual, aciona fallback visual se precisar, e tr?s analistas de texto respondem em paralelo usando o proxy da RED Systems.</p>
         <div class="committee-config-grid">
           <label class="field">
-            <span>Visão A</span>
+            <span>Vis?o principal</span>
             <select id="committee-vision-primary"></select>
           </label>
           <label class="field">
-            <span>Visão B</span>
-            <select id="committee-vision-secondary"></select>
+            <span>Fallback visual</span>
+            <select id="committee-vision-fallback"></select>
           </label>
           <label class="field">
-            <span>Relator</span>
-            <select id="committee-lead"></select>
+            <span>Analista A</span>
+            <select id="committee-text-a"></select>
+          </label>
+          <label class="field">
+            <span>Analista B</span>
+            <select id="committee-text-b"></select>
+          </label>
+          <label class="field">
+            <span>Analista C</span>
+            <select id="committee-text-c"></select>
           </label>
           <button class="send-button committee-run" id="committee-run-button" type="button">Analisar frame</button>
         </div>
-        <div class="committee-status" id="committee-status">Selecione uma sessão com frame válido para iniciar a análise.</div>
-        <div class="committee-scene-report" id="committee-scene-report">A leitura-base dos modelos de visão aparecerá aqui antes do comitê responder.</div>
+        <div class="committee-status" id="committee-status">Selecione uma sess?o com frame v?lido para iniciar a an?lise.</div>
+        <div class="committee-scene-report" id="committee-scene-report">O relat?rio visual consolidado aparecer? aqui antes do trio textual responder.</div>
         <div class="committee-grid">
           <article class="committee-card">
-            <h4 id="committee-title-vision_primary">Visão A</h4>
-            <div class="meta" id="committee-meta-vision_primary">Aguardando configuração.</div>
-            <div class="committee-output" id="committee-output-vision_primary">Sem análise ainda.</div>
+            <h4 id="committee-title-text_a">Analista A</h4>
+            <div class="meta" id="committee-meta-text_a">Aguardando configura??o.</div>
+            <div class="committee-output" id="committee-output-text_a">Sem an?lise ainda.</div>
           </article>
           <article class="committee-card">
-            <h4 id="committee-title-vision_secondary">Visão B</h4>
-            <div class="meta" id="committee-meta-vision_secondary">Aguardando configuração.</div>
-            <div class="committee-output" id="committee-output-vision_secondary">Sem análise ainda.</div>
+            <h4 id="committee-title-text_b">Analista B</h4>
+            <div class="meta" id="committee-meta-text_b">Aguardando configura??o.</div>
+            <div class="committee-output" id="committee-output-text_b">Sem an?lise ainda.</div>
           </article>
           <article class="committee-card">
-            <h4 id="committee-title-lead">Relator principal</h4>
-            <div class="meta" id="committee-meta-lead">Aguardando configuração.</div>
-            <div class="committee-output" id="committee-output-lead">Sem análise ainda.</div>
+            <h4 id="committee-title-text_c">Analista C</h4>
+            <div class="meta" id="committee-meta-text_c">Aguardando configura??o.</div>
+            <div class="committee-output" id="committee-output-text_c">Sem an?lise ainda.</div>
           </article>
         </div>
       </section>
@@ -1388,13 +1440,15 @@ function renderDashboard() {
     const downloadBatButton = document.getElementById("download-bat-button");
     const downloadStatus = document.getElementById("download-status");
     const committeeVisionPrimary = document.getElementById("committee-vision-primary");
-    const committeeVisionSecondary = document.getElementById("committee-vision-secondary");
-    const committeeLead = document.getElementById("committee-lead");
+    const committeeVisionFallback = document.getElementById("committee-vision-fallback");
+    const committeeTextA = document.getElementById("committee-text-a");
+    const committeeTextB = document.getElementById("committee-text-b");
+    const committeeTextC = document.getElementById("committee-text-c");
     const committeeRunButton = document.getElementById("committee-run-button");
     const committeeStatus = document.getElementById("committee-status");
     const committeeSceneReport = document.getElementById("committee-scene-report");
     const ALERT_POSITION_KEY = "redseb.monitor.alertPosition.v1";
-    const COMMITTEE_MODELS_KEY = "redseb.committee.models.v1";
+    const COMMITTEE_MODELS_KEY = "redseb.committee.models.v2";
     let activeSessionId = null;
     let activeViewId = null;
     const knownViewIdsBySession = new Map();
@@ -1515,8 +1569,10 @@ function renderDashboard() {
       try {
         window.localStorage.setItem(COMMITTEE_MODELS_KEY, JSON.stringify({
           visionPrimary: committeeVisionPrimary.value,
-          visionSecondary: committeeVisionSecondary.value,
-          lead: committeeLead.value
+          visionFallback: committeeVisionFallback.value,
+          textA: committeeTextA.value,
+          textB: committeeTextB.value,
+          textC: committeeTextC.value
         }));
       } catch {
         // ignore
@@ -1542,25 +1598,27 @@ function renderDashboard() {
     }
 
     function resetCommitteeOutputs() {
-      committeeSceneReport.textContent = "A leitura-base dos modelos de visão aparecerá aqui antes do comitê responder.";
-      setCommitteeCardMeta("vision_primary", "Visão A", committeeVisionPrimary.value || "Modelo não definido.", "Sem análise ainda.");
-      setCommitteeCardMeta("vision_secondary", "Visão B", committeeVisionSecondary.value || "Modelo não definido.", "Sem análise ainda.");
-      setCommitteeCardMeta("lead", "Relator principal", committeeLead.value || "Modelo não definido.", "Sem análise ainda.");
+      committeeSceneReport.textContent = "O relat?rio visual consolidado aparecer? aqui antes do trio textual responder.";
+      setCommitteeCardMeta("text_a", "Analista A", committeeTextA.value || "Modelo n?o definido.", "Sem an?lise ainda.");
+      setCommitteeCardMeta("text_b", "Analista B", committeeTextB.value || "Modelo n?o definido.", "Sem an?lise ainda.");
+      setCommitteeCardMeta("text_c", "Analista C", committeeTextC.value || "Modelo n?o definido.", "Sem an?lise ainda.");
     }
 
     async function loadCommitteeCatalog() {
       const response = await fetch("/api/committee/models", { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "Falha ao carregar catálogo do comitê.");
+        throw new Error(payload.error || "Falha ao carregar cat?logo do comit?.");
       }
 
       committeeCatalog = payload;
       const preferences = readCommitteePreferences();
       const defaults = payload.defaults || {};
       populateSelect(committeeVisionPrimary, payload.visionModels || [], preferences.visionPrimary || defaults.visionPrimary || "");
-      populateSelect(committeeVisionSecondary, payload.visionModels || [], preferences.visionSecondary || defaults.visionSecondary || "");
-      populateSelect(committeeLead, payload.leadModels || [], preferences.lead || defaults.lead || "");
+      populateSelect(committeeVisionFallback, payload.visionModels || [], preferences.visionFallback || defaults.visionFallback || "");
+      populateSelect(committeeTextA, payload.textModels || [], preferences.textA || defaults.textA || "");
+      populateSelect(committeeTextB, payload.textModels || [], preferences.textB || defaults.textB || "");
+      populateSelect(committeeTextC, payload.textModels || [], preferences.textC || defaults.textC || "");
       persistCommitteePreferences();
       resetCommitteeOutputs();
     }
@@ -1762,12 +1820,12 @@ function renderDashboard() {
 
     async function runCommitteeAnalysis() {
       if (!activeSessionId) {
-        committeeStatus.textContent = "Selecione uma sessão ativa antes de analisar.";
+        committeeStatus.textContent = "Selecione uma sess?o ativa antes de analisar.";
         return;
       }
 
       if (!activeViewId) {
-        committeeStatus.textContent = "Selecione uma view com frame válido antes de analisar.";
+        committeeStatus.textContent = "Selecione uma view com frame v?lido antes de analisar.";
         return;
       }
 
@@ -1777,7 +1835,7 @@ function renderDashboard() {
 
       updateCommitteeBusy(true);
       resetCommitteeOutputs();
-      committeeStatus.textContent = "Preparando análise da frame atual...";
+      committeeStatus.textContent = "Preparando an?lise da frame atual...";
 
       try {
         persistCommitteePreferences();
@@ -1788,14 +1846,16 @@ function renderDashboard() {
             sessionId: activeSessionId,
             viewId: activeViewId,
             visionPrimaryModel: committeeVisionPrimary.value,
-            visionSecondaryModel: committeeVisionSecondary.value,
-            leadModel: committeeLead.value
+            visionFallbackModel: committeeVisionFallback.value,
+            textModelA: committeeTextA.value,
+            textModelB: committeeTextB.value,
+            textModelC: committeeTextC.value
           })
         });
 
         if (!response.ok || !response.body) {
           const payload = await response.json().catch(() => ({}));
-          throw new Error(payload.error || "Falha ao iniciar o comitê de análise.");
+          throw new Error(payload.error || "Falha ao iniciar o comit? de an?lise.");
         }
 
         const reader = response.body.getReader();
@@ -1825,16 +1885,20 @@ function renderDashboard() {
                 }
 
                 if (event.type === "vision_begin") {
-                  setCommitteeCardMeta(event.memberId, event.role || event.memberId, event.model || "modelo", "Lendo a frame...");
+                  committeeSceneReport.textContent = "Lendo a frame com o modelo de vis?o principal...";
                 }
 
                 if (event.type === "vision_result") {
-                  const prefix = event.error ? "[Falha] " : "";
-                  setCommitteeCardMeta(event.memberId, event.role || event.memberId, event.model || "modelo", prefix + (event.text || "Sem leitura."));
-                  const current = committeeSceneReport.textContent === "A leitura-base dos modelos de visão aparecerá aqui antes do comitê responder."
-                    ? ""
-                    : (committeeSceneReport.textContent + "\\n\\n");
-                  committeeSceneReport.textContent = current + (event.role || event.memberId) + " (" + (event.model || "modelo") + "):\\n" + (event.text || "Sem leitura.");
+                  const blocks = [];
+                  blocks.push((event.role || "Vis?o") + " (" + (event.model || "modelo") + ")");
+                  if (event.fallbackUsed) {
+                    blocks.push("Fallback acionado.");
+                  }
+                  if (event.error) {
+                    blocks.push("Falha: " + event.error);
+                  }
+                  blocks.push(event.text || "Sem leitura.");
+                  committeeSceneReport.textContent = blocks.join("\\n\\n");
                 }
 
                 if (event.type === "member_begin") {
@@ -1857,7 +1921,7 @@ function renderDashboard() {
                 }
 
                 if (event.type === "done") {
-                  committeeStatus.textContent = event.ok ? "Comitê concluído." : "Comitê concluído com avisos.";
+                  committeeStatus.textContent = event.ok ? "Comit? conclu?do." : "Comit? conclu?do com avisos.";
                 }
               }
             }
@@ -1940,17 +2004,11 @@ function renderDashboard() {
     alertPosition.addEventListener("change", () => persistAlertPosition(alertPosition.value));
     downloadBatButton.addEventListener("click", downloadBat);
     committeeRunButton.addEventListener("click", runCommitteeAnalysis);
-    committeeVisionPrimary.addEventListener("change", () => {
-      persistCommitteePreferences();
-      resetCommitteeOutputs();
-    });
-    committeeVisionSecondary.addEventListener("change", () => {
-      persistCommitteePreferences();
-      resetCommitteeOutputs();
-    });
-    committeeLead.addEventListener("change", () => {
-      persistCommitteePreferences();
-      resetCommitteeOutputs();
+    [committeeVisionPrimary, committeeVisionFallback, committeeTextA, committeeTextB, committeeTextC].forEach((node) => {
+      node.addEventListener("change", () => {
+        persistCommitteePreferences();
+        resetCommitteeOutputs();
+      });
     });
   </script>
 </body>
@@ -2018,8 +2076,10 @@ const server = http.createServer((request, response) => {
         const catalog = await fetchCommitteeModelCatalog();
         const defaults = catalog.defaults || {};
         const visionPrimaryModel = String(payload.visionPrimaryModel || defaults.visionPrimary || "").trim();
-        const visionSecondaryModel = String(payload.visionSecondaryModel || defaults.visionSecondary || "").trim();
-        const leadModel = String(payload.leadModel || defaults.lead || "").trim();
+        const visionFallbackModel = String(payload.visionFallbackModel || defaults.visionFallback || "").trim();
+        const textModelA = String(payload.textModelA || defaults.textA || "").trim();
+        const textModelB = String(payload.textModelB || defaults.textB || "").trim();
+        const textModelC = String(payload.textModelC || defaults.textC || "").trim();
 
         response.writeHead(200, {
           "Content-Type": "application/x-ndjson; charset=utf-8",
@@ -2034,46 +2094,77 @@ const server = http.createServer((request, response) => {
           message: "Frame atual capturada. Iniciando leitura visual."
         });
 
-        const visionMembers = [
-          { id: "vision_primary", role: "Visão A", model: visionPrimaryModel },
-          { id: "vision_secondary", role: "Visão B", model: visionSecondaryModel }
-        ].filter((member) => member.model);
-
-        const visionResults = {};
-        visionMembers.forEach((member) => {
-          writeNdjsonEvent(response, { type: "vision_begin", memberId: member.id, role: member.role, model: member.model });
+        writeNdjsonEvent(response, {
+          type: "vision_begin",
+          memberId: "vision_primary",
+          role: "Visao principal",
+          model: visionPrimaryModel
         });
-        await Promise.all(
-          visionMembers.map(async (member) => {
-            try {
-              const text = await requestVisionExtraction(member.model, target.view.imageBase64);
-              visionResults[member.id] = text;
-              writeNdjsonEvent(response, { type: "vision_result", memberId: member.id, role: member.role, model: member.model, text });
-            } catch (error) {
-              const text = "Falha ao obter leitura visual: " + error.message;
-              visionResults[member.id] = text;
-              writeNdjsonEvent(response, { type: "vision_result", memberId: member.id, role: member.role, model: member.model, text, error: true });
-            }
-          })
-        );
+
+        let primaryVisionText = "";
+        let primaryVisionError = "";
+        try {
+          primaryVisionText = await requestVisionExtraction(visionPrimaryModel, target.view.imageBase64);
+        } catch (error) {
+          primaryVisionError = error.message;
+        }
+
+        let fallbackVisionText = "";
+        let fallbackVisionError = "";
+        let fallbackUsed = false;
+
+        if (visionFallbackModel && visionFallbackModel !== visionPrimaryModel && (primaryVisionError || shouldUseVisionFallback(primaryVisionText))) {
+          fallbackUsed = true;
+          writeNdjsonEvent(response, {
+            type: "status",
+            stage: "vision_fallback",
+            message: "A leitura principal ficou fraca ou falhou. Acionando fallback visual."
+          });
+          writeNdjsonEvent(response, {
+            type: "vision_begin",
+            memberId: "vision_fallback",
+            role: "Fallback visual",
+            model: visionFallbackModel
+          });
+          try {
+            fallbackVisionText = await requestVisionExtraction(visionFallbackModel, target.view.imageBase64);
+          } catch (error) {
+            fallbackVisionError = error.message;
+          }
+        }
+
+        const chosenVisionText = String(fallbackVisionText || primaryVisionText || "").trim();
+        const supportVisionText = fallbackUsed
+          ? (primaryVisionText || (primaryVisionError ? "Falha: " + primaryVisionError : ""))
+          : (fallbackVisionText || (fallbackVisionError ? "Falha: " + fallbackVisionError : ""));
+
+        writeNdjsonEvent(response, {
+          type: "vision_result",
+          memberId: "vision_primary",
+          role: "Relatorio visual consolidado",
+          model: fallbackUsed ? visionFallbackModel : visionPrimaryModel,
+          text: chosenVisionText || "Nenhum relatorio visual valido foi obtido.",
+          fallbackUsed,
+          error: (!chosenVisionText && (primaryVisionError || fallbackVisionError)) ? (fallbackVisionError || primaryVisionError) : ""
+        });
 
         const prompt = buildCommitteeBrief({
           session: target.session,
           view: target.view,
-          visionPrimary: visionResults.vision_primary || "Sem relatório da visão A.",
-          visionSecondary: visionResults.vision_secondary || "Sem relatório da visão B."
+          visionReport: chosenVisionText || "Nenhum relatorio visual valido foi obtido.",
+          visionFallback: supportVisionText || "Sem apoio adicional."
         });
 
         writeNdjsonEvent(response, {
           type: "status",
           stage: "committee",
-          message: "Relatório visual consolidado. Iniciando respostas em paralelo."
+          message: "Relatorio visual consolidado. Iniciando respostas em paralelo."
         });
 
         const committeeMembers = [
-          { id: "vision_primary", role: "Revisor visual A", model: visionPrimaryModel },
-          { id: "vision_secondary", role: "Revisor visual B", model: visionSecondaryModel },
-          { id: "lead", role: "Relator principal", model: leadModel }
+          { id: "text_a", role: "Analista A", model: textModelA },
+          { id: "text_b", role: "Analista B", model: textModelB },
+          { id: "text_c", role: "Analista C", model: textModelC }
         ].filter((member) => member.model);
 
         const results = await Promise.allSettled(
