@@ -808,24 +808,57 @@ button {
     grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.seb-monitor-grid {
+.seb-monitor-panel {
+    gap: 1rem;
+}
+
+.seb-monitor-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) minmax(22rem, 0.82fr);
+    gap: 1rem;
     align-items: start;
 }
 
+.seb-monitor-stage {
+    min-width: 0;
+}
+
+.seb-monitor-side {
+    display: grid;
+    gap: 0.85rem;
+    min-width: 0;
+}
+
+.seb-monitor-header-copy h2 {
+    margin: 0;
+    font-size: 1.3rem;
+}
+
 .seb-monitor-kpis {
-    margin-bottom: 1rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.65rem;
+}
+
+.seb-monitor-kpis .project-kpi {
+    padding: 0.75rem 0.85rem;
+    min-height: auto;
+}
+
+.seb-monitor-kpis .project-kpi strong {
+    font-size: 1.15rem;
 }
 
 .seb-monitor-session-list {
-    max-height: 34rem;
+    max-height: 11.5rem;
     overflow: auto;
+    gap: 0.55rem;
 }
 
 .seb-monitor-session-card {
     display: grid;
-    gap: 0.45rem;
-    padding: 1rem 1.05rem;
-    border-radius: 1rem;
+    gap: 0.3rem;
+    padding: 0.75rem 0.85rem;
+    border-radius: 0.95rem;
     border: 1px solid rgba(232, 228, 227, 0.08);
     background: rgba(25, 3, 3, 0.66);
     cursor: pointer;
@@ -837,27 +870,27 @@ button {
 }
 
 .seb-monitor-session-card strong {
-    font-size: 1rem;
+    font-size: 0.96rem;
+    line-height: 1.2;
 }
 
 .seb-monitor-session-card small,
 .seb-monitor-session-card .meta {
     color: var(--muted);
-}
-
-.seb-monitor-head {
-    align-items: flex-start;
+    font-size: 0.78rem;
+    line-height: 1.45;
 }
 
 .seb-monitor-tabs {
     flex-wrap: wrap;
-    margin-bottom: 1rem;
+    margin: 0;
 }
 
 .seb-monitor-tab {
     border: 1px solid rgba(232, 228, 227, 0.08);
     background: rgba(232, 228, 227, 0.06);
     color: var(--text);
+    padding: 0.55rem 0.8rem;
 }
 
 .seb-monitor-tab.active {
@@ -866,15 +899,14 @@ button {
 }
 
 .seb-monitor-frame-shell {
-    min-height: 26rem;
-    border-radius: 1.25rem;
+    min-height: min(68vh, 46rem);
+    border-radius: 1.2rem;
     border: 1px solid rgba(232, 228, 227, 0.08);
     background: linear-gradient(180deg, rgba(232, 68, 44, 0.08), rgba(255, 255, 255, 0.02)), #080304;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    margin-bottom: 1rem;
 }
 
 .seb-monitor-frame {
@@ -884,30 +916,69 @@ button {
 }
 
 .seb-monitor-empty {
-    padding: 2rem;
+    padding: 1.4rem;
     text-align: center;
+    max-width: 24rem;
 }
 
 .seb-monitor-details {
     margin-top: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.seb-monitor-details .kv-item {
+    padding: 0.7rem 0.8rem;
+}
+
+.seb-monitor-alert-box {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0.9rem;
+    border-radius: 1rem;
+    background: rgba(25, 3, 3, 0.5);
+    border: 1px solid rgba(232, 68, 44, 0.12);
 }
 
 .seb-monitor-alert-grid {
-    grid-template-columns: minmax(0, 1.8fr) 12rem 10rem auto;
+    grid-template-columns: 1fr;
+    gap: 0.65rem;
     align-items: end;
 }
 
-.seb-monitor-alert-actions {
-    justify-content: flex-end;
+.seb-monitor-alert-message {
+    grid-column: 1 / -1;
 }
 
-@media (max-width: 1100px) {
-    .seb-monitor-alert-grid {
+.seb-monitor-alert-actions {
+    justify-content: stretch;
+}
+
+.seb-monitor-alert-actions .primary-button {
+    width: 100%;
+}
+
+@media (max-width: 1180px) {
+    .seb-monitor-layout {
         grid-template-columns: 1fr;
     }
 
-    .seb-monitor-alert-actions {
-        justify-content: flex-start;
+    .seb-monitor-frame-shell {
+        min-height: 24rem;
+    }
+}
+
+@media (max-width: 720px) {
+    .seb-monitor-kpis,
+    .seb-monitor-details {
+        grid-template-columns: 1fr;
+    }
+
+    .seb-monitor-session-list {
+        max-height: none;
+    }
+
+    .seb-monitor-frame-shell {
+        min-height: 16rem;
     }
 }
 

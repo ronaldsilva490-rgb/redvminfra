@@ -13,7 +13,7 @@
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
     <link rel="icon" href="static/favicon.ico" sizes="any">
     <link rel="shortcut icon" href="static/favicon.ico">
-    <link rel="stylesheet" href="static/styles.css?v=20260418-mobile-drawer">
+    <link rel="stylesheet" href="static/styles.css?v=20260418-seb-compact">
 </head>
 <body>
     <script>
@@ -527,68 +527,67 @@
             </section>
 
             <section class="view" id="view-redseb_monitor">
-                <div class="panel-grid panel-grid-two seb-monitor-grid">
-                    <section class="panel">
-                        <div class="panel-head">
-                            <div>
-                                <div class="eyebrow">SEB AO VIVO</div>
-                                <h2>Monitor simples</h2>
-                                <div class="panel-subtitle">Sessões, tabs de view, frame atual e envio de alerta sem sair do dashboard.</div>
-                            </div>
+                <section class="panel seb-monitor-panel">
+                    <div class="panel-head">
+                        <div>
+                            <div class="eyebrow">SEB AO VIVO</div>
+                            <h2>Monitor simples</h2>
+                            <div class="panel-subtitle">Frame remoto em destaque com sessão, views e alerta no mesmo painel.</div>
+                        </div>
+                        <div class="inline-actions">
+                            <div class="chat-status-pill neutral" id="sebMonitorStatus">offline</div>
                             <button class="ghost-button" id="sebMonitorRefreshButton" type="button">Atualizar</button>
                         </div>
-                        <div class="project-kpis seb-monitor-kpis" id="sebMonitorKpis"></div>
-                        <div class="stack-list seb-monitor-session-list" id="sebMonitorSessionList"></div>
-                    </section>
+                    </div>
 
-                    <section class="panel stretch-panel">
-                        <div class="panel-head seb-monitor-head">
-                            <div>
+                    <div class="seb-monitor-layout">
+                        <div class="seb-monitor-stage">
+                            <div class="seb-monitor-frame-shell">
+                                <img id="sebMonitorFrame" class="seb-monitor-frame" alt="Frame do SEB" hidden />
+                                <div class="empty seb-monitor-empty" id="sebMonitorEmpty">Assim que o Safe Exam Browser publicar frames, a visualização aparece aqui.</div>
+                            </div>
+                        </div>
+
+                        <aside class="seb-monitor-side">
+                            <div class="seb-monitor-header-copy">
                                 <h2 id="sebMonitorTitle">Aguardando sessão</h2>
                                 <div class="panel-subtitle" id="sebMonitorMeta">Nenhuma sessão ativa.</div>
                             </div>
-                            <div class="chat-status-pill neutral" id="sebMonitorStatus">offline</div>
-                        </div>
-                        <div class="inline-actions seb-monitor-tabs" id="sebMonitorViewTabs"></div>
-                        <div class="seb-monitor-frame-shell">
-                            <img id="sebMonitorFrame" class="seb-monitor-frame" alt="Frame do SEB" hidden />
-                            <div class="empty seb-monitor-empty" id="sebMonitorEmpty">Assim que o Safe Exam Browser publicar frames, a visualização aparece aqui.</div>
-                        </div>
-                        <div class="kv-grid seb-monitor-details" id="sebMonitorDetails"></div>
-                    </section>
-                </div>
 
-                <section class="panel">
-                    <div class="panel-head">
-                        <div>
-                            <div class="eyebrow">ALERTA REMOTO</div>
-                            <h2>Enviar popup</h2>
-                            <div class="panel-subtitle">A mensagem vai para a sessão e, quando possível, para a view ativa selecionada.</div>
-                        </div>
+                            <div class="project-kpis seb-monitor-kpis" id="sebMonitorKpis"></div>
+                            <div class="stack-list seb-monitor-session-list" id="sebMonitorSessionList"></div>
+                            <div class="inline-actions seb-monitor-tabs" id="sebMonitorViewTabs"></div>
+                            <div class="kv-grid seb-monitor-details" id="sebMonitorDetails"></div>
+
+                            <div class="seb-monitor-alert-box">
+                                <div class="eyebrow">ALERTA REMOTO</div>
+                                <div class="panel-subtitle">A mensagem vai para a sessão e, quando possível, para a view ativa.</div>
+                                <div class="form-grid seb-monitor-alert-grid">
+                                    <label class="field seb-monitor-alert-message">
+                                        <span>Mensagem</span>
+                                        <input id="sebMonitorAlertMessage" type="text" maxlength="180" placeholder="Ex.: Aguarde a liberação do fiscal." />
+                                    </label>
+                                    <label class="field">
+                                        <span>Posição</span>
+                                        <select id="sebMonitorAlertPosition">
+                                            <option value="top-right">top-right</option>
+                                            <option value="top-left">top-left</option>
+                                            <option value="bottom-right">bottom-right</option>
+                                            <option value="bottom-left">bottom-left</option>
+                                        </select>
+                                    </label>
+                                    <label class="field">
+                                        <span>Duração</span>
+                                        <input id="sebMonitorAlertDuration" type="number" min="250" max="10000" step="250" value="3000" />
+                                    </label>
+                                    <div class="inline-actions seb-monitor-alert-actions">
+                                        <button class="primary-button" id="sebMonitorSendAlertButton" type="button">Enviar alerta</button>
+                                    </div>
+                                </div>
+                                <div class="chat-hint" id="sebMonitorAlertStatus">Selecione uma sessão e escreva a mensagem do alerta.</div>
+                            </div>
+                        </aside>
                     </div>
-                    <div class="form-grid seb-monitor-alert-grid">
-                        <label class="field">
-                            <span>Mensagem</span>
-                            <input id="sebMonitorAlertMessage" type="text" maxlength="180" placeholder="Ex.: Aguarde a liberação do fiscal." />
-                        </label>
-                        <label class="field">
-                            <span>Posição</span>
-                            <select id="sebMonitorAlertPosition">
-                                <option value="top-right">top-right</option>
-                                <option value="top-left">top-left</option>
-                                <option value="bottom-right">bottom-right</option>
-                                <option value="bottom-left">bottom-left</option>
-                            </select>
-                        </label>
-                        <label class="field">
-                            <span>Duração</span>
-                            <input id="sebMonitorAlertDuration" type="number" min="250" max="10000" step="250" value="3000" />
-                        </label>
-                        <div class="inline-actions seb-monitor-alert-actions">
-                            <button class="primary-button" id="sebMonitorSendAlertButton" type="button">Enviar alerta</button>
-                        </div>
-                    </div>
-                    <div class="chat-hint" id="sebMonitorAlertStatus">Selecione uma sessão e escreva a mensagem do alerta.</div>
                 </section>
             </section>
 
@@ -1433,6 +1432,6 @@
     <div id="toastStack" class="toast-stack"></div>
     {% endif %}
 
-    <script src="static/app.js?v=20260418-mobile-drawer"></script>
+    <script src="static/app.js?v=20260418-seb-compact"></script>
 </body>
 </html>
