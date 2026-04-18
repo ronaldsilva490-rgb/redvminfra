@@ -1167,6 +1167,36 @@ function renderDashboard() {
     .insights { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .insight strong { font-size: 17px; line-height: 1.35; word-break: break-word; }
     .command-panel h3, .stage-header h3 { margin: 0; font-size: 18px; }
+    .stage-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: end;
+      justify-content: flex-end;
+    }
+    .field-inline {
+      min-width: 170px;
+    }
+    .field-inline label {
+      margin-bottom: 6px;
+    }
+    .ghost-button {
+      height: 44px;
+      border: 1px solid rgba(232,228,227,0.08);
+      border-radius: 14px;
+      padding: 0 16px;
+      color: var(--text);
+      font-weight: 700;
+      cursor: pointer;
+      background: rgba(232,228,227,0.06);
+      box-shadow: 0 10px 24px rgba(12, 0, 0, 0.18);
+      white-space: nowrap;
+    }
+    .ghost-button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
     .command-grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr) 160px 140px auto;
@@ -1347,7 +1377,20 @@ function renderDashboard() {
       align-items: center;
       justify-content: center;
     }
-    .frame img { width: 100%; height: auto; display: block; border-radius: 18px; }
+    .frame[data-size-mode="auto"] img {
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 18px;
+    }
+    .frame[data-size-mode="manual"] img {
+      width: var(--frame-manual-width, 100%);
+      max-width: none;
+      height: auto;
+      display: block;
+      border-radius: 18px;
+    }
     .frame-empty {
       max-width: 580px;
       text-align: center;
@@ -1358,6 +1401,11 @@ function renderDashboard() {
     .toolbar {
       padding-top: 2px;
     }
+    .toolbar-left {
+      display: grid;
+      gap: 6px;
+      align-items: start;
+    }
     .toolbar code {
       color: var(--text);
       background: rgba(232,228,227,0.08);
@@ -1366,6 +1414,11 @@ function renderDashboard() {
       border-radius: 10px;
     }
     .live { color: var(--text); font-size: 13px; display: inline-flex; align-items: center; gap: 8px; }
+    .frame-copy-status {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
     @media (max-width: 1200px) {
       .shell { grid-template-columns: 1fr; }
       .sidebar {
@@ -1381,6 +1434,14 @@ function renderDashboard() {
       .shell { padding: 12px; }
       .summary, .insights, .command-grid, .download-grid, .committee-config-grid { grid-template-columns: 1fr; }
       .hero-top, .stage-header, .toolbar { flex-direction: column; align-items: start; }
+      .stage-actions {
+        width: 100%;
+        justify-content: stretch;
+      }
+      .field-inline,
+      .ghost-button {
+        width: 100%;
+      }
       .frame { min-height: 280px; }
     }
   </style>
@@ -1451,16 +1512,33 @@ function renderDashboard() {
             <h3>Viewport Remoto</h3>
             <p>Espelhamento visual por aba ou janela do SEB. Quando uma nova view é aberta, ela aparece abaixo em uma navegação parecida com abas.</p>
           </div>
+          <div class="stage-actions">
+            <label class="field field-inline">
+              <span>Tamanho da frame</span>
+              <select id="viewer-frame-size">
+                <option value="auto">Automático</option>
+                <option value="70">70%</option>
+                <option value="85">85%</option>
+                <option value="100">100%</option>
+                <option value="120">120%</option>
+                <option value="140">140%</option>
+              </select>
+            </label>
+            <button class="ghost-button" id="copy-frame-button" type="button" disabled>Copiar frame</button>
+          </div>
         </div>
         <div class="view-tabs" id="view-tabs"></div>
-        <div class="frame">
+        <div class="frame" id="viewer-frame-shell" data-size-mode="auto">
           <img id="viewer-image" alt="Viewport do SEB" hidden>
           <div id="empty-state" class="frame-empty">
             Assim que o Safe Exam Browser publicar frames em <code>/seb-live</code>, o dashboard exibirá a sessão aqui com visualização em tempo real.
           </div>
         </div>
         <div class="toolbar">
-          <div class="live"><span class="dot"></span><strong>Live</strong><span id="connected-at">sem sessão ativa</span></div>
+          <div class="toolbar-left">
+            <div class="live"><span class="dot"></span><strong>Live</strong><span id="connected-at">sem sessão ativa</span></div>
+            <div class="frame-copy-status" id="frame-copy-status">Nenhuma frame pronta para copiar.</div>
+          </div>
           <div><code>/seb-live</code> <code>/api/sessions</code> <code>/api/alert</code> <code>/downloads/REDSEBPortable.zip</code></div>
         </div>
       </section>
@@ -1556,8 +1634,12 @@ function renderDashboard() {
     const viewerTitle = document.getElementById("viewer-title");
     const viewerUrl = document.getElementById("viewer-url");
     const viewerStatus = document.getElementById("viewer-status");
+    const viewerFrameShell = document.getElementById("viewer-frame-shell");
     const viewerImage = document.getElementById("viewer-image");
     const emptyState = document.getElementById("empty-state");
+    const viewerFrameSize = document.getElementById("viewer-frame-size");
+    const copyFrameButton = document.getElementById("copy-frame-button");
+    const frameCopyStatus = document.getElementById("frame-copy-status");
     const viewTabs = document.getElementById("view-tabs");
     const heroLastUpdate = document.getElementById("hero-last-update");
     const connectedAt = document.getElementById("connected-at");
@@ -1580,6 +1662,7 @@ function renderDashboard() {
     const committeeFrameImage = document.getElementById("committee-frame-image");
     const committeeFrameEmpty = document.getElementById("committee-frame-empty");
     const ALERT_POSITION_KEY = "redseb.monitor.alertPosition.v1";
+    const FRAME_SIZE_KEY = "redseb.monitor.frameSize.v1";
     const COMMITTEE_MODELS_KEY = "redseb.committee.models.v2";
     let activeSessionId = null;
     let activeViewId = null;
@@ -1619,12 +1702,62 @@ function renderDashboard() {
       return "data:" + mimeType + ";base64," + base64;
     }
 
+    function normalizeFrameSize(value) {
+      const normalized = String(value || "auto").trim().toLowerCase();
+      return ["auto", "70", "85", "100", "120", "140"].includes(normalized) ? normalized : "auto";
+    }
+
+    function updateCopyFrameAvailability(message) {
+      const hasFrame = Boolean(viewerImage && !viewerImage.hidden && viewerImage.getAttribute("src"));
+      if (copyFrameButton) {
+        copyFrameButton.disabled = !hasFrame;
+      }
+      if (frameCopyStatus && message !== undefined) {
+        frameCopyStatus.textContent = message;
+      }
+    }
+
+    function applyFrameSize(value) {
+      const normalized = normalizeFrameSize(value);
+      if (viewerFrameSize) {
+        viewerFrameSize.value = normalized;
+      }
+      if (viewerFrameShell) {
+        if (normalized === "auto") {
+          viewerFrameShell.dataset.sizeMode = "auto";
+          viewerFrameShell.style.removeProperty("--frame-manual-width");
+        } else {
+          viewerFrameShell.dataset.sizeMode = "manual";
+          viewerFrameShell.style.setProperty("--frame-manual-width", normalized + "%");
+        }
+      }
+    }
+
+    function hydrateFrameSizePreference() {
+      try {
+        applyFrameSize(window.localStorage.getItem(FRAME_SIZE_KEY) || "auto");
+      } catch {
+        applyFrameSize("auto");
+      }
+    }
+
+    function persistFrameSize(value) {
+      const normalized = normalizeFrameSize(value);
+      applyFrameSize(normalized);
+      try {
+        window.localStorage.setItem(FRAME_SIZE_KEY, normalized);
+      } catch {
+        // ignore
+      }
+    }
+
     function renderViewerFrame(base64) {
       const value = String(base64 || "").trim();
       if (!value) {
         viewerImage.hidden = true;
         viewerImage.removeAttribute("src");
         emptyState.hidden = false;
+        updateCopyFrameAvailability("Nenhuma frame pronta para copiar.");
         return;
       }
 
@@ -1643,6 +1776,7 @@ function renderDashboard() {
           if (token !== frameRenderToken) return;
           viewerImage.hidden = false;
           emptyState.hidden = true;
+          updateCopyFrameAvailability("Frame pronta para copiar.");
         };
         viewerImage.onerror = () => {
           if (token !== frameRenderToken) return;
@@ -1655,6 +1789,7 @@ function renderDashboard() {
           viewerImage.removeAttribute("src");
           emptyState.hidden = false;
           emptyState.textContent = "A frame chegou, mas o navegador nao conseguiu renderizar a imagem desta view.";
+          updateCopyFrameAvailability("A frame atual nao pode ser copiada.");
         };
         viewerImage.src = buildImageDataUrl(value, mime);
       };
@@ -1662,7 +1797,38 @@ function renderDashboard() {
       viewerImage.hidden = true;
       emptyState.hidden = false;
       emptyState.textContent = "Carregando frame da view selecionada...";
+      updateCopyFrameAvailability("Preparando frame para copia...");
       tryLoad();
+    }
+
+    async function copyCurrentFrame() {
+      const src = viewerImage && viewerImage.getAttribute("src");
+      if (!src || viewerImage.hidden) {
+        updateCopyFrameAvailability("Nenhuma frame pronta para copiar.");
+        return;
+      }
+
+      if (!navigator.clipboard || typeof navigator.clipboard.write !== "function" || typeof window.ClipboardItem === "undefined") {
+        updateCopyFrameAvailability("Este navegador nao suporta copiar imagem direto.");
+        return;
+      }
+
+      copyFrameButton.disabled = true;
+      frameCopyStatus.textContent = "Copiando frame...";
+
+      try {
+        const response = await fetch(src);
+        const blob = await response.blob();
+        const mimeType = blob.type || "image/png";
+        await navigator.clipboard.write([
+          new window.ClipboardItem({ [mimeType]: blob })
+        ]);
+        frameCopyStatus.textContent = "Frame copiada para a area de transferencia.";
+      } catch {
+        frameCopyStatus.textContent = "Nao foi possivel copiar a frame atual.";
+      } finally {
+        updateCopyFrameAvailability();
+      }
     }
 
     function parseDownloadFilename(response, fallbackName) {
@@ -1878,7 +2044,9 @@ function renderDashboard() {
         sendAlertButton.disabled = true;
         viewTabs.innerHTML = "";
         viewerImage.hidden = true;
+        viewerImage.removeAttribute("src");
         emptyState.hidden = false;
+        updateCopyFrameAvailability("Nenhuma frame pronta para copiar.");
         return;
       }
 
@@ -1957,6 +2125,7 @@ function renderDashboard() {
         viewerImage.removeAttribute("src");
         emptyState.hidden = false;
         emptyState.textContent = "Assim que o Safe Exam Browser publicar frames em /seb-live, o dashboard exibira a sessao aqui com visualizacao em tempo real.";
+        updateCopyFrameAvailability("Nenhuma frame pronta para copiar.");
       }
     }
 
@@ -2218,12 +2387,15 @@ function renderDashboard() {
 
     refresh();
     hydrateAlertPreferences();
+    hydrateFrameSizePreference();
     loadCommitteeCatalog().catch((error) => {
       committeeStatus.textContent = error.message;
     });
     setInterval(refresh, 1000);
     sendAlertButton.addEventListener("click", sendAlert);
     alertPosition.addEventListener("change", () => persistAlertPosition(alertPosition.value));
+    viewerFrameSize.addEventListener("change", () => persistFrameSize(viewerFrameSize.value));
+    copyFrameButton.addEventListener("click", copyCurrentFrame);
     downloadBatButton.addEventListener("click", downloadBat);
     committeeRunButton.addEventListener("click", runCommitteeAnalysis);
     [committeeVisionPrimary, committeeVisionFallback, committeeTextA, committeeTextB, committeeTextC].forEach((node) => {
