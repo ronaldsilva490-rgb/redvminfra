@@ -34,6 +34,8 @@ Rotas operacionais principais:
 - `GET /api/sessions`
 - `GET /api/summary`
 - `POST /api/alert`
+- `POST /api/debug/fake-frame`
+- `POST /api/debug/session/clear`
 - `POST /api/generate-bat`
 - `GET /downloads/Setup.msi`
 - `GET /downloads/SetupBundle.exe`
@@ -61,6 +63,9 @@ Variaveis principais:
 - `RED_DASHBOARD_DIR`
 - `REDIA_DIR`
 - `RED_PORTAL_DIR`
+- `RED_SEB_DEBUG_TOKEN`
+
+O `RED_SEB_DEBUG_TOKEN` protege os endpoints de injecao de frame para debug. Se ele estiver vazio, apenas requests vindos do loopback local conseguem usar esses endpoints.
 
 ## Rodar localmente
 
