@@ -41,6 +41,39 @@ Rotas operacionais principais:
 - `GET /downloads/REDSEBPortable.zip`
 - `GET /downloads/upgrade-seb.ps1`
 
+## Alerta automatico no WhatsApp
+
+O monitor pode disparar um webhook toda vez que uma **sessao nova** aparece pela primeira vez no `/seb-live`.
+
+Trilho oficial:
+
+1. `server.js` envia `seb_session_new` para `SEB_SESSION_WEBHOOK_URL`
+2. `red-seb-webhook.service` recebe esse POST em `127.0.0.1:2590`
+3. `webhook-whatsapp.js` envia a mensagem real pelo `openclaw message send`
+
+Payload enviado pelo monitor:
+
+- `sessionId`
+- `application`
+- `connectedAt`
+- `timestamp`
+- `remoteAddress`
+- `panelUrl`
+- `viewsCount`
+- `primaryView.viewId`
+- `primaryView.title`
+- `primaryView.url`
+- `primaryView.width`
+- `primaryView.height`
+- `primaryView.hasFrame`
+
+Arquivos oficiais:
+
+- [server.js](C:/Projetos/redvm/servicos/redseb-monitor/server.js)
+- [webhook-whatsapp.js](C:/Projetos/redvm/servicos/redseb-monitor/webhook-whatsapp.js)
+- [red-seb-webhook.service](C:/Projetos/redvm/infraestrutura/systemd/red-seb-webhook.service)
+- [webhook.env.example](C:/Projetos/redvm/servicos/redseb-monitor/webhook.env.example)
+
 ## Dependencias
 
 - Node.js 20+
@@ -63,8 +96,26 @@ Variaveis principais:
 - `REDIA_DIR`
 - `RED_PORTAL_DIR`
 - `RED_SEB_SESSION_STALE_MS`
+- `RED_SEB_PUBLIC_URL`
+- `SEB_SESSION_WEBHOOK_URL`
 
 `RED_SEB_SESSION_STALE_MS` controla por quanto tempo o monitor mantem a ultima frame de uma sessao depois que o socket fecha. Isso ajuda a nao perder a visualizacao por oscilacoes curtas.
+
+Para o webhook do WhatsApp, use tambem:
+
+```bash
+cp servicos/redseb-monitor/webhook.env.example /etc/red-seb-webhook.env
+```
+
+Variaveis do webhook:
+
+- `SEB_WEBHOOK_PORT`
+- `SEB_WHATSAPP_TARGET`
+- `OPENCLAW_BIN`
+- `OPENCLAW_CHANNEL`
+- `OPENCLAW_HOME`
+- `OPENCLAW_PATH`
+- `RED_SEB_PUBLIC_URL`
 
 ## Rodar localmente
 
@@ -114,8 +165,10 @@ mkdir -p /opt/red-seb-monitor/data/downloads
 
 ```bash
 cp infraestrutura/systemd/red-seb-monitor.service /etc/systemd/system/red-seb-monitor.service
+cp infraestrutura/systemd/red-seb-webhook.service /etc/systemd/system/red-seb-webhook.service
 systemctl daemon-reload
 systemctl enable --now red-seb-monitor
+systemctl enable --now red-seb-webhook
 ```
 
 6. Publique a porta `2580` apenas se o monitor remoto realmente precisar ficar acessivel de fora.
@@ -124,7 +177,9 @@ systemctl enable --now red-seb-monitor
 
 ```bash
 node --check /opt/red-seb-monitor/server.js
+node --check /opt/red-seb-monitor/webhook-whatsapp.js
 systemctl is-active red-seb-monitor
+systemctl is-active red-seb-webhook
 curl -s http://127.0.0.1:2580/healthz | python3 -m json.tool
 curl -s http://127.0.0.1:2580/api/summary | python3 -m json.tool
 ```

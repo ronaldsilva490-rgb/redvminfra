@@ -1,0 +1,23 @@
+[Unit]
+Description=SEB Session Webhook to WhatsApp
+After=network-online.target red-openclaw.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=openclaw
+Group=openclaw
+WorkingDirectory=/opt/red-seb-monitor
+Environment=SEB_WEBHOOK_PORT=2590
+Environment=OPENCLAW_BIN=/usr/local/bin/openclaw
+Environment=OPENCLAW_CHANNEL=whatsapp
+Environment=OPENCLAW_HOME=/home/openclaw
+Environment=OPENCLAW_PATH=/opt/red-openclaw/node/bin:/opt/red-openclaw/npm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=RED_SEB_PUBLIC_URL=http://redsystems.ddns.net:2580
+EnvironmentFile=-/etc/red-seb-webhook.env
+ExecStart=/usr/bin/node /opt/red-seb-monitor/webhook-whatsapp.js
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

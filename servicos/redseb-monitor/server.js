@@ -19,6 +19,9 @@ const committeeDefaultTextA = process.env.RED_SEB_COMMITTEE_TEXT_A || process.en
 const committeeDefaultTextB = process.env.RED_SEB_COMMITTEE_TEXT_B || "NIM - meta/llama-4-maverick-17b-128e-instruct";
 const committeeDefaultTextC = process.env.RED_SEB_COMMITTEE_TEXT_C || "gpt-oss:120b";
 const sessionStaleMs = Math.max(1000, Number(process.env.RED_SEB_SESSION_STALE_MS || 5000));
+const sessionWebhookUrl = String(process.env.SEB_SESSION_WEBHOOK_URL || "").trim();
+const sessionWebhookEnabled = Boolean(sessionWebhookUrl);
+const publicPanelUrl = String(process.env.RED_SEB_PUBLIC_URL || "http://redsystems.ddns.net:2580").trim();
 const sessions = new Map();
 const committeeRuns = new Map();
 const downloadCandidates = {
@@ -357,6 +360,67 @@ function sendAlertToSession(sessionId, alert) {
   return true;
 }
 
+function orderedViewsForSession(session) {
+  return Array.from((session?.views || new Map()).values())
+    .sort((left, right) => {
+      if (left.isMainWindow !== right.isMainWindow) {
+        return left.isMainWindow ? -1 : 1;
+      }
+
+      if (left.windowId !== right.windowId) {
+        return left.windowId - right.windowId;
+      }
+
+      return String(right.timestamp).localeCompare(String(left.timestamp));
+    });
+}
+
+async function notifyNewSession(sessionId, session) {
+  if (!sessionWebhookEnabled) {
+    return;
+  }
+
+  const views = orderedViewsForSession(session);
+  const primaryView = views[0] || {};
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch(sessionWebhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "seb_session_new",
+        sessionId,
+        application: session.application || "SafeExamBrowser",
+        connectedAt: session.connectedAt || now(),
+        timestamp: session.timestamp || now(),
+        remoteAddress: session.remoteAddress || "N/A",
+        panelUrl: publicPanelUrl,
+        viewsCount: views.length,
+        primaryView: {
+          viewId: primaryView.viewId || "",
+          title: primaryView.title || "",
+          url: primaryView.url || "",
+          width: primaryView.width || 0,
+          height: primaryView.height || 0,
+          hasFrame: Boolean(primaryView.imageBase64)
+        }
+      }),
+      signal: controller.signal
+    });
+    const responseText = await response.text();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}${responseText ? `: ${responseText.slice(0, 240)}` : ""}`);
+    }
+    console.log("Webhook de nova sessao enviado:", sessionId);
+  } catch (error) {
+    console.error("Falha no webhook de nova sessao:", error.message);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function createViewState(payload) {
   const windowId = Number(pick(payload, "windowId", "WindowId") || 0);
 
@@ -392,6 +456,7 @@ function ensureSession(sessionId, request, socket, payload) {
 
 function ingestSebPayload(payload, request, socket = null) {
   const sessionId = String(pick(payload, "sessionId", "SessionId") || `session-${Date.now()}`);
+  const isNewSession = !sessions.has(sessionId);
   const current = ensureSession(sessionId, request, socket, payload);
   const view = createViewState(payload);
 
@@ -411,6 +476,11 @@ function ingestSebPayload(payload, request, socket = null) {
   current.views.set(view.viewId, view);
   current.timestamp = view.timestamp;
   sessions.set(sessionId, current);
+  if (isNewSession && sessionWebhookEnabled) {
+    notifyNewSession(sessionId, current).catch((error) => {
+      console.error("Falha inesperada ao disparar webhook de nova sessao:", error.message);
+    });
+  }
   return { sessionId, viewId: view.viewId };
 }
 
