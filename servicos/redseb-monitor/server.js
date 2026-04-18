@@ -18,7 +18,7 @@ const committeeDefaultVisionFallback = process.env.RED_SEB_COMMITTEE_VISION_FALL
 const committeeDefaultTextA = process.env.RED_SEB_COMMITTEE_TEXT_A || process.env.RED_SEB_COMMITTEE_LEAD || "NIM - nvidia/llama-3.1-nemotron-nano-8b-v1";
 const committeeDefaultTextB = process.env.RED_SEB_COMMITTEE_TEXT_B || "NIM - abacusai/dracarys-llama-3.1-70b-instruct";
 const committeeDefaultTextC = process.env.RED_SEB_COMMITTEE_TEXT_C || "NIM - z-ai/glm5";
-const sessionStaleMs = Math.max(60000, Number(process.env.RED_SEB_SESSION_STALE_MS || 300000));
+const sessionStaleMs = Math.max(1000, Number(process.env.RED_SEB_SESSION_STALE_MS || 5000));
 const sessions = new Map();
 const committeeRuns = new Map();
 const downloadCandidates = {
@@ -278,7 +278,6 @@ function downloadFilenameFromSeb(normalized) {
 
 function getSessionState() {
   return Array.from(sessions.values())
-    .sort((left, right) => String(right.timestamp).localeCompare(String(left.timestamp)))
     .map((session) => {
       const views = Array.from((session.views || new Map()).values())
         .sort((left, right) => {
@@ -315,11 +314,18 @@ function getSessionState() {
 function getSummary() {
   const items = getSessionState();
   const withFrames = items.reduce((total, item) => total + item.views.filter((view) => view.imageBase64).length, 0);
+  const lastUpdate = Array.from(sessions.values()).reduce((latest, session) => {
+    const value = String(session.timestamp || "");
+    if (!latest) {
+      return value;
+    }
+    return value.localeCompare(latest) > 0 ? value : latest;
+  }, "");
 
   return {
     activeSessions: items.length,
     sessionsWithFrames: withFrames,
-    lastUpdate: items[0] ? items[0].timestamp : null
+    lastUpdate: lastUpdate || null
   };
 }
 
@@ -2928,7 +2934,7 @@ wss.on("connection", (socket, request) => {
   });
 });
 
-setInterval(pruneStaleSessions, 30000).unref();
+setInterval(pruneStaleSessions, Math.min(sessionStaleMs, 1000)).unref();
 
 server.listen(port, host, () => {
   console.log(`seb-remote-view listening on http://${host}:${port}`);
