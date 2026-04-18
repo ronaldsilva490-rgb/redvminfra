@@ -89,6 +89,7 @@ PROXY_NVIDIA_LEGACY_SUFFIX = " (NVIDIA)"
 PROXY_IMAGE_MODEL_HINTS = ("flux", "stable-diffusion")
 REDIA_URL = os.getenv("REDIA_URL", "http://127.0.0.1:3099").rstrip("/")
 REDIA_ADMIN_TOKEN = os.getenv("REDIA_ADMIN_TOKEN", "").strip()
+SEB_MONITOR_URL = os.getenv("RED_SEB_MONITOR_URL", "http://127.0.0.1:2580").rstrip("/")
 IMPORTANT_SYSTEMD_UNITS = {
     "nginx.service",
     "docker.service",
@@ -552,6 +553,45 @@ def redia_request_json(path: str, *, method: str = "GET", payload: dict[str, Any
         return exc.code, parsed
     except urllib.error.URLError as exc:
         return 0, {"error": str(exc.reason)}
+
+
+def seb_monitor_request_json(path: str, *, method: str = "GET", payload: dict[str, Any] | None = None, timeout: int = 20) -> tuple[int, Any]:
+    data = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(f"{SEB_MONITOR_URL}{path}", data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = response.read().decode("utf-8", errors="replace")
+            return response.status, json.loads(body) if body else {}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            parsed = {"raw": body}
+        return exc.code, parsed
+    except urllib.error.URLError as exc:
+        return 0, {"error": str(exc.reason)}
+
+
+def seb_monitor_snapshot() -> dict[str, Any]:
+    summary_code, summary_payload = seb_monitor_request_json("/api/summary", timeout=15)
+    sessions_code, sessions_payload = seb_monitor_request_json("/api/sessions", timeout=20)
+    sessions = sessions_payload if isinstance(sessions_payload, list) else []
+    summary = summary_payload if isinstance(summary_payload, dict) else {}
+    return {
+        "ok": summary_code == 200 and sessions_code == 200,
+        "service_url": SEB_MONITOR_URL,
+        "summary": summary,
+        "sessions": sessions,
+        "health": {
+            "summary_code": summary_code,
+            "sessions_code": sessions_code,
+        },
+    }
 
 
 def redia_snapshot() -> dict[str, Any]:
@@ -5333,6 +5373,7 @@ async def api_bootstrap(request: Request) -> JSONResponse:
         "firewall": await asyncio.to_thread(firewall_snapshot),
         "proxy": await asyncio.to_thread(proxy_snapshot_safe),
         "redia": await asyncio.to_thread(redia_snapshot),
+        "seb_monitor": await asyncio.to_thread(seb_monitor_snapshot),
         "journal": list(app.state.journal_lines),
         "proxy_logs": list(app.state.proxy_log_lines),
         "projects": projects_payload,
@@ -5354,6 +5395,36 @@ async def api_bootstrap(request: Request) -> JSONResponse:
 async def api_files(request: Request, path: str | None = None) -> JSONResponse:
     ensure_authenticated(request)
     return JSONResponse(list_directory(path))
+
+
+@app.get("/api/seb-monitor")
+async def api_seb_monitor(request: Request) -> JSONResponse:
+    ensure_authenticated(request)
+    return JSONResponse(await asyncio.to_thread(seb_monitor_snapshot))
+
+
+@app.post("/api/seb-monitor/alert")
+async def api_seb_monitor_alert(request: Request) -> JSONResponse:
+    ensure_authenticated(request)
+    payload = await request.json()
+    body = {
+        "sessionId": str(payload.get("sessionId", "") or "").strip(),
+        "message": str(payload.get("message", "") or "").strip(),
+        "position": str(payload.get("position", "") or "").strip() or "top-right",
+        "durationMs": int(payload.get("durationMs", 3000) or 3000),
+        "viewId": str(payload.get("viewId", "") or "").strip() or None,
+    }
+    status_code, response_payload = await asyncio.to_thread(
+        seb_monitor_request_json,
+        "/api/alert",
+        method="POST",
+        payload=body,
+        timeout=20,
+    )
+    if status_code != 200:
+        detail = response_payload.get("error") if isinstance(response_payload, dict) else None
+        raise HTTPException(status_code=status_code or 502, detail=detail or "Falha ao enviar alerta para o SEB Monitor.")
+    return JSONResponse(response_payload if isinstance(response_payload, dict) else {"ok": True})
 
 
 @app.get("/api/file")

@@ -518,7 +518,73 @@
                 </section>
             </section>
 
-            {% for service_view in stack_service_views %}
+            <section class="view" id="view-redseb_monitor">
+                <div class="panel-grid panel-grid-two seb-monitor-grid">
+                    <section class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <div class="eyebrow">SEB AO VIVO</div>
+                                <h2>Monitor simples</h2>
+                                <div class="panel-subtitle">Sessões, tabs de view, frame atual e envio de alerta sem sair do dashboard.</div>
+                            </div>
+                            <button class="ghost-button" id="sebMonitorRefreshButton" type="button">Atualizar</button>
+                        </div>
+                        <div class="project-kpis seb-monitor-kpis" id="sebMonitorKpis"></div>
+                        <div class="stack-list seb-monitor-session-list" id="sebMonitorSessionList"></div>
+                    </section>
+
+                    <section class="panel stretch-panel">
+                        <div class="panel-head seb-monitor-head">
+                            <div>
+                                <h2 id="sebMonitorTitle">Aguardando sessão</h2>
+                                <div class="panel-subtitle" id="sebMonitorMeta">Nenhuma sessão ativa.</div>
+                            </div>
+                            <div class="chat-status-pill neutral" id="sebMonitorStatus">offline</div>
+                        </div>
+                        <div class="inline-actions seb-monitor-tabs" id="sebMonitorViewTabs"></div>
+                        <div class="seb-monitor-frame-shell">
+                            <img id="sebMonitorFrame" class="seb-monitor-frame" alt="Frame do SEB" hidden />
+                            <div class="empty seb-monitor-empty" id="sebMonitorEmpty">Assim que o Safe Exam Browser publicar frames, a visualização aparece aqui.</div>
+                        </div>
+                        <div class="kv-grid seb-monitor-details" id="sebMonitorDetails"></div>
+                    </section>
+                </div>
+
+                <section class="panel">
+                    <div class="panel-head">
+                        <div>
+                            <div class="eyebrow">ALERTA REMOTO</div>
+                            <h2>Enviar popup</h2>
+                            <div class="panel-subtitle">A mensagem vai para a sessão e, quando possível, para a view ativa selecionada.</div>
+                        </div>
+                    </div>
+                    <div class="form-grid seb-monitor-alert-grid">
+                        <label class="field">
+                            <span>Mensagem</span>
+                            <input id="sebMonitorAlertMessage" type="text" maxlength="180" placeholder="Ex.: Aguarde a liberação do fiscal." />
+                        </label>
+                        <label class="field">
+                            <span>Posição</span>
+                            <select id="sebMonitorAlertPosition">
+                                <option value="top-right">top-right</option>
+                                <option value="top-left">top-left</option>
+                                <option value="bottom-right">bottom-right</option>
+                                <option value="bottom-left">bottom-left</option>
+                            </select>
+                        </label>
+                        <label class="field">
+                            <span>Duração</span>
+                            <input id="sebMonitorAlertDuration" type="number" min="250" max="10000" step="250" value="3000" />
+                        </label>
+                        <div class="inline-actions seb-monitor-alert-actions">
+                            <button class="primary-button" id="sebMonitorSendAlertButton" type="button">Enviar alerta</button>
+                        </div>
+                    </div>
+                    <div class="chat-hint" id="sebMonitorAlertStatus">Selecione uma sessão e escreva a mensagem do alerta.</div>
+                </section>
+            </section>
+
+            {% for service_view in stack_service_views if service_view.view != "redseb_monitor" %}
             <section class="view" id="view-{{ service_view.view }}">
                 <div class="stack-service-host" data-stack-service-host="{{ service_view.stack_id }}"></div>
             </section>

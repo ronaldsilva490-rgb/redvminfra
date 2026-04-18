@@ -7,6 +7,7 @@ const state = {
     firewall: { enabled: false, raw: [] },
     proxy: null,
     redia: null,
+    sebMonitor: null,
     whatsapp: null,
     stack: [],
     repoLayout: [],
@@ -801,6 +802,113 @@ function renderStackServiceViews() {
             </section>
         `;
     });
+}
+
+function normalizeSebMonitorPayload(payload = {}) {
+    const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+    const summary = payload.summary && typeof payload.summary === "object" ? payload.summary : {};
+    const selectedSessionId = String(state.sebMonitor?.selectedSessionId || "");
+    const activeSession = sessions.find((session) => session.sessionId === selectedSessionId) || sessions[0] || null;
+    const selectedViewId = String(state.sebMonitor?.selectedViewId || "");
+    const views = Array.isArray(activeSession?.views) ? activeSession.views : [];
+    const activeView = views.find((view) => String(view.viewId || "") === selectedViewId) || views[0] || null;
+    return {
+        ok: Boolean(payload.ok),
+        serviceUrl: String(payload.service_url || ""),
+        summary,
+        sessions,
+        health: payload.health || {},
+        selectedSessionId: activeSession ? String(activeSession.sessionId || "") : "",
+        selectedViewId: activeView ? String(activeView.viewId || "") : "",
+    };
+}
+
+function selectSebMonitorSession(sessionId, viewId = "") {
+    const current = normalizeSebMonitorPayload(state.sebMonitor || {});
+    current.selectedSessionId = String(sessionId || "");
+    current.selectedViewId = String(viewId || "");
+    state.sebMonitor = normalizeSebMonitorPayload(current);
+    renderSebMonitor();
+}
+
+function renderSebMonitor() {
+    const kpis = qs("#sebMonitorKpis");
+    const list = qs("#sebMonitorSessionList");
+    const title = qs("#sebMonitorTitle");
+    const meta = qs("#sebMonitorMeta");
+    const status = qs("#sebMonitorStatus");
+    const tabs = qs("#sebMonitorViewTabs");
+    const frame = qs("#sebMonitorFrame");
+    const empty = qs("#sebMonitorEmpty");
+    const details = qs("#sebMonitorDetails");
+    const alertStatus = qs("#sebMonitorAlertStatus");
+    if (!kpis || !list || !title || !meta || !status || !tabs || !frame || !empty || !details || !alertStatus) return;
+
+    const seb = normalizeSebMonitorPayload(state.sebMonitor || {});
+    state.sebMonitor = seb;
+    const sessions = seb.sessions;
+    const activeSession = sessions.find((session) => String(session.sessionId || "") === seb.selectedSessionId) || sessions[0] || null;
+    const views = Array.isArray(activeSession?.views) ? activeSession.views : [];
+    const activeView = views.find((view) => String(view.viewId || "") === seb.selectedViewId) || views[0] || null;
+    const lastUpdate = activeSession?.timestamp || seb.summary?.lastUpdate || "";
+    const frames = Number(seb.summary?.sessionsWithFrames || sessions.reduce((total, session) => total + ((session.views || []).filter((view) => view.imageBase64).length), 0));
+
+    kpis.innerHTML = `
+        <article class="project-kpi"><strong>${sessions.length}</strong><span>sessoes ativas</span></article>
+        <article class="project-kpi"><strong>${frames}</strong><span>frames validos</span></article>
+        <article class="project-kpi"><strong>${lastUpdate ? formatDate(lastUpdate) : "n/d"}</strong><span>ultima atualizacao</span></article>
+    `;
+
+    list.innerHTML = sessions.length ? sessions.map((session) => {
+        const isActive = String(session.sessionId || "") === String(activeSession?.sessionId || "");
+        const viewCount = Array.isArray(session.views) ? session.views.length : 0;
+        const hasFrame = Array.isArray(session.views) && session.views.some((view) => view.imageBase64);
+        return `
+            <button class="seb-monitor-session-card ${isActive ? "active" : ""}" type="button" data-seb-session-id="${escapeHtml(session.sessionId || "")}">
+                <strong>${escapeHtml(session.title || session.application || "SafeExamBrowser")}</strong>
+                <small>${escapeHtml(session.url || "Sem URL ativa")}</small>
+                <div class="meta">Sessao ${escapeHtml(session.sessionId || "")} • ${viewCount} view(s) • ${hasFrame ? "com frame" : "aguardando frame"}</div>
+            </button>
+        `;
+    }).join("") : `<div class="empty">Nenhuma sessao ativa no SEB Monitor.</div>`;
+
+    title.textContent = activeSession?.title || activeSession?.application || "Aguardando sessão";
+    meta.textContent = activeSession
+        ? `${activeSession.url || "Sem URL ativa"} • ${activeSession.width || 0}x${activeSession.height || 0}`
+        : "Nenhuma sessão ativa.";
+    status.className = `chat-status-pill ${activeSession ? "active" : "neutral"}`;
+    status.textContent = activeSession ? "online" : "offline";
+
+    tabs.innerHTML = views.length ? views.map((view) => {
+        const label = view.isMainWindow ? "principal" : `janela ${view.windowId || "extra"}`;
+        const isActive = String(view.viewId || "") === String(activeView?.viewId || "");
+        return `<button class="ghost-button seb-monitor-tab ${isActive ? "active" : ""}" type="button" data-seb-view-id="${escapeHtml(view.viewId || "")}">${escapeHtml(label)}</button>`;
+    }).join("") : `<span class="chat-hint">Nenhuma view registrada.</span>`;
+
+    if (activeView?.imageBase64) {
+        frame.hidden = false;
+        frame.src = `data:image/jpeg;base64,${activeView.imageBase64}`;
+        empty.hidden = true;
+    } else {
+        frame.hidden = true;
+        frame.removeAttribute("src");
+        empty.hidden = false;
+    }
+
+    details.innerHTML = activeSession ? `
+        <div class="kv-item"><span>Session ID</span><strong>${escapeHtml(activeSession.sessionId || "n/d")}</strong></div>
+        <div class="kv-item"><span>Remote IP</span><strong>${escapeHtml(activeSession.remoteAddress || "n/d")}</strong></div>
+        <div class="kv-item"><span>View ativa</span><strong>${escapeHtml(activeView?.viewId || "n/d")}</strong></div>
+        <div class="kv-item"><span>Atualizado</span><strong>${escapeHtml(formatDate(activeView?.timestamp || activeSession.timestamp || ""))}</strong></div>
+    ` : `<div class="empty">Sem detalhes para exibir ainda.</div>`;
+
+    if (!activeSession) {
+        alertStatus.textContent = "Selecione uma sessão e escreva a mensagem do alerta.";
+    } else if (activeSession.lastAlert?.message) {
+        alertStatus.textContent = `Ultimo alerta: ${activeSession.lastAlert.message} em ${formatDate(activeSession.lastAlert.sentAt || "")}`;
+    } else {
+        alertStatus.textContent = "Sessão pronta para receber alerta.";
+    }
 }
 
 function renderServices() {
@@ -3599,6 +3707,7 @@ function renderAll() {
     renderFirewall();
     renderProxy();
     renderRedia();
+    renderSebMonitor();
     renderStackServiceViews();
     renderProjects();
 }
@@ -3607,6 +3716,45 @@ function updateClock() {
     const el = qs("#clockDisplay");
     if (!el) return;
     el.textContent = new Date().toLocaleTimeString("pt-BR");
+}
+
+async function refreshSebMonitor(showMessage = false) {
+    const payload = await api("/api/seb-monitor");
+    state.sebMonitor = normalizeSebMonitorPayload(payload || {});
+    renderSebMonitor();
+    if (showMessage) {
+        showToast("SEB Monitor atualizado.", "success");
+    }
+}
+
+async function sendSebMonitorAlert() {
+    const seb = normalizeSebMonitorPayload(state.sebMonitor || {});
+    const sessionId = seb.selectedSessionId;
+    if (!sessionId) {
+        throw new Error("Selecione uma sessao do SEB antes de enviar um alerta.");
+    }
+    const message = String(qs("#sebMonitorAlertMessage")?.value || "").trim();
+    if (!message) {
+        throw new Error("Escreva a mensagem do alerta.");
+    }
+    const position = String(qs("#sebMonitorAlertPosition")?.value || "top-right");
+    const durationMs = Number(qs("#sebMonitorAlertDuration")?.value || 3000);
+    const payload = await api("/api/seb-monitor/alert", {
+        method: "POST",
+        body: JSON.stringify({
+            sessionId,
+            viewId: seb.selectedViewId || null,
+            message,
+            position,
+            durationMs,
+        }),
+    });
+    qs("#sebMonitorAlertMessage").value = "";
+    const status = qs("#sebMonitorAlertStatus");
+    if (status) {
+        status.textContent = `Alerta enviado em ${formatDate(payload?.alert?.sentAt || new Date().toISOString())}.`;
+    }
+    await refreshSebMonitor(false);
 }
 
 function wireShellNavigation() {
@@ -3688,6 +3836,7 @@ function connectSocket() {
             state.firewall = payload.firewall || state.firewall;
             state.proxy = payload.proxy || state.proxy;
             state.redia = payload.redia || state.redia;
+            state.sebMonitor = payload.seb_monitor ? normalizeSebMonitorPayload(payload.seb_monitor) : state.sebMonitor;
             state.whatsapp = payload.whatsapp || state.whatsapp;
             state.projects = payload.projects || state.projects;
             if (payload.redia) {
@@ -3894,6 +4043,7 @@ async function loadBootstrap() {
     state.firewall = payload.firewall;
     state.proxy = payload.proxy;
     state.redia = payload.redia || null;
+    state.sebMonitor = normalizeSebMonitorPayload(payload.seb_monitor || {});
     state.whatsapp = payload.whatsapp || null;
     state.projects = payload.projects || [];
     state.proxyLogs = (payload.proxy_logs || []).map(normalizeProxyLog).filter(Boolean);
@@ -4309,6 +4459,8 @@ function wireAuthenticatedUi() {
     qs("#rediaCreateScheduleButton")?.addEventListener("click", () => runUiTask(() => createRediaSchedule()));
     qs("#rediaRunTestButton")?.addEventListener("click", () => runUiTask(() => runRediaTest()));
     qs("#rediaRunBenchmarkButton")?.addEventListener("click", () => runUiTask(() => runRediaBenchmark()));
+    qs("#sebMonitorRefreshButton")?.addEventListener("click", () => runUiTask(() => refreshSebMonitor(true)));
+    qs("#sebMonitorSendAlertButton")?.addEventListener("click", () => runUiTask(() => sendSebMonitorAlert()));
     qs("#rediaConversationsSearchInput")?.addEventListener("input", renderRediaConversations);
     qsa("[data-redia-tab]").forEach((button) => {
         button.addEventListener("click", () => setRediaTab(button.dataset.rediaTab));
@@ -4353,6 +4505,15 @@ function wireAuthenticatedUi() {
 
             if (target.dataset.containerLogs) {
                 await loadContainerLogs(target.dataset.containerLogs);
+            }
+
+            if (target.dataset.sebSessionId) {
+                selectSebMonitorSession(target.dataset.sebSessionId);
+            }
+
+            if (target.dataset.sebViewId) {
+                const currentSessionId = String(state.sebMonitor?.selectedSessionId || "");
+                selectSebMonitorSession(currentSessionId, target.dataset.sebViewId);
             }
 
             if (target.dataset.processSignal) {
@@ -4757,6 +4918,10 @@ function wireAuthenticatedUi() {
         if (state.currentView !== "redia") return;
         refreshRedia(false).catch(() => {});
     }, 8000);
+    setInterval(() => {
+        if (state.currentView !== "redseb_monitor") return;
+        refreshSebMonitor(false).catch(() => {});
+    }, 2500);
 }
 
 function wireLoginUi() {
@@ -4782,6 +4947,9 @@ setView = function(view, options = {}) {
     const config = DASHBOARD_VIEW_CONFIG[nextView] || DASHBOARD_VIEW_CONFIG.overview;
     const title = qs("#pageTitle");
     if (title) title.textContent = config.label || DASHBOARD_VIEW_CONFIG.overview.label;
+    if (nextView === "redseb_monitor") {
+        refreshSebMonitor(false).catch(() => {});
+    }
     if (options.syncHistory === false) return;
     const targetPath = dashboardViewUrl(nextView);
     if (window.location.pathname !== targetPath) {

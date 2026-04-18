@@ -743,6 +743,109 @@ button {
     grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.seb-monitor-grid {
+    align-items: start;
+}
+
+.seb-monitor-kpis {
+    margin-bottom: 1rem;
+}
+
+.seb-monitor-session-list {
+    max-height: 34rem;
+    overflow: auto;
+}
+
+.seb-monitor-session-card {
+    display: grid;
+    gap: 0.45rem;
+    padding: 1rem 1.05rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(232, 228, 227, 0.08);
+    background: rgba(25, 3, 3, 0.66);
+    cursor: pointer;
+}
+
+.seb-monitor-session-card.active {
+    border-color: rgba(238, 77, 49, 0.34);
+    background: linear-gradient(180deg, rgba(232, 68, 44, 0.12), rgba(25, 3, 3, 0.72));
+}
+
+.seb-monitor-session-card strong {
+    font-size: 1rem;
+}
+
+.seb-monitor-session-card small,
+.seb-monitor-session-card .meta {
+    color: var(--muted);
+}
+
+.seb-monitor-head {
+    align-items: flex-start;
+}
+
+.seb-monitor-tabs {
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.seb-monitor-tab {
+    border: 1px solid rgba(232, 228, 227, 0.08);
+    background: rgba(232, 228, 227, 0.06);
+    color: var(--text);
+}
+
+.seb-monitor-tab.active {
+    border-color: rgba(238, 77, 49, 0.34);
+    background: rgba(238, 77, 49, 0.18);
+}
+
+.seb-monitor-frame-shell {
+    min-height: 26rem;
+    border-radius: 1.25rem;
+    border: 1px solid rgba(232, 228, 227, 0.08);
+    background: linear-gradient(180deg, rgba(232, 68, 44, 0.08), rgba(255, 255, 255, 0.02)), #080304;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    margin-bottom: 1rem;
+}
+
+.seb-monitor-frame {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.seb-monitor-empty {
+    padding: 2rem;
+    text-align: center;
+}
+
+.seb-monitor-details {
+    margin-top: 0;
+}
+
+.seb-monitor-alert-grid {
+    grid-template-columns: minmax(0, 1.8fr) 12rem 10rem auto;
+    align-items: end;
+}
+
+.seb-monitor-alert-actions {
+    justify-content: flex-end;
+}
+
+@media (max-width: 1100px) {
+    .seb-monitor-alert-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .seb-monitor-alert-actions {
+        justify-content: flex-start;
+    }
+}
+
 .stack-head {
     display: flex;
     justify-content: space-between;
