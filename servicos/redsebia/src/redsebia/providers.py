@@ -483,11 +483,14 @@ class PagBankPixProvider(PaymentProvider):
         }
         async with httpx.AsyncClient(base_url=base_url, timeout=40.0) as client:
             resp = await client.post("/orders", headers=headers, json=payload)
-            resp.raise_for_status()
+            if resp.is_error:
+                self._raise_pagbank_error(resp)
             data = resp.json()
             qr = ((data.get("qr_codes") or [{}])[0]) or {}
             qr_text = qr.get("text") or ""
             qr_image = await self._resolve_qr_image(client, headers, qr)
+            if qr_text and not qr_image:
+                qr_image = qr_svg_data_uri(qr_text)
         return {
             "provider_charge_id": str(data.get("id") or request.charge_id),
             "status": self._map_order_status(data),
@@ -510,11 +513,14 @@ class PagBankPixProvider(PaymentProvider):
         }
         async with httpx.AsyncClient(base_url=self._base_url(config), timeout=30.0) as client:
             resp = await client.get(f"/orders/{order_id}", headers=headers)
-            resp.raise_for_status()
+            if resp.is_error:
+                self._raise_pagbank_error(resp)
             data = resp.json()
         qr = ((data.get("qr_codes") or [{}])[0]) or {}
         qr_text = qr.get("text") or charge.get("qr_code") or ""
         qr_image = charge.get("qr_code_base64") or ""
+        if qr_text and not qr_image:
+            qr_image = qr_svg_data_uri(qr_text)
         return {
             "status": self._map_order_status(data),
             "qr_code": qr_text,
@@ -581,17 +587,23 @@ class PagBankPixProvider(PaymentProvider):
         base64_href = next((item.get("href") for item in links if item.get("rel") == "QRCODE.BASE64"), "")
         png_href = next((item.get("href") for item in links if item.get("rel") == "QRCODE.PNG"), "")
         if base64_href:
-            resp = await client.get(base64_href, headers=headers)
-            resp.raise_for_status()
-            text = resp.text.strip()
-            if text.startswith("data:image"):
-                return text
-            return f"data:image/png;base64,{text}"
+            try:
+                resp = await client.get(base64_href, headers=headers)
+                resp.raise_for_status()
+                text = resp.text.strip()
+                if text.startswith("data:image"):
+                    return text
+                return f"data:image/png;base64,{text}"
+            except httpx.HTTPError:
+                pass
         if png_href:
-            resp = await client.get(png_href, headers=headers)
-            resp.raise_for_status()
-            encoded = base64.b64encode(resp.content).decode("ascii")
-            return f"data:image/png;base64,{encoded}"
+            try:
+                resp = await client.get(png_href, headers=headers)
+                resp.raise_for_status()
+                encoded = base64.b64encode(resp.content).decode("ascii")
+                return f"data:image/png;base64,{encoded}"
+            except httpx.HTTPError:
+                pass
         return ""
 
     def _map_order_status(self, data: dict[str, Any]) -> str:
@@ -605,6 +617,25 @@ class PagBankPixProvider(PaymentProvider):
                 "DECLINED": "expired",
             }.get(status, "pending")
         return "pending"
+
+    @staticmethod
+    def _raise_pagbank_error(resp: httpx.Response) -> None:
+        try:
+            data = resp.json()
+        except Exception:
+            resp.raise_for_status()
+        errors = data.get("error_messages") or []
+        if errors:
+            first = errors[0]
+            code = str(first.get("code") or "").strip()
+            description = str(first.get("description") or "").strip()
+            if code == "40002" and "buyer email must not be equals to merchant email" in description.lower():
+                raise ValueError("O e-mail do cliente no REDSEBIA não pode ser o mesmo e-mail da conta PagBank. Use outro usuário para testar cobranças.")
+            raise ValueError(description or f"Erro do PagBank ({code or resp.status_code}).")
+        message = str(data.get("message") or "").strip()
+        if message:
+            raise ValueError(message)
+        resp.raise_for_status()
 
 
 class PlaceholderProvider(PaymentProvider):
