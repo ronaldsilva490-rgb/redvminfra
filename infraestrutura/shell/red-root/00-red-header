@@ -59,20 +59,20 @@ status_color_from_percent() {
 
 border() {
     local fill
-    fill="$(repeat_char '═' "${FRAME_INNER}")"
-    printf '%b\n' "${RED}╔${fill}╗${RESET}"
+    fill="$(repeat_char '-' "${FRAME_INNER}")"
+    printf '%b\n' "${RED}+${fill}+${RESET}"
 }
 
 divider() {
     local fill
-    fill="$(repeat_char '═' "${FRAME_INNER}")"
-    printf '%b\n' "${RED}╠${fill}╣${RESET}"
+    fill="$(repeat_char '-' "${FRAME_INNER}")"
+    printf '%b\n' "${RED}+${fill}+${RESET}"
 }
 
 footer() {
     local fill
-    fill="$(repeat_char '═' "${FRAME_INNER}")"
-    printf '%b\n' "${RED}╚${fill}╝${RESET}"
+    fill="$(repeat_char '-' "${FRAME_INNER}")"
+    printf '%b\n' "${RED}+${fill}+${RESET}"
 }
 
 line() {
@@ -80,11 +80,11 @@ line() {
     local plain visible pad
     plain="$(printf '%b' "$content" | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g')"
     visible=$(printf '%s' "$plain" | awk '{print length}')
-    pad=$((76 - visible))
+    pad=$((BOX_INNER - visible))
     if [ "$pad" -lt 0 ]; then
         pad=0
     fi
-    printf '%b%b%*s%b\n' "${RED}║ ${RESET}" "$content" "$pad" '' "${RED} ║${RESET}"
+    printf '%b%b%*s%b\n' "${RED}| ${RESET}" "$content" "$pad" '' "${RED} |${RESET}"
 }
 
 center_line() {
@@ -95,15 +95,15 @@ center_line() {
     if [ "$visible" -gt "$BOX_INNER" ]; then
         visible="$BOX_INNER"
     fi
-    left=$(( (BOX_INNER - visible) / 2 ))
+    left=$(((BOX_INNER - visible) / 2))
     if [ "$left" -lt 0 ]; then
         left=0
     fi
-    right=$(( BOX_INNER - visible - left ))
+    right=$((BOX_INNER - visible - left))
     if [ "$right" -lt 0 ]; then
         right=0
     fi
-    printf '%b%*s%b%*s%b\n' "${RED}║ ${RESET}" "$left" '' "$content" "$right" '' "${RED} ║${RESET}"
+    printf '%b%*s%b%*s%b\n' "${RED}| ${RESET}" "$left" '' "$content" "$right" '' "${RED} |${RESET}"
 }
 
 service_text() {
@@ -158,10 +158,10 @@ clear_screen
 border
 line ""
 center_line "${RED} ____  _____ ____ ${RESET}"
-center_line "${RED}|  _ \\| ____|  _ \\\\${RESET}"
+center_line "${RED}|  _ \\| ____|  _ \\${RESET}"
 center_line "${RED}| |_) |  _| | | | |${RESET}"
 center_line "${RED}|  _ <| |___| |_| |${RESET}"
-center_line "${RED}|_| \\_\\\\_____|____/ ${RESET}"
+center_line "${RED}|_| \\_\\_____|____/ ${RESET}"
 line ""
 divider
 line "${WHITE}Sistema${RESET}    : ${SYSTEM_STATE_FMT}"
