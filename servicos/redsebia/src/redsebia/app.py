@@ -34,7 +34,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 COOKIE_USER = "redsebia_session"
 COOKIE_ADMIN = "redsebia_admin"
-ASSET_VERSION = "20260419-redsebia-v2"
+ASSET_VERSION = "20260419-redsebia-v3"
 
 
 def public_path(request: Request, path: str) -> str:
@@ -151,6 +151,8 @@ def normalized_provider_display_name(code: str, display_name: str | None) -> str
     display_name = str(display_name or "").strip()
     if code == "sandbox_pix" and display_name in {"", "Sandbox PIX"}:
         return "PIX instantâneo"
+    if code == "pagseguro_pix" and display_name in {"", "PagBank / PagSeguro PIX"}:
+        return "PagBank PIX"
     return display_name or code
 
 

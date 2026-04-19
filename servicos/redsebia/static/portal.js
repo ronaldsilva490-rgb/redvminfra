@@ -41,7 +41,7 @@
       efi_pix: "Efí Bank PIX",
       mercadopago_pix: "Mercado Pago PIX",
       pagarme_pix: "Pagar.me PIX",
-      pagseguro_pix: "PagBank / PagSeguro PIX",
+      pagseguro_pix: "PagBank PIX",
     };
     return map[code] || code || "-";
   }

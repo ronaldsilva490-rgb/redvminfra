@@ -216,7 +216,7 @@ class Database:
             "efi_pix": {"display_name": "Efí Bank PIX", "enabled": 0, "settings": {"environment": "homolog"}},
             "mercadopago_pix": {"display_name": "Mercado Pago PIX", "enabled": 0, "settings": {"environment": "sandbox"}},
             "pagarme_pix": {"display_name": "Pagar.me PIX", "enabled": 0, "settings": {}},
-            "pagseguro_pix": {"display_name": "PagBank / PagSeguro PIX", "enabled": 0, "settings": {}},
+            "pagseguro_pix": {"display_name": "PagBank PIX", "enabled": 0, "settings": {"environment": "sandbox"}},
         }
         now = time.time()
         with self.lock, self.conn:

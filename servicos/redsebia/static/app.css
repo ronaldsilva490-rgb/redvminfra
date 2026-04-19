@@ -335,6 +335,8 @@ pre { font-family: var(--mono); }
 
 .auth-card {
   width: min(540px, 100%);
+  display: grid;
+  gap: 14px;
 }
 
 .auth-card.auth-wide {
@@ -344,8 +346,21 @@ pre { font-family: var(--mono); }
 .auth-logo {
   width: clamp(88px, 16vw, 118px);
   display: block;
-  margin: 0 auto 14px;
+  margin: 0 auto 6px;
   filter: drop-shadow(0 0 22px rgba(238,77,49,0.26));
+}
+
+.auth-card h1 {
+  font-size: clamp(28px, 4vw, 50px);
+}
+
+.auth-card .btn {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.auth-card .helper {
+  margin: 0;
 }
 
 label {

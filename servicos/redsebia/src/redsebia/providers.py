@@ -359,6 +359,179 @@ class MercadoPagoPixProvider(PaymentProvider):
         return {"provider_charge_id": str(payment_id), "status": "pending", "payload": {"webhook": payload}}
 
 
+class PagBankPixProvider(PaymentProvider):
+    code = "pagseguro_pix"
+    name = "PagBank PIX"
+    docs_url = "https://developer.pagbank.com.br/reference/criar-pedido-pedido-com-qr-code"
+    supported_methods = ["pix"]
+    config_fields = [
+        {"name": "environment", "label": "Ambiente", "type": "select", "options": ["sandbox", "production"]},
+        {"name": "token", "label": "Token", "type": "password", "placeholder": "token do PagBank"},
+        {"name": "default_tax_id", "label": "CPF padrão (fallback)", "type": "text", "placeholder": "12345678909"},
+        {"name": "phone_area", "label": "DDD (opcional)", "type": "text", "placeholder": "11"},
+        {"name": "phone_number", "label": "Telefone (opcional)", "type": "text", "placeholder": "999999999"},
+    ]
+
+    async def create_charge(self, config: dict[str, Any], request: ChargeRequest) -> dict[str, Any]:
+        token = str(config.get("token") or "").strip()
+        if not token:
+            raise ValueError("Configure o token do PagBank.")
+
+        customer = self._build_customer(config, request.user)
+        expiration = time.time() + 60 * 60 * 24
+        expiration_date = time.strftime("%Y-%m-%dT%H:%M:%S-03:00", time.localtime(expiration))
+        base_url = self._base_url(config)
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "accept": "application/json",
+            "content-type": "application/json",
+            "x-idempotency-key": str(uuid.uuid4()),
+        }
+        payload = {
+            "reference_id": request.charge_id,
+            "customer": customer,
+            "items": [
+                {
+                    "reference_id": request.charge_id,
+                    "name": "Crédito REDSEBIA",
+                    "quantity": 1,
+                    "unit_amount": int(request.amount_cents),
+                }
+            ],
+            "qr_codes": [
+                {
+                    "amount": {"value": int(request.amount_cents)},
+                    "expiration_date": expiration_date,
+                }
+            ],
+            "notification_urls": [f"{request.public_base_url}/api/payments/webhooks/{self.code}"],
+        }
+        async with httpx.AsyncClient(base_url=base_url, timeout=40.0) as client:
+            resp = await client.post("/orders", headers=headers, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            qr = ((data.get("qr_codes") or [{}])[0]) or {}
+            qr_text = qr.get("text") or ""
+            qr_image = await self._resolve_qr_image(client, headers, qr)
+        return {
+            "provider_charge_id": str(data.get("id") or request.charge_id),
+            "status": self._map_order_status(data),
+            "external_reference": request.charge_id,
+            "qr_code": qr_text,
+            "qr_code_base64": qr_image,
+            "payment_url": "",
+            "expires_at": self._parse_datetime(qr.get("expiration_date")) or expiration,
+            "payload": {"order": data},
+        }
+
+    async def refresh_charge(self, config: dict[str, Any], charge: dict[str, Any]) -> dict[str, Any] | None:
+        token = str(config.get("token") or "").strip()
+        order_id = str(charge.get("provider_charge_id") or "").strip()
+        if not token or not order_id:
+            return None
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "accept": "application/json",
+        }
+        async with httpx.AsyncClient(base_url=self._base_url(config), timeout=30.0) as client:
+            resp = await client.get(f"/orders/{order_id}", headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+        qr = ((data.get("qr_codes") or [{}])[0]) or {}
+        qr_text = qr.get("text") or charge.get("qr_code") or ""
+        qr_image = charge.get("qr_code_base64") or ""
+        return {
+            "status": self._map_order_status(data),
+            "qr_code": qr_text,
+            "qr_code_base64": qr_image,
+            "payload": {"order": data},
+        }
+
+    async def handle_webhook(self, config: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any] | None:
+        if not payload:
+            return None
+        order_id = payload.get("id")
+        reference = payload.get("reference_id")
+        return {
+            "provider_charge_id": str(order_id or ""),
+            "external_reference": str(reference or ""),
+            "status": self._map_order_status(payload),
+            "payload": {"webhook": payload},
+        }
+
+    @staticmethod
+    def _base_url(config: dict[str, Any]) -> str:
+        env = str(config.get("environment") or "sandbox").strip().lower()
+        return "https://api.pagseguro.com" if env == "production" else "https://sandbox.api.pagseguro.com"
+
+    @staticmethod
+    def _parse_datetime(value: str | None) -> float | None:
+        if not value:
+            return None
+        for fmt in ("%Y-%m-%dT%H:%M:%S-03:00", "%Y-%m-%dT%H:%M:%S.%f-03:00", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S.%f%z"):
+            try:
+                return time.mktime(time.strptime(value[:19], "%Y-%m-%dT%H:%M:%S"))
+            except ValueError:
+                continue
+        return None
+
+    @staticmethod
+    def _only_digits(value: str | None) -> str:
+        return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+    def _build_customer(self, config: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
+        tax_id = self._only_digits(user.get("cpf")) or self._only_digits(config.get("default_tax_id"))
+        if not tax_id:
+            raise ValueError("Informe um CPF no cadastro do cliente ou configure um CPF padrão no PagBank.")
+        customer: dict[str, Any] = {
+            "name": str(user.get("name") or "").strip(),
+            "email": str(user.get("email") or "").strip(),
+            "tax_id": tax_id,
+        }
+        area = self._only_digits(config.get("phone_area"))
+        number = self._only_digits(config.get("phone_number"))
+        if area and number:
+            customer["phones"] = [
+                {
+                    "country": "55",
+                    "area": area,
+                    "number": number,
+                    "type": "MOBILE",
+                }
+            ]
+        return customer
+
+    async def _resolve_qr_image(self, client: httpx.AsyncClient, headers: dict[str, str], qr: dict[str, Any]) -> str:
+        links = qr.get("links") or []
+        base64_href = next((item.get("href") for item in links if item.get("rel") == "QRCODE.BASE64"), "")
+        png_href = next((item.get("href") for item in links if item.get("rel") == "QRCODE.PNG"), "")
+        if base64_href:
+            resp = await client.get(base64_href, headers=headers)
+            resp.raise_for_status()
+            text = resp.text.strip()
+            if text.startswith("data:image"):
+                return text
+            return f"data:image/png;base64,{text}"
+        if png_href:
+            resp = await client.get(png_href, headers=headers)
+            resp.raise_for_status()
+            encoded = base64.b64encode(resp.content).decode("ascii")
+            return f"data:image/png;base64,{encoded}"
+        return ""
+
+    def _map_order_status(self, data: dict[str, Any]) -> str:
+        charges = data.get("charges") or []
+        if charges:
+            status = str((charges[0] or {}).get("status") or "").upper()
+            return {
+                "PAID": "paid",
+                "WAITING": "pending",
+                "CANCELED": "expired",
+                "DECLINED": "expired",
+            }.get(status, "pending")
+        return "pending"
+
+
 class PlaceholderProvider(PaymentProvider):
     def __init__(self, code: str, name: str, docs_url: str):
         self.code = code
@@ -382,7 +555,7 @@ PROVIDERS: dict[str, PaymentProvider] = {
     "efi_pix": EfiPixProvider(),
     "mercadopago_pix": MercadoPagoPixProvider(),
     "pagarme_pix": PlaceholderProvider("pagarme_pix", "Pagar.me PIX", "https://docs.pagar.me/"),
-    "pagseguro_pix": PlaceholderProvider("pagseguro_pix", "PagBank / PagSeguro PIX", "https://developer.pagbank.com.br/"),
+    "pagseguro_pix": PagBankPixProvider(),
 }
 
 
