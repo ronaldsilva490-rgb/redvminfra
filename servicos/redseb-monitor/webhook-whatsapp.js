@@ -13,6 +13,7 @@ const openclawBin = process.env.OPENCLAW_BIN || "/usr/local/bin/openclaw";
 const openclawChannel = process.env.OPENCLAW_CHANNEL || "whatsapp";
 const openclawHome = process.env.OPENCLAW_HOME || "/home/openclaw";
 const openclawPath = process.env.OPENCLAW_PATH || "/opt/red-openclaw/node/bin:/opt/red-openclaw/npm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+const WHATSAPP_VISUAL_BREAK = "\u2028";
 
 function asText(value, fallback = "n/d") {
   const text = String(value || "").trim();
@@ -43,14 +44,14 @@ function buildSessionMessage(sessionInfo) {
     `🪟 *TITULO:* ${asText(primaryView.title)}`,
     `🖥️ *RESOLUCAO:* ${viewport}`,
     `🕒 *HORA DA CONEXAO:* ${formatDate(sessionInfo.connectedAt)}`
-  ].join(" • ");
+  ].join(WHATSAPP_VISUAL_BREAK);
 }
 
 function normalizeWhatsappText(text, fallback) {
   const normalized = String(text || "")
     .replace(/\r/g, "")
-    .replace(/\n+/g, " | ")
-    .replace(/\s+\|\s+/g, " | ")
+    .replace(/\n+/g, WHATSAPP_VISUAL_BREAK)
+    .replace(/[ \t]*\u2028[ \t]*/g, WHATSAPP_VISUAL_BREAK)
     .replace(/[ \t]{2,}/g, " ")
     .trim();
   return normalized || fallback;
@@ -58,6 +59,10 @@ function normalizeWhatsappText(text, fallback) {
 
 function isAcceptableFormattedMessage(text, sessionInfo) {
   const value = String(text || "");
+  const lines = value
+    .split(WHATSAPP_VISUAL_BREAK)
+    .map((line) => line.trim())
+    .filter(Boolean);
   const primaryView = sessionInfo?.primaryView || {};
   const width = asInt(primaryView.width, 0);
   const height = asInt(primaryView.height, 0);
@@ -68,10 +73,18 @@ function isAcceptableFormattedMessage(text, sessionInfo) {
     viewport,
     formatDate(sessionInfo.connectedAt)
   ];
-  if (!value || value.length > 360) {
+  const requiredLabels = [
+    "NOVA SESSAO SEB DETECTADA",
+    "IP:",
+    "TITULO:",
+    "RESOLUCAO:",
+    "HORA DA CONEXAO:"
+  ];
+  if (!value || value.length > 420 || lines.length !== 5) {
     return false;
   }
-  return requiredValues.every((part) => value.includes(part));
+  return requiredValues.every((part) => value.includes(part))
+    && requiredLabels.every((part) => value.toUpperCase().includes(part));
 }
 
 async function formatMessageWithProxy(sessionInfo, fallbackMessage) {
@@ -102,9 +115,12 @@ async function formatMessageWithProxy(sessionInfo, fallbackMessage) {
               "Nao explique nada.",
               "Nao adicione contexto extra.",
               "Nao use listas longas ou frases narrativas.",
-              "Retorne um unico paragrafo, em uma unica mensagem, usando separadores visuais curtos como ' • '.",
+              "Retorne exatamente 5 linhas curtas.",
+              "Use exatamente estes rotulos: NOVA SESSAO SEB DETECTADA, IP, TITULO, RESOLUCAO e HORA DA CONEXAO.",
+              "Nao adicione cabecalhos extras, apelidos, nomes de instituicao ou comentarios.",
               "Inclua com precisao apenas estes fatos: alerta de nova sessao, IP, titulo, resolucao e hora da conexao.",
-              "Mantenha todos os valores exatamente como recebidos."
+              "Mantenha todos os valores exatamente como recebidos.",
+              "Use algo bem legivel para WhatsApp, com no maximo um emoji por linha e no maximo uma linha para cada campo."
             ].join(" ")
           },
           {
