@@ -1,6 +1,7 @@
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
+const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 
 const host = "0.0.0.0";
@@ -22,6 +23,10 @@ const sessionStaleMs = Math.max(1000, Number(process.env.RED_SEB_SESSION_STALE_M
 const sessionWebhookUrl = String(process.env.SEB_SESSION_WEBHOOK_URL || "").trim();
 const sessionWebhookEnabled = Boolean(sessionWebhookUrl);
 const publicPanelUrl = String(process.env.RED_SEB_PUBLIC_URL || "http://redsystems.ddns.net:2580").trim();
+const operatorPassword = String(process.env.RED_SEB_OPERATOR_PASSWORD || "2580");
+const operatorAuthSecret = String(process.env.RED_SEB_AUTH_SECRET || "red-seb-operator");
+const authCookieName = "redseb_operator";
+const authCookieValue = crypto.createHash("sha256").update(`${operatorPassword}|${operatorAuthSecret}`).digest("hex");
 const sessions = new Map();
 const committeeRuns = new Map();
 const downloadCandidates = {
@@ -78,6 +83,69 @@ function pick(payload, ...keys) {
 
 function now() {
   return new Date().toISOString();
+}
+
+function normalizeBasePath(value) {
+  const raw = String(value || "").trim();
+
+  if (!raw || raw === "/") {
+    return "";
+  }
+
+  return `/${raw.replace(/^\/+/, "").replace(/\/+$/, "")}`;
+}
+
+function withBasePath(basePath, pathname = "/") {
+  const normalizedBase = normalizeBasePath(basePath);
+  const normalizedPath = String(pathname || "/").startsWith("/") ? String(pathname || "/") : `/${String(pathname || "/")}`;
+  return normalizedBase ? `${normalizedBase}${normalizedPath}` : normalizedPath;
+}
+
+function getBasePath(request) {
+  return normalizeBasePath(request.headers["x-forwarded-prefix"]);
+}
+
+function parseCookies(request) {
+  const raw = String(request.headers.cookie || "");
+  const parsed = {};
+
+  for (const fragment of raw.split(";")) {
+    const [name, ...rest] = fragment.trim().split("=");
+    if (!name) {
+      continue;
+    }
+
+    parsed[name] = decodeURIComponent(rest.join("=") || "");
+  }
+
+  return parsed;
+}
+
+function isAuthenticated(request) {
+  return parseCookies(request)[authCookieName] === authCookieValue;
+}
+
+function appendSetCookie(response, value) {
+  const current = response.getHeader("Set-Cookie");
+  if (!current) {
+    response.setHeader("Set-Cookie", value);
+    return;
+  }
+
+  if (Array.isArray(current)) {
+    response.setHeader("Set-Cookie", [...current, value]);
+    return;
+  }
+
+  response.setHeader("Set-Cookie", [current, value]);
+}
+
+function setAuthCookie(response) {
+  appendSetCookie(response, `${authCookieName}=${authCookieValue}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${60 * 60 * 12}`);
+}
+
+function clearAuthCookie(response) {
+  appendSetCookie(response, `${authCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
 }
 
 function slugifyFragment(value) {
@@ -1110,9 +1178,294 @@ async function streamCommitteeMember(member, prompt, response, run) {
   }
 }
 
-function renderDashboard() {
+function renderLoginPage(basePath = "", errorMessage = "") {
   const logoTag = resolvedAssets.logo
-    ? '<img class="brand-logo" src="/assets/logo" alt="RED logo">'
+    ? `<img class="brand-logo" src="${withBasePath(basePath, "/assets/logo")}" alt="RED logo">`
+    : '<div class="brand-mark">R</div>';
+  const faviconHref = withBasePath(basePath, "/assets/favicon");
+  const submitAction = withBasePath(basePath, "/login");
+  const downloadHref = "/download";
+  const errorBlock = errorMessage
+    ? `<div class="login-error">${String(errorMessage)}</div>`
+    : "";
+
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RED SEB Operator Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="${faviconHref}">
+  <style>
+    :root {
+      --bg: #1a0202;
+      --panel: rgba(25, 3, 3, 0.78);
+      --line: rgba(232, 68, 44, 0.18);
+      --line-strong: rgba(232, 68, 44, 0.34);
+      --text: #fff3f1;
+      --muted: #d9b7b3;
+      --accent: #db2315;
+      --accent-strong: #ee4d31;
+      --shadow: 0 28px 80px rgba(12, 0, 0, 0.62);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top, rgba(238, 77, 49, 0.20), transparent 16rem),
+        radial-gradient(circle at 82% 18%, rgba(219, 35, 21, 0.14), transparent 20rem),
+        linear-gradient(180deg, rgba(88, 7, 7, 0.46), rgba(26, 2, 2, 0.96) 58%),
+        linear-gradient(140deg, #140202 0%, #1f0303 52%, #100101 100%);
+    }
+    .card {
+      width: min(100%, 460px);
+      border-radius: 24px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .brand-logo, .brand-mark {
+      width: 72px;
+      height: 72px;
+      border-radius: 20px;
+      object-fit: contain;
+    }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+      color: white;
+      font-weight: 800;
+      font-size: 30px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    form { display: grid; gap: 14px; margin-top: 22px; }
+    label {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-family: "IBM Plex Mono", Consolas, monospace;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 8px;
+    }
+    input {
+      width: 100%;
+      border: 1px solid rgba(232,228,227,0.08);
+      outline: none;
+      border-radius: 14px;
+      padding: 14px 16px;
+      color: var(--text);
+      background: rgba(16, 2, 2, 0.92);
+      font-size: 16px;
+    }
+    button, .link-button {
+      min-height: 48px;
+      border: 0;
+      border-radius: 14px;
+      padding: 0 18px;
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+      box-shadow: 0 14px 30px rgba(12, 0, 0, 0.28);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .link-button {
+      background: rgba(232,228,227,0.08);
+      border: 1px solid var(--line);
+      box-shadow: none;
+    }
+    .actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .login-error {
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: rgba(238, 77, 49, 0.12);
+      border: 1px solid rgba(238, 77, 49, 0.24);
+      color: #ffd4ca;
+    }
+  </style>
+</head>
+<body>
+  <section class="card">
+    <div class="brand">
+      ${logoTag}
+      <div>
+        <h1>RED SEB Monitor</h1>
+        <p>Painel do operador protegido. Use a senha operacional para acompanhar sessões, alertas e o comitê de IA.</p>
+      </div>
+    </div>
+    ${errorBlock}
+    <form method="post" action="${submitAction}">
+      <div>
+        <label for="password">Senha do operador</label>
+        <input id="password" name="password" type="password" inputmode="numeric" autocomplete="current-password" placeholder="Digite a senha" required autofocus>
+      </div>
+      <button type="submit">Entrar no painel</button>
+    </form>
+    <div class="actions">
+      <a class="link-button" href="${downloadHref}">Abrir página de download</a>
+    </div>
+  </section>
+</body>
+</html>`;
+}
+
+function renderDownloadPage(basePath = "") {
+  const logoTag = resolvedAssets.logo
+    ? `<img class="brand-logo" src="${withBasePath(basePath, "/assets/logo")}" alt="RED logo">`
+    : '<div class="brand-mark">R</div>';
+  const faviconHref = withBasePath(basePath, "/assets/favicon");
+  const formAction = withBasePath(basePath, "/api/generate-bat");
+
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RED SEB Download</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="${faviconHref}">
+  <style>
+    :root {
+      --bg: #1a0202;
+      --panel: rgba(25, 3, 3, 0.78);
+      --line: rgba(232, 68, 44, 0.18);
+      --text: #fff3f1;
+      --muted: #d9b7b3;
+      --accent: #db2315;
+      --accent-strong: #ee4d31;
+      --shadow: 0 28px 80px rgba(12, 0, 0, 0.62);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      font-family: "Space Grotesk", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top, rgba(238, 77, 49, 0.20), transparent 16rem),
+        radial-gradient(circle at 82% 18%, rgba(219, 35, 21, 0.14), transparent 20rem),
+        linear-gradient(180deg, rgba(88, 7, 7, 0.46), rgba(26, 2, 2, 0.96) 58%),
+        linear-gradient(140deg, #140202 0%, #1f0303 52%, #100101 100%);
+    }
+    .card {
+      width: min(100%, 520px);
+      border-radius: 26px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: 28px;
+      text-align: center;
+    }
+    .brand {
+      display: grid;
+      justify-items: center;
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+    .brand-logo, .brand-mark {
+      width: 84px;
+      height: 84px;
+      border-radius: 22px;
+      object-fit: contain;
+    }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+      color: white;
+      font-weight: 800;
+      font-size: 34px;
+    }
+    h1 { margin: 0; font-size: 30px; }
+    p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    .cta {
+      margin-top: 26px;
+      display: grid;
+      gap: 14px;
+    }
+    button {
+      min-height: 54px;
+      border: 0;
+      border-radius: 16px;
+      padding: 0 22px;
+      color: white;
+      font-weight: 800;
+      font-size: 15px;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+      box-shadow: 0 16px 36px rgba(12, 0, 0, 0.28);
+    }
+    .caption {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+  </style>
+</head>
+<body>
+  <section class="card">
+    <div class="brand">
+      ${logoTag}
+      <div>
+        <h1>RED SEB Universal</h1>
+        <p>Baixe o instalador universal da RED Systems. Ele roda em modo usuário, prepara o RED SEB Portable e já deixa o comando <code>red</code> pronto para uso no terminal.</p>
+      </div>
+    </div>
+    <form class="cta" method="post" action="${formAction}">
+      <button type="submit">BAIXAR INSTALADOR</button>
+      <div class="caption">Depois da primeira execução, abra um terminal novo e use <code>red 764281</code> ou <code>red sebs://...</code>.</div>
+    </form>
+  </section>
+</body>
+</html>`;
+}
+
+function renderDashboard(basePath = "") {
+  const logoTag = resolvedAssets.logo
+    ? `<img class="brand-logo" src="${withBasePath(basePath, "/assets/logo")}" alt="RED logo">`
     : '<div class="brand-mark">R</div>';
 
   return `<!doctype html>
@@ -1124,7 +1477,7 @@ function renderDashboard() {
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="icon" href="/assets/favicon">
+  <link rel="icon" href="${withBasePath(basePath, "/assets/favicon")}">
   <style>
     :root {
       --bg: #1a0202;
@@ -1342,6 +1695,24 @@ function renderDashboard() {
       font-size: 12px;
       font-family: "IBM Plex Mono", Consolas, monospace;
       white-space: nowrap;
+    }
+    .hero-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .logout-form { margin: 0; }
+    .logout-button {
+      min-height: 40px;
+      border: 1px solid rgba(232,228,227,0.08);
+      border-radius: 999px;
+      padding: 0 14px;
+      color: var(--text);
+      font-weight: 700;
+      cursor: pointer;
+      background: rgba(232,228,227,0.06);
     }
     .insights { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .insight strong { font-size: 17px; line-height: 1.35; word-break: break-word; }
@@ -1717,7 +2088,12 @@ function renderDashboard() {
             <h2>Observação sincronizada do SEB</h2>
             <p>Viewer em tema vermelho, pronto para acompanhar a tela do candidato em tempo real com atualização contínua do viewport e dos metadados da sessão.</p>
           </div>
-          <div class="hero-badge" id="hero-last-update">${buildLabel}</div>
+          <div class="hero-meta">
+            <div class="hero-badge" id="hero-last-update">${buildLabel}</div>
+            <form class="logout-form" method="post" action="${withBasePath(basePath, "/logout")}">
+              <button class="logout-button" type="submit">Sair</button>
+            </form>
+          </div>
         </div>
       </section>
       <section class="insights">
@@ -1733,15 +2109,6 @@ function renderDashboard() {
           <span>Viewport</span>
           <strong id="viewer-status">offline</strong>
         </div>
-      </section>
-      <section class="command-panel glass">
-        <h3>Launcher Universal</h3>
-        <p>Baixe um único <code>.bat</code> da RED Systems. Quando ele rodar, pergunta o <code>CMID</code> ou o link completo do exame, instala o RED SEB Portable em <code>Documentos\\REDSEBPortable</code> se faltar, registra o comando <code>red</code> para o usuário atual, abre a prova e se remove sozinho no fim. Tudo em modo usuário, sem pedir administrador.</p>
-        <div class="download-grid">
-          <button class="download-button" id="download-bat-button" type="button">Baixar launcher .bat</button>
-          <a class="download-button" id="download-zip-button" href="/downloads/REDSEBPortable.zip">Baixar .zip</a>
-        </div>
-        <div class="download-status" id="download-status">O launcher usa a pasta Documentos\\REDSEBPortable, registra o comando <code>red</code> para o usuário e roda sem precisar de admin. Depois da primeira execução, abra um terminal novo e use <code>red 764281</code> ou <code>red sebs://...</code>.</div>
       </section>
       <section class="stage glass">
         <div class="stage-header">
@@ -1776,7 +2143,7 @@ function renderDashboard() {
             <div class="live"><span class="dot"></span><strong>Live</strong><span id="connected-at">sem sessão ativa</span></div>
             <div class="frame-copy-status" id="frame-copy-status">Nenhuma frame pronta para copiar.</div>
           </div>
-          <div><code>/seb-live</code> <code>/api/sessions</code> <code>/api/alert</code> <code>/downloads/REDSEBPortable.zip</code></div>
+          <div><code>/seb-live</code> <code>/api/sessions</code> <code>/api/alert</code></div>
         </div>
       </section>
       <section class="command-panel glass">
@@ -1865,6 +2232,11 @@ function renderDashboard() {
     </main>
   </div>
   <script>
+    const BASE_PATH = ${JSON.stringify(normalizeBasePath(basePath))};
+    function withBase(pathname) {
+      const normalizedPath = String(pathname || "/").startsWith("/") ? String(pathname || "/") : "/" + String(pathname || "/");
+      return BASE_PATH ? BASE_PATH + normalizedPath : normalizedPath;
+    }
     const sessionList = document.getElementById("session-list");
     const metricSessions = document.getElementById("metric-sessions");
     const metricFrames = document.getElementById("metric-frames");
@@ -1885,8 +2257,6 @@ function renderDashboard() {
     const alertDuration = document.getElementById("alert-duration");
     const sendAlertButton = document.getElementById("send-alert-button");
     const commandStatus = document.getElementById("command-status");
-    const downloadBatButton = document.getElementById("download-bat-button");
-    const downloadStatus = document.getElementById("download-status");
     const committeeVisionPrimary = document.getElementById("committee-vision-primary");
     const committeeVisionFallback = document.getElementById("committee-vision-fallback");
     const committeeTextA = document.getElementById("committee-text-a");
@@ -2220,7 +2590,7 @@ function renderDashboard() {
     }
 
     async function loadCommitteeCatalog() {
-      const response = await fetch("/api/committee/models", { cache: "no-store" });
+      const response = await fetch(withBase("/api/committee/models"), { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok || !payload.ok) {
         throw new Error(payload.error || "Falha ao carregar catálogo do comitê.");
@@ -2292,7 +2662,7 @@ function renderDashboard() {
       }
 
       if (runId) {
-        await fetch("/api/committee/stop", {
+        await fetch(withBase("/api/committee/stop"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ runId })
@@ -2456,7 +2826,7 @@ function renderDashboard() {
       commandStatus.textContent = "Enviando alerta...";
 
       try {
-        const response = await fetch("/api/alert", {
+        const response = await fetch(withBase("/api/alert"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2507,7 +2877,7 @@ function renderDashboard() {
       try {
         persistCommitteePreferences();
         committeeAbortController = new AbortController();
-        const response = await fetch("/api/committee/analyze", {
+        const response = await fetch(withBase("/api/committee/analyze"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: committeeAbortController.signal,
@@ -2642,44 +3012,11 @@ function renderDashboard() {
 
     async function refresh() {
       try {
-        const response = await fetch("/api/sessions", { cache: "no-store" });
+        const response = await fetch(withBase("/api/sessions"), { cache: "no-store" });
         const sessions = await response.json();
         renderSessions(Array.isArray(sessions) ? sessions : []);
       } catch {
         heroLastUpdate.textContent = "Falha ao atualizar";
-      }
-    }
-
-    async function downloadBat() {
-      downloadBatButton.disabled = true;
-      downloadStatus.textContent = "Gerando launcher universal...";
-
-      try {
-        const response = await fetch("/api/generate-bat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({})
-        });
-
-        if (!response.ok) {
-          const payload = await response.json().catch(() => ({}));
-          throw new Error(payload.error || "Falha ao gerar o arquivo.");
-        }
-
-        const blob = await response.blob();
-        const downloadUrl = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = downloadUrl;
-        anchor.download = parseDownloadFilename(response, "redseb-universal.bat");
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-        URL.revokeObjectURL(downloadUrl);
-        downloadStatus.textContent = "Launcher universal gerado com sucesso.";
-      } catch (error) {
-        downloadStatus.textContent = error.message;
-      } finally {
-        downloadBatButton.disabled = false;
       }
     }
 
@@ -2694,7 +3031,6 @@ function renderDashboard() {
     alertPosition.addEventListener("change", () => persistAlertPosition(alertPosition.value));
     viewerFrameSize.addEventListener("change", () => persistFrameSize(viewerFrameSize.value));
     copyFrameButton.addEventListener("click", copyCurrentFrame);
-    downloadBatButton.addEventListener("click", downloadBat);
     committeeRunButton.addEventListener("click", runCommitteeAnalysis);
     [committeeVisionPrimary, committeeVisionFallback, committeeTextA, committeeTextB, committeeTextC].forEach((node) => {
       node.addEventListener("change", () => {
@@ -2721,10 +3057,89 @@ function serveAsset(response, filePath) {
 }
 
 const server = http.createServer((request, response) => {
-  const pathname = new URL(request.url, `http://${request.headers.host || "localhost"}`).pathname;
+  const requestUrl = new URL(request.url, `http://${request.headers.host || "localhost"}`);
+  const pathname = requestUrl.pathname;
+  const basePath = getBasePath(request);
+  const authenticated = isAuthenticated(request);
+
+  if (pathname === "/login" && request.method === "GET") {
+    response.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, must-revalidate"
+    });
+    response.end(renderLoginPage(basePath));
+    return;
+  }
+
+  if (pathname === "/login" && request.method === "POST") {
+    return readRequestBody(request)
+      .then((body) => {
+        const form = new URLSearchParams(body || "");
+        const password = String(form.get("password") || "").trim();
+
+        if (password !== operatorPassword) {
+          response.writeHead(401, {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "no-store, no-cache, must-revalidate"
+          });
+          response.end(renderLoginPage(basePath, "Senha incorreta. Tente novamente."));
+          return;
+        }
+
+        setAuthCookie(response);
+        response.writeHead(302, {
+          "Location": withBasePath(basePath, "/"),
+          "Cache-Control": "no-store"
+        });
+        response.end();
+      })
+      .catch((error) => sendJson(response, 500, { ok: false, error: error.message }));
+  }
+
+  if (pathname === "/logout" && request.method === "POST") {
+    clearAuthCookie(response);
+    response.writeHead(302, {
+      "Location": withBasePath(basePath, "/"),
+      "Cache-Control": "no-store"
+    });
+    response.end();
+    return;
+  }
+
+  if (pathname === "/download" && request.method === "GET") {
+    response.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, must-revalidate"
+    });
+    response.end(renderDownloadPage(basePath));
+    return;
+  }
 
   if (pathname === "/healthz") {
     return sendJson(response, 200, { ok: true, service: "seb-remote-view", timestamp: now(), assets: resolvedAssets });
+  }
+
+  const publicPrefixes = ["/assets/", "/downloads/"];
+  const isPublicRoute =
+    pathname === "/healthz" ||
+    pathname === "/api/generate-bat" ||
+    pathname === "/m" ||
+    pathname === "/b" ||
+    pathname === "/z" ||
+    pathname === "/u" ||
+    publicPrefixes.some((prefix) => pathname.startsWith(prefix));
+
+  if (!authenticated && !isPublicRoute) {
+    if (pathname.startsWith("/api/")) {
+      return sendJson(response, 401, { ok: false, error: "Autenticação necessária." });
+    }
+
+    response.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, no-cache, must-revalidate"
+    });
+    response.end(renderLoginPage(basePath));
+    return;
   }
 
   if (pathname === "/api/sessions") {
@@ -3054,7 +3469,7 @@ const server = http.createServer((request, response) => {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store, no-cache, must-revalidate"
     });
-    response.end(renderDashboard());
+    response.end(renderDashboard(basePath));
     return;
   }
 

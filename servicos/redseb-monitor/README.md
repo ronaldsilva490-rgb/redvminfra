@@ -9,7 +9,9 @@ Este servico saiu do projeto separado `C:\projetos\redseb` e agora vive dentro d
 - recebe sessoes remotas do cliente SEB por WebSocket;
 - guarda o estado em memoria;
 - exibe viewport, metadados da sessao e status do candidato em tempo real;
+- protege o painel do operador por senha;
 - aceita alertas temporarios para a sessao selecionada;
+- expõe uma pagina publica de download do launcher universal em `/download`;
 - gera um `.bat` universal da RED Systems que pergunta o `CMID` ou link do exame, instala o **RED SEB Portable** em `Documentos\REDSEBPortable` se faltar, registra o comando `red` para o usuario atual preferencialmente em `%LOCALAPPDATA%\Microsoft\WindowsApps` e abre a prova automaticamente, tudo em modo usuario e sem pedir administrador;
 - depois da primeira execucao, basta abrir um terminal novo e rodar `red 764281` ou `red sebs://...`;
 - serve downloads auxiliares do ecossistema SEB:
@@ -98,6 +100,8 @@ Variaveis principais:
 - `RED_PORTAL_DIR`
 - `RED_SEB_SESSION_STALE_MS`
 - `RED_SEB_PUBLIC_URL`
+- `RED_SEB_OPERATOR_PASSWORD`
+- `RED_SEB_AUTH_SECRET`
 - `SEB_SESSION_WEBHOOK_URL`
 
 `RED_SEB_SESSION_STALE_MS` controla por quanto tempo o monitor mantem a ultima frame de uma sessao depois que o socket fecha. Isso ajuda a nao perder a visualizacao por oscilacoes curtas.
@@ -206,7 +210,10 @@ Runtime oficial esperado:
 - compatibilidade legada opcional: `/opt/seb-remote-view/downloads -> /opt/red-seb-monitor/data/downloads`
 - env: `/etc/red-seb-monitor.env`
 - service: `red-seb-monitor.service`
-- exposicao: `http://HOST:2580`
+- exposicao direta: `http://HOST:2580`
+- exposicao via nginx:
+  - `http://HOST/redseb`
+  - `http://HOST/download`
 
 ## Origem antiga
 
