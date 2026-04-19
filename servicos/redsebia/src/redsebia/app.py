@@ -34,7 +34,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 COOKIE_USER = "redsebia_session"
 COOKIE_ADMIN = "redsebia_admin"
-ASSET_VERSION = "20260419-redsebia-v1"
+ASSET_VERSION = "20260419-redsebia-v2"
 
 
 def public_path(request: Request, path: str) -> str:
@@ -73,13 +73,13 @@ def get_current_user(request: Request) -> dict[str, Any] | None:
 def require_user(request: Request) -> dict[str, Any]:
     user = get_current_user(request)
     if not user:
-        raise HTTPException(status_code=401, detail="Nao autenticado")
+        raise HTTPException(status_code=401, detail="Não autenticado")
     return user
 
 
 def require_admin(request: Request) -> None:
     if not has_admin_session(request):
-        raise HTTPException(status_code=401, detail="Nao autenticado")
+        raise HTTPException(status_code=401, detail="Não autenticado")
 
 
 def require_runtime_token(request: Request) -> dict[str, Any]:
@@ -89,7 +89,7 @@ def require_runtime_token(request: Request) -> dict[str, Any]:
     token = auth.split(" ", 1)[1].strip()
     session = db.get_access_token(token)
     if not session:
-        raise HTTPException(status_code=401, detail="Token invalido")
+        raise HTTPException(status_code=401, detail="Token inválido")
     return session
 
 
@@ -129,6 +129,7 @@ def _provider_admin_view() -> list[dict[str, Any]]:
     for meta in provider_definitions():
         config = configs.get(meta["code"], {"enabled": False, "settings": {}, "display_name": meta["name"]})
         item = {**meta, **config}
+        item["display_name"] = normalized_provider_display_name(meta["code"], item.get("display_name"))
         redacted = {}
         for field in meta["config_fields"]:
             value = config["settings"].get(field["name"])
@@ -144,6 +145,13 @@ def _provider_admin_view() -> list[dict[str, Any]]:
 
 def public_path_placeholder(path: str) -> str:
     return f"{settings.public_base_url}{path}"
+
+
+def normalized_provider_display_name(code: str, display_name: str | None) -> str:
+    display_name = str(display_name or "").strip()
+    if code == "sandbox_pix" and display_name in {"", "Sandbox PIX"}:
+        return "PIX instantâneo"
+    return display_name or code
 
 
 async def _fetch_proxy_models() -> list[str]:
@@ -235,15 +243,15 @@ async def api_register(request: Request) -> JSONResponse:
     name = str(payload.get("name") or "").strip()
     cpf = str(payload.get("cpf") or "").strip()
     if not email or "@" not in email:
-        return JSONResponse({"ok": False, "error": "Informe um e-mail valido."}, status_code=400)
+        return JSONResponse({"ok": False, "error": "Informe um e-mail válido."}, status_code=400)
     if not name:
         return JSONResponse({"ok": False, "error": "Informe seu nome."}, status_code=400)
     if not is_reasonable_password(password):
-        return JSONResponse({"ok": False, "error": "Use uma senha com pelo menos 8 caracteres, letras e numeros."}, status_code=400)
+        return JSONResponse({"ok": False, "error": "Use uma senha com pelo menos 8 caracteres, letras e números."}, status_code=400)
     try:
         user = db.create_user(email=email, password=password, name=name, cpf=cpf)
     except Exception as exc:
-        return JSONResponse({"ok": False, "error": f"Nao foi possivel criar a conta: {exc}"}, status_code=400)
+        return JSONResponse({"ok": False, "error": f"Não foi possível criar a conta: {exc}"}, status_code=400)
     token = db.create_cookie_session(
         user_id=user["id"],
         kind="customer",
@@ -261,7 +269,7 @@ async def api_login(request: Request) -> JSONResponse:
     payload = await request.json()
     user = db.authenticate_user(str(payload.get("email") or ""), str(payload.get("password") or ""))
     if not user:
-        return JSONResponse({"ok": False, "error": "Credenciais invalidas."}, status_code=401)
+        return JSONResponse({"ok": False, "error": "Credenciais inválidas."}, status_code=401)
     token = db.create_cookie_session(
         user_id=user["id"],
         kind="customer",
@@ -289,7 +297,7 @@ async def api_admin_login(request: Request) -> JSONResponse:
     payload = await request.json()
     password = str(payload.get("password") or "")
     if not constant_equals(password, settings.admin_password):
-        return JSONResponse({"ok": False, "error": "Senha invalida."}, status_code=401)
+        return JSONResponse({"ok": False, "error": "Senha inválida."}, status_code=401)
     db.add_event("admin.login", "Operador entrou no painel admin", {"remote_ip": get_remote_ip(request)})
     response = JSONResponse({"ok": True, "redirect": public_path(request, "/admin")})
     set_admin_cookie(response)
@@ -315,7 +323,7 @@ async def api_bootstrap(request: Request) -> dict[str, Any]:
         "providers": [
             {
                 "code": item["code"],
-                "name": item["display_name"],
+                "name": normalized_provider_display_name(item["code"], item["display_name"]),
                 "supported_methods": next(meta["supported_methods"] for meta in provider_definitions() if meta["code"] == item["code"]),
             }
             for item in db.list_provider_configs()
@@ -348,16 +356,16 @@ async def api_create_topup(request: Request) -> JSONResponse:
     provider_code = str(payload.get("provider_code") or "").strip()
     amount_cents = int(float(payload.get("amount_brl") or 0) * 100)
     if amount_cents < 100:
-        return JSONResponse({"ok": False, "error": "O valor minimo e R$ 1,00."}, status_code=400)
+        return JSONResponse({"ok": False, "error": "O valor mínimo é R$ 1,00."}, status_code=400)
     config = db.get_provider_config(provider_code)
     if not config or not config["enabled"]:
-        return JSONResponse({"ok": False, "error": "Provider indisponivel no momento."}, status_code=400)
+        return JSONResponse({"ok": False, "error": "Método indisponível no momento."}, status_code=400)
     charge = db.create_charge(
         user_id=user["id"],
         provider_code=provider_code,
         method="pix",
         amount_cents=amount_cents,
-        description=f"Credito REDSEBIA para {user['email']}",
+        description=f"Crédito REDSEBIA para {user['email']}",
     )
     try:
         provider = get_provider(provider_code)
@@ -369,9 +377,9 @@ async def api_create_topup(request: Request) -> JSONResponse:
         if provider_code == "sandbox_pix" and bool(config["settings"].get("auto_credit")):
             charge = db.update_charge_provider_payload(charge["id"], {"status": "paid", "paid_at": time.time()})
     except Exception as exc:
-        db.add_event("topup.error", "Falha ao criar cobranca", {"charge_id": charge["id"], "provider_code": provider_code, "error": str(exc)})
+        db.add_event("topup.error", "Falha ao criar cobrança", {"charge_id": charge["id"], "provider_code": provider_code, "error": str(exc)})
         return JSONResponse({"ok": False, "error": str(exc), "charge": charge}, status_code=400)
-    db.add_event("topup.created", "Cobranca criada", {"charge_id": charge["id"], "provider_code": provider_code, "user_id": user["id"]})
+    db.add_event("topup.created", "Cobrança criada", {"charge_id": charge["id"], "provider_code": provider_code, "user_id": user["id"]})
     return JSONResponse({"ok": True, "charge": charge})
 
 
@@ -380,7 +388,7 @@ async def api_refresh_topup(charge_id: str, request: Request) -> JSONResponse:
     user = require_user(request)
     charge = db.get_charge(charge_id)
     if not charge or charge["user_id"] != user["id"]:
-        return JSONResponse({"ok": False, "error": "Cobranca nao encontrada."}, status_code=404)
+        return JSONResponse({"ok": False, "error": "Cobrança não encontrada."}, status_code=404)
     config = db.get_provider_config(charge["provider_code"]) or {"settings": {}}
     provider = get_provider(charge["provider_code"])
     try:
@@ -397,11 +405,11 @@ async def api_confirm_sandbox_topup(charge_id: str, request: Request) -> JSONRes
     user = require_user(request)
     charge = db.get_charge(charge_id)
     if not charge or charge["user_id"] != user["id"]:
-        return JSONResponse({"ok": False, "error": "Cobranca nao encontrada."}, status_code=404)
+        return JSONResponse({"ok": False, "error": "Cobrança não encontrada."}, status_code=404)
     if charge["provider_code"] != "sandbox_pix":
-        return JSONResponse({"ok": False, "error": "Apenas o sandbox pode ser confirmado por aqui."}, status_code=400)
+        return JSONResponse({"ok": False, "error": "Este método não permite confirmação manual por aqui."}, status_code=400)
     charge = db.update_charge_provider_payload(charge_id, {"status": "paid", "paid_at": time.time()})
-    db.add_event("topup.sandbox_confirmed", "Pagamento sandbox confirmado", {"charge_id": charge_id, "user_id": user["id"]})
+    db.add_event("topup.sandbox_confirmed", "Pagamento confirmado", {"charge_id": charge_id, "user_id": user["id"]})
     return JSONResponse({"ok": True, "charge": charge, "wallet": db.get_wallet(user["id"])})
 
 
@@ -411,8 +419,12 @@ async def api_admin_save_provider(provider_code: str, request: Request) -> JSONR
     payload = await request.json()
     meta = next((item for item in provider_definitions() if item["code"] == provider_code), None)
     if not meta:
-        return JSONResponse({"ok": False, "error": "Provider desconhecido."}, status_code=404)
-    current = db.get_provider_config(provider_code) or {"settings": {}, "display_name": meta["name"], "enabled": False}
+        return JSONResponse({"ok": False, "error": "Método não encontrado."}, status_code=404)
+    current = db.get_provider_config(provider_code) or {
+        "settings": {},
+        "display_name": normalized_provider_display_name(provider_code, meta["name"]),
+        "enabled": False,
+    }
     settings_payload = dict(current["settings"])
     for field in meta["config_fields"]:
         value = payload.get(field["name"])
@@ -424,9 +436,12 @@ async def api_admin_save_provider(provider_code: str, request: Request) -> JSONR
         elif value is not None:
             settings_payload[field["name"]] = value
     enabled = bool(payload.get("enabled"))
-    display_name = str(payload.get("display_name") or current["display_name"] or meta["name"]).strip()
+    display_name = normalized_provider_display_name(
+        provider_code,
+        str(payload.get("display_name") or current["display_name"] or meta["name"]).strip(),
+    )
     db.upsert_provider_config(provider_code, display_name, enabled, settings_payload)
-    db.add_event("admin.provider.updated", "Provider atualizado no REDSEBIA", {"provider_code": provider_code, "enabled": enabled})
+    db.add_event("admin.provider.updated", "Método atualizado no REDSEBIA", {"provider_code": provider_code, "enabled": enabled})
     return JSONResponse({"ok": True, "provider": next(item for item in _provider_admin_view() if item["code"] == provider_code)})
 
 
@@ -435,9 +450,9 @@ async def api_admin_mark_paid(charge_id: str, request: Request) -> JSONResponse:
     require_admin(request)
     charge = db.get_charge(charge_id)
     if not charge:
-        return JSONResponse({"ok": False, "error": "Cobranca nao encontrada."}, status_code=404)
+        return JSONResponse({"ok": False, "error": "Cobrança não encontrada."}, status_code=404)
     charge = db.update_charge_provider_payload(charge_id, {"status": "paid", "paid_at": time.time()})
-    db.add_event("admin.charge.paid", "Cobranca marcada como paga", {"charge_id": charge_id})
+    db.add_event("admin.charge.paid", "Cobrança marcada como paga", {"charge_id": charge_id})
     return JSONResponse({"ok": True, "charge": charge})
 
 
@@ -446,9 +461,9 @@ async def api_admin_expire_charge(charge_id: str, request: Request) -> JSONRespo
     require_admin(request)
     charge = db.get_charge(charge_id)
     if not charge:
-        return JSONResponse({"ok": False, "error": "Cobranca nao encontrada."}, status_code=404)
+        return JSONResponse({"ok": False, "error": "Cobrança não encontrada."}, status_code=404)
     charge = db.update_charge_provider_payload(charge_id, {"status": "expired"})
-    db.add_event("admin.charge.expired", "Cobranca expirada manualmente", {"charge_id": charge_id})
+    db.add_event("admin.charge.expired", "Cobrança encerrada manualmente", {"charge_id": charge_id})
     return JSONResponse({"ok": True, "charge": charge})
 
 
@@ -506,7 +521,7 @@ async def api_device_approve(request: Request) -> JSONResponse:
     user_code = str(payload.get("user_code") or "").strip().upper()
     approved = db.approve_device_code(user_code, user["id"], settings.runtime_token_ttl_seconds)
     if not approved:
-        return JSONResponse({"ok": False, "error": "Codigo invalido ou expirado."}, status_code=404)
+        return JSONResponse({"ok": False, "error": "Código inválido ou expirado."}, status_code=404)
     db.add_event("device.approved", "Login via dispositivo aprovado", {"user_id": user["id"], "user_code": user_code})
     return JSONResponse({"ok": True, "status": "approved"})
 
@@ -540,7 +555,7 @@ async def api_provider_webhook(provider_code: str, request: Request) -> JSONResp
             charge = db.find_charge_by_external_reference(provider_code, str(result["external_reference"]))
         if charge:
             charge = db.update_charge_provider_payload(charge["id"], result)
-            db.add_event("webhook.charge.updated", "Webhook atualizou cobranca", {"provider_code": provider_code, "charge_id": charge["id"]})
+            db.add_event("webhook.charge.updated", "Webhook atualizou cobrança", {"provider_code": provider_code, "charge_id": charge["id"]})
     return JSONResponse({"ok": True})
 
 
@@ -568,12 +583,12 @@ async def api_runtime_client_start(request: Request) -> JSONResponse:
     payload = await request.json()
     row = db.create_client_session(
         session["user_id"],
-        str(payload.get("device_name") or "cliente-redsebia"),
+        str(payload.get("device_name") or "Aplicativo REDSEBIA"),
         str(payload.get("client_version") or ""),
         str(payload.get("exam_ref") or ""),
         payload.get("metadata") or {},
     )
-    db.add_event("runtime.client.start", "Sessao do cliente iniciada", {"user_id": session["user_id"], "client_session_id": row["id"]})
+    db.add_event("runtime.client.start", "Sessão do cliente iniciada", {"user_id": session["user_id"], "client_session_id": row["id"]})
     return JSONResponse({"ok": True, "session": row})
 
 
@@ -583,7 +598,7 @@ async def api_runtime_client_heartbeat(client_session_id: str, request: Request)
     payload = await request.json()
     row = db.heartbeat_client_session(client_session_id, payload.get("metadata") or {})
     if row["user_id"] != session["user_id"]:
-        raise HTTPException(status_code=403, detail="Sessao nao pertence ao usuario")
+        raise HTTPException(status_code=403, detail="Sessão não pertence ao usuário")
     return JSONResponse({"ok": True, "session": row})
 
 
@@ -593,8 +608,8 @@ async def api_runtime_client_stop(client_session_id: str, request: Request) -> J
     payload = await request.json()
     row = db.stop_client_session(client_session_id, payload.get("metadata") or {})
     if row["user_id"] != session["user_id"]:
-        raise HTTPException(status_code=403, detail="Sessao nao pertence ao usuario")
-    db.add_event("runtime.client.stop", "Sessao do cliente finalizada", {"user_id": session["user_id"], "client_session_id": row["id"]})
+        raise HTTPException(status_code=403, detail="Sessão não pertence ao usuário")
+    db.add_event("runtime.client.stop", "Sessão do cliente finalizada", {"user_id": session["user_id"], "client_session_id": row["id"]})
     return JSONResponse({"ok": True, "session": row})
 
 
@@ -623,7 +638,7 @@ async def api_runtime_reserve(request: Request) -> JSONResponse:
     payload = await request.json()
     reserved_cents = int(payload.get("reserved_cents") or settings.default_hold_cents)
     if reserved_cents <= 0:
-        return JSONResponse({"ok": False, "error": "reserved_cents invalido"}, status_code=400)
+        return JSONResponse({"ok": False, "error": "reserved_cents inválido"}, status_code=400)
     description = str(payload.get("description") or "Reserva para analise REDSEBIA")
     metadata = payload.get("metadata") or {}
     try:

@@ -4,9 +4,9 @@
 {% block content %}
 <section class="dashboard-hero">
   <div>
-    <span class="eyebrow">Portal do cliente</span>
-    <h1>Saldo, PIX, historico e login do <code>red</code>.</h1>
-    <p>Esse painel ja nasce pronto para conversar com o runtime do novo SEB e cobrar uso de IA em tempo real.</p>
+    <span class="eyebrow">Área do cliente</span>
+    <h1>Sua operação no REDSEBIA.</h1>
+    <p>Gerencie saldo, acompanhe cobranças e mantenha seus dispositivos autorizados em um painel único.</p>
   </div>
   <button class="btn btn-ghost" id="logout-button" type="button">Sair</button>
 </section>
@@ -18,20 +18,20 @@
     <p id="user-email" class="muted">-</p>
     <div class="pill-row">
       <span class="pill" id="wallet-balance">Saldo: R$ 0,00</span>
-      <span class="pill">Modo cliente</span>
+      <span class="pill">Conta ativa</span>
     </div>
   </article>
 
   <article class="info-card">
     <span class="label">CLI</span>
-    <strong>Primeiro passo local</strong>
+    <strong>Terminal habilitado</strong>
     <pre class="cli-block">red login</pre>
-    <p class="muted">O comando vai abrir o navegador, aprovar o dispositivo e depois devolver o bastao para o terminal.</p>
+    <p class="muted">Use esse comando para vincular o dispositivo à sua conta e liberar o acesso do aplicativo.</p>
   </article>
   <article class="info-card">
-    <span class="label">Uso futuro</span>
-    <strong>Runtime preparado</strong>
-    <p class="muted">Os endpoints de autorizacao, reserva e liquidacao ja estao prontos para a proxima rodada do novo SEB.</p>
+    <span class="label">Operação</span>
+    <strong>Autorização contínua</strong>
+    <p class="muted">O ambiente consulta saldo, registra atividade e mantém o consumo sincronizado com o backend em tempo real.</p>
   </article>
 </section>
 
@@ -41,16 +41,17 @@
       <div>
         <span class="eyebrow">Carteira</span>
         <h2>Adicionar saldo</h2>
+        <p class="section-copy">Escolha o método disponível, informe o valor e acompanhe a liquidação da cobrança aqui mesmo.</p>
       </div>
     </div>
     <form id="topup-form" class="form-grid two">
-      <label>Provider
+      <label>Método de pagamento
         <select name="provider_code" id="provider-select"></select>
       </label>
       <label>Valor em reais
         <input type="number" min="1" step="1" name="amount_brl" value="10" required>
       </label>
-      <button class="btn btn-primary" type="submit">Gerar cobranca</button>
+      <button class="btn btn-primary" type="submit">Gerar cobrança</button>
     </form>
     <div id="active-charge" class="charge-card hidden"></div>
   </article>
@@ -58,8 +59,9 @@
   <article class="panel-card">
     <div class="section-head">
       <div>
-        <span class="eyebrow">Historico</span>
-        <h2>Ultimos creditos e debitos</h2>
+        <span class="eyebrow">Movimentações</span>
+        <h2>Últimos créditos e débitos</h2>
+        <p class="section-copy">Acompanhe o saldo da conta com registro claro de entradas, reservas e liquidações.</p>
       </div>
     </div>
     <div id="ledger-list" class="list-stack"></div>
@@ -69,8 +71,9 @@
 <section class="panel-card">
   <div class="section-head">
     <div>
-      <span class="eyebrow">Cobrancas</span>
-      <h2>PIX emitidos</h2>
+      <span class="eyebrow">Cobranças</span>
+      <h2>Cobranças recentes</h2>
+      <p class="section-copy">Veja o histórico mais recente de cobranças abertas, liquidadas ou encerradas.</p>
     </div>
   </div>
   <div id="charges-list" class="list-stack"></div>
@@ -79,8 +82,9 @@
 <section class="panel-card">
   <div class="section-head">
     <div>
-      <span class="eyebrow">Cliente futuro</span>
-      <h2>Sessoes do novo SEB</h2>
+      <span class="eyebrow">Dispositivos</span>
+      <h2>Sessões conectadas</h2>
+      <p class="section-copy">Dispositivos vinculados aparecem aqui com status atualizado e último sinal recebido.</p>
     </div>
   </div>
   <div id="client-sessions-list" class="list-stack"></div>

@@ -24,13 +24,36 @@
     });
     const data = await resp.json();
     if (!resp.ok || data.ok === false) {
-      throw new Error(data.error || "Falha na operacao.");
+      throw new Error(data.error || "Falha na operação.");
     }
     return data;
   }
 
   function brl(cents) {
     return (Number(cents || 0) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  }
+
+  function providerLabel(code) {
+    const map = {
+      sandbox_pix: "PIX instantâneo",
+      manual_pix: "PIX manual",
+      asaas: "Asaas PIX",
+      efi_pix: "Efí Bank PIX",
+      mercadopago_pix: "Mercado Pago PIX",
+      pagarme_pix: "Pagar.me PIX",
+      pagseguro_pix: "PagBank / PagSeguro PIX",
+    };
+    return map[code] || code || "-";
+  }
+
+  function humanStatus(status) {
+    const map = {
+      pending: "Aguardando pagamento",
+      paid: "Liquidado",
+      expired: "Encerrado",
+      confirmed: "Confirmado",
+    };
+    return map[status] || status || "-";
   }
 
   async function wireAdminLogin() {
@@ -60,10 +83,10 @@
 
     function renderStats(stats) {
       statsWrap.innerHTML = `
-        <article class="stats-card"><span class="label">Usuarios</span><strong>${stats.total_users}</strong></article>
-        <article class="stats-card"><span class="label">Cobrancas abertas</span><strong>${stats.active_charges}</strong></article>
+        <article class="stats-card"><span class="label">Usuários</span><strong>${stats.total_users}</strong></article>
+        <article class="stats-card"><span class="label">Cobranças abertas</span><strong>${stats.active_charges}</strong></article>
         <article class="stats-card"><span class="label">Saldo agregado</span><strong>${brl(stats.total_balance_cents)}</strong></article>
-        <article class="stats-card"><span class="label">Creditos liquidados</span><strong>${stats.paid_charges}</strong></article>
+        <article class="stats-card"><span class="label">Créditos liquidados</span><strong>${stats.paid_charges}</strong></article>
       `;
     }
 
@@ -76,7 +99,7 @@
               <div class="provider-meta">
                 <span class="pill ${provider.enabled ? 'ok' : 'warn'}">${provider.enabled ? 'Ativo' : 'Inativo'}</span>
                 <span class="pill">${provider.supported_methods.join(", ")}</span>
-                <span class="pill">${provider.implemented ? 'Adapter pronto' : 'Adapter base'}</span>
+                <span class="pill">${provider.implemented ? 'Integração pronta' : 'Credencial preparada'}</span>
               </div>
             </div>
           </div>
@@ -84,7 +107,7 @@
             <input type="text" name="display_name" value="${provider.display_name || provider.name}">
           </label>
           <label style="margin-top:10px">
-            <input type="checkbox" name="enabled" ${provider.enabled ? "checked" : ""}> Ativar provider
+            <input type="checkbox" name="enabled" ${provider.enabled ? "checked" : ""}> Ativar método
           </label>
           ${provider.config_fields.map((field) => {
             const value = provider.settings_redacted?.[field.name] ?? "";
@@ -99,9 +122,9 @@
             }
             return `<label>${field.label}<input type="${field.type === 'password' ? 'password' : 'text'}" name="${field.name}" value="${value || ""}" placeholder="${field.placeholder || ""}"></label>`;
           }).join("")}
-          <p class="helper">Webhook esperado: <code>${provider.webhook_url}</code></p>
-          ${provider.docs_url ? `<p class="helper"><a href="${provider.docs_url}" target="_blank" rel="noopener">Documentacao oficial</a></p>` : ""}
-          <button class="btn btn-primary" type="submit">Salvar provider</button>
+          <p class="helper">Webhook do provedor: <code>${provider.webhook_url}</code></p>
+          ${provider.docs_url ? `<p class="helper"><a href="${provider.docs_url}" target="_blank" rel="noopener">Documentação oficial</a></p>` : ""}
+          <button class="btn btn-primary" type="submit">Salvar configuração</button>
         </form>
       `).join("");
       providerWrap.querySelectorAll("form[data-provider]").forEach((form) => {
@@ -117,7 +140,7 @@
           });
           try {
             await postJson(path(`/api/admin/providers/${form.dataset.provider}`), payload);
-            toast("Provider atualizado.");
+            toast("Configuração salva.");
             await load();
           } catch (error) {
             toast(error.message);
@@ -127,34 +150,38 @@
     }
 
     function renderUsers(users) {
-      usersWrap.innerHTML = users.map((user) => `
-        <div class="list-item">
-          <strong>${user.name}</strong>
-          <small>${user.email}</small>
-          <div class="row">
-            <span class="pill">${brl(user.wallet.balance_cents)}</span>
-            <span class="pill">${new Date(user.created_at * 1000).toLocaleString("pt-BR")}</span>
-          </div>
-        </div>
-      `).join("");
+      usersWrap.innerHTML = users.length
+        ? users.map((user) => `
+            <div class="list-item">
+              <strong>${user.name}</strong>
+              <small>${user.email}</small>
+              <div class="row">
+                <span class="pill">Saldo disponível ${brl(user.wallet.balance_cents)}</span>
+                <span class="pill">${new Date(user.created_at * 1000).toLocaleString("pt-BR")}</span>
+              </div>
+            </div>
+          `).join("")
+        : `<div class="list-item empty-state"><strong>Nenhum cliente recente.</strong><small>As novas contas aparecem aqui assim que forem criadas.</small></div>`;
     }
 
     function renderCharges(charges) {
-      chargesWrap.innerHTML = charges.map((charge) => `
-        <div class="list-item">
-          <strong>${brl(charge.amount_cents)} • ${charge.status}</strong>
-          <small>${charge.provider_code} • ${charge.id}</small>
-          <div class="row">
-            <button class="btn btn-ghost" type="button" data-charge-paid="${charge.id}">Marcar pago</button>
-            <button class="btn btn-ghost" type="button" data-charge-expire="${charge.id}">Expirar</button>
-          </div>
-        </div>
-      `).join("");
+      chargesWrap.innerHTML = charges.length
+        ? charges.map((charge) => `
+            <div class="list-item">
+              <strong>${brl(charge.amount_cents)} • ${humanStatus(charge.status)}</strong>
+              <small>${providerLabel(charge.provider_code)} • referência ${charge.id}</small>
+              <div class="row">
+                <button class="btn btn-ghost" type="button" data-charge-paid="${charge.id}">Marcar como pago</button>
+                <button class="btn btn-ghost" type="button" data-charge-expire="${charge.id}">Encerrar cobrança</button>
+              </div>
+            </div>
+          `).join("")
+        : `<div class="list-item empty-state"><strong>Nenhuma cobrança recente.</strong><small>As cobranças emitidas pela plataforma aparecem aqui com status e ação rápida.</small></div>`;
       chargesWrap.querySelectorAll("[data-charge-paid]").forEach((button) => {
         button.addEventListener("click", async () => {
           try {
             await postJson(path(`/api/admin/charges/${button.dataset.chargePaid}/mark-paid`), {});
-            toast("Cobranca liquidada.");
+            toast("Cobrança liquidada.");
             await load();
           } catch (error) {
             toast(error.message);
@@ -165,7 +192,7 @@
         button.addEventListener("click", async () => {
           try {
             await postJson(path(`/api/admin/charges/${button.dataset.chargeExpire}/expire`), {});
-            toast("Cobranca expirada.");
+            toast("Cobrança encerrada.");
             await load();
           } catch (error) {
             toast(error.message);
@@ -175,23 +202,25 @@
     }
 
     function renderEvents(events) {
-      eventsWrap.innerHTML = events.map((event) => `
-        <div class="list-item">
-          <strong>${event.kind}</strong>
-          <small>${new Date(event.ts * 1000).toLocaleString("pt-BR")} • ${event.message}</small>
-        </div>
-      `).join("");
+      eventsWrap.innerHTML = events.length
+        ? events.map((event) => `
+            <div class="list-item">
+              <strong>${event.kind}</strong>
+              <small>${new Date(event.ts * 1000).toLocaleString("pt-BR")} • ${event.message}</small>
+            </div>
+          `).join("")
+        : `<div class="list-item empty-state"><strong>Nenhum evento recente.</strong><small>Os registros operacionais aparecem aqui conforme a plataforma recebe atividade.</small></div>`;
     }
 
     function renderClientSessions(items) {
       clientSessionsWrap.innerHTML = items.length
         ? items.map((item) => `
             <div class="list-item">
-              <strong>${item.device_name || 'cliente-redsebia'} • ${item.status}</strong>
-              <small>${item.exam_ref || 'sem exame'} • usuario ${item.user_id} • ultimo sinal ${new Date(item.last_seen_at * 1000).toLocaleString("pt-BR")}</small>
+              <strong>${item.device_name || 'Aplicativo REDSEBIA'} • ${item.status}</strong>
+              <small>${item.exam_ref || 'sem referência vinculada'} • usuário ${item.user_id} • último sinal ${new Date(item.last_seen_at * 1000).toLocaleString("pt-BR")}</small>
             </div>
           `).join("")
-        : `<div class="list-item"><strong>Nenhuma sessao do cliente ainda.</strong></div>`;
+        : `<div class="list-item empty-state"><strong>Nenhuma sessão ativa no momento.</strong><small>Os dispositivos autorizados aparecem aqui assim que o aplicativo iniciar comunicação com o backend.</small></div>`;
     }
 
     async function load() {

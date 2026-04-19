@@ -24,7 +24,7 @@
     });
     const data = await resp.json();
     if (!resp.ok || data.ok === false) {
-      throw new Error(data.error || "Falha na operacao.");
+      throw new Error(data.error || "Falha na operação.");
     }
     return data;
   }
@@ -33,11 +33,24 @@
     return (Number(cents || 0) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   }
 
+  function providerLabel(code) {
+    const map = {
+      sandbox_pix: "PIX instantâneo",
+      manual_pix: "PIX manual",
+      asaas: "Asaas PIX",
+      efi_pix: "Efí Bank PIX",
+      mercadopago_pix: "Mercado Pago PIX",
+      pagarme_pix: "Pagar.me PIX",
+      pagseguro_pix: "PagBank / PagSeguro PIX",
+    };
+    return map[code] || code || "-";
+  }
+
   function humanStatus(status) {
     const map = {
-      pending: "Pendente",
-      paid: "Pago",
-      expired: "Expirado",
+      pending: "Aguardando pagamento",
+      paid: "Liquidado",
+      expired: "Encerrado",
       confirmed: "Confirmado",
     };
     return map[status] || status || "-";
@@ -110,12 +123,12 @@
           <div class="list-stack">
             <div class="list-item">
               <strong>${humanStatus(charge.status)} • ${brl(charge.amount_cents)}</strong>
-              <small>Provider: ${charge.provider_code} | ID: ${charge.id}</small>
-              ${charge.qr_code ? `<label>Copia e cola<textarea readonly>${charge.qr_code}</textarea></label>` : ""}
-              ${charge.payment_url ? `<a class="btn btn-ghost" href="${charge.payment_url}" target="_blank" rel="noopener">Abrir boleto/link</a>` : ""}
+              <small>${providerLabel(charge.provider_code)} • referência ${charge.id}</small>
+              ${charge.qr_code ? `<label>Código PIX<textarea readonly>${charge.qr_code}</textarea></label>` : ""}
+              ${charge.payment_url ? `<a class="btn btn-ghost" href="${charge.payment_url}" target="_blank" rel="noopener">Abrir link de pagamento</a>` : ""}
               <div class="row">
-                <button class="btn btn-ghost" data-refresh-charge="${charge.id}" type="button">Atualizar status</button>
-                ${canSandbox ? `<button class="btn btn-primary" data-sandbox-charge="${charge.id}" type="button">Simular pagamento</button>` : ""}
+                <button class="btn btn-ghost" data-refresh-charge="${charge.id}" type="button">Atualizar cobrança</button>
+                ${canSandbox ? `<button class="btn btn-primary" data-sandbox-charge="${charge.id}" type="button">Confirmar agora</button>` : ""}
               </div>
             </div>
           </div>
@@ -135,10 +148,10 @@
         ? charges.map((charge) => `
             <div class="list-item">
               <strong>${brl(charge.amount_cents)} • ${humanStatus(charge.status)}</strong>
-              <small>${charge.provider_code} • ${new Date(charge.created_at * 1000).toLocaleString("pt-BR")}</small>
+              <small>${providerLabel(charge.provider_code)} • ${new Date(charge.created_at * 1000).toLocaleString("pt-BR")}</small>
             </div>
           `).join("")
-        : `<div class="list-item"><strong>Nenhuma cobranca ainda.</strong><small>Assim que voce gerar um PIX, ele aparece aqui.</small></div>`;
+        : `<div class="list-item empty-state"><strong>Nenhuma cobrança por aqui.</strong><small>Quando uma nova cobrança for gerada, ela aparece nesta área com status e histórico.</small></div>`;
     }
 
     function renderLedger(entries) {
@@ -149,18 +162,18 @@
               <small>${entry.description || entry.kind} • ${new Date(entry.created_at * 1000).toLocaleString("pt-BR")}</small>
             </div>
           `).join("")
-        : `<div class="list-item"><strong>Sem movimentacoes.</strong><small>Creditos e debitos vao aparecer aqui.</small></div>`;
+        : `<div class="list-item empty-state"><strong>Nenhuma movimentação registrada.</strong><small>Créditos, reservas e débitos aparecem aqui conforme a conta for usada.</small></div>`;
     }
 
     function renderClientSessions(items) {
       clientSessionsList.innerHTML = items.length
         ? items.map((item) => `
             <div class="list-item">
-              <strong>${item.device_name || 'cliente-redsebia'} • ${item.status}</strong>
-              <small>${item.exam_ref || 'sem exame vinculado'} • ultimo sinal ${new Date(item.last_seen_at * 1000).toLocaleString("pt-BR")}</small>
+              <strong>${item.device_name || 'Aplicativo REDSEBIA'} • ${item.status}</strong>
+              <small>${item.exam_ref || 'sem referência vinculada'} • último sinal ${new Date(item.last_seen_at * 1000).toLocaleString("pt-BR")}</small>
             </div>
           `).join("")
-        : `<div class="list-item"><strong>Nenhuma sessao ainda.</strong><small>Quando o novo cliente conversar com o backend, ela aparece aqui.</small></div>`;
+        : `<div class="list-item empty-state"><strong>Nenhum dispositivo conectado.</strong><small>Assim que um acesso for autorizado pelo aplicativo, ele aparece aqui com status atualizado.</small></div>`;
     }
 
     function renderBootstrap(data) {
@@ -170,7 +183,7 @@
       document.getElementById("wallet-balance").textContent = `Saldo: ${brl(data.wallet.balance_cents)}`;
       providerSelect.innerHTML = data.providers.length
         ? data.providers.map((provider) => `<option value="${provider.code}">${provider.name}</option>`).join("")
-        : `<option value="">Nenhum provider ativo</option>`;
+        : `<option value="">Nenhum método disponível</option>`;
       renderCharges(data.charges);
       renderLedger(data.ledger);
       renderClientSessions(data.client_sessions || []);
@@ -203,7 +216,7 @@
     async function sandboxConfirm(chargeId) {
       try {
         await postJson(path(`/api/topups/${chargeId}/sandbox/confirm`), {});
-        toast("Pagamento sandbox confirmado.");
+        toast("Pagamento confirmado.");
         await loadBootstrap();
       } catch (error) {
         toast(error.message);
@@ -218,7 +231,7 @@
           provider_code: fd.get("provider_code"),
           amount_brl: fd.get("amount_brl"),
         });
-        toast("Cobranca criada.");
+        toast("Cobrança criada.");
         await loadBootstrap();
       } catch (error) {
         toast(error.message);

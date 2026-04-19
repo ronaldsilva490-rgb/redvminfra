@@ -14,19 +14,19 @@
     <a class="brand" href="{{ public_path('/') }}">
       <img class="brand-logo" src="{{ public_path('/brand/logo.png') }}" alt="RED Systems">
       <div>
-        <div class="brand-kicker">Ecossistema Independente</div>
+        <div class="brand-kicker">Operação, carteira e acesso</div>
         <strong>REDSEBIA</strong>
       </div>
     </a>
     <nav class="topnav">
-      <a href="{{ public_path('/') }}">Inicio</a>
+      <a href="{{ public_path('/') }}">Início</a>
       {% if current_user %}
-        <a href="{{ public_path('/portal') }}">Portal</a>
+        <a href="{{ public_path('/portal') }}">Área do cliente</a>
       {% else %}
         <a href="{{ public_path('/login') }}">Entrar</a>
         <a href="{{ public_path('/register') }}">Criar conta</a>
       {% endif %}
-      <a href="{{ public_path('/admin') }}">Admin</a>
+      <a href="{{ public_path('/admin') }}">Operação</a>
     </nav>
   </header>
 

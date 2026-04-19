@@ -70,7 +70,7 @@ class PaymentProvider(ABC):
 
 class SandboxPixProvider(PaymentProvider):
     code = "sandbox_pix"
-    name = "Sandbox PIX"
+    name = "PIX instantâneo"
     docs_url = ""
     supported_methods = ["pix"]
     config_fields = [
@@ -78,7 +78,7 @@ class SandboxPixProvider(PaymentProvider):
     ]
 
     async def create_charge(self, config: dict[str, Any], request: ChargeRequest) -> dict[str, Any]:
-        label = f"PIX sandbox R$ {cents_to_brl(request.amount_cents):.2f}"
+        label = f"PIX imediato R$ {cents_to_brl(request.amount_cents):.2f}"
         return {
             "provider_charge_id": f"sandbox_{request.charge_id}",
             "status": "pending",
@@ -368,11 +368,11 @@ class PlaceholderProvider(PaymentProvider):
         self.implemented = False
         self.config_fields = [
             {"name": "api_key", "label": "API Key / Token", "type": "password", "placeholder": "credencial"},
-            {"name": "notes", "label": "Observacoes", "type": "textarea", "placeholder": "Campos finais entram na proxima rodada."},
+            {"name": "notes", "label": "Observações", "type": "textarea", "placeholder": "Observações internas da integração."},
         ]
 
     async def create_charge(self, config: dict[str, Any], request: ChargeRequest) -> dict[str, Any]:
-        raise NotImplementedError("Provider cadastrado no painel, mas sem adapter final ainda.")
+        raise NotImplementedError("Integração cadastrada no painel, mas ainda indisponível para emissão de cobrança.")
 
 
 PROVIDERS: dict[str, PaymentProvider] = {
