@@ -261,12 +261,44 @@ function buildPortableLauncherBat() {
     "$d=[Environment]::GetFolderPath('MyDocuments')",
     "if([string]::IsNullOrWhiteSpace($d)){$d=Join-Path $env:USERPROFILE 'Documents'}",
     "$t=Join-Path $d 'REDSEBPortable'",
+    "$bd=Join-Path $env:LOCALAPPDATA 'REDSystems\\bin'",
+    "$ps=Join-Path $bd 'red.ps1'",
+    "$cmd=Join-Path $bd 'red.cmd'",
     "$w=Join-Path $env:TEMP ('redseb-work-'+[guid]::NewGuid().ToString('N'))",
     "$f=Join-Path $w 'REDSEBPortable.zip'",
     "$x=Join-Path $w 'extract'",
     "function C($m,$c='Gray'){Write-Host $m -ForegroundColor $c}",
     "function L(){Write-Host '============================================================' -ForegroundColor DarkRed}",
     "function P($label){Write-Host ($label+' [============================] 100%') -ForegroundColor DarkGray}",
+    "function R(){",
+    "New-Item -ItemType Directory -Path $bd -Force|Out-Null",
+    "$psLines=@(",
+    "'param([Parameter(ValueFromRemainingArguments=$true)][string[]]$ArgsFromCmd)'",
+    "'$ErrorActionPreference=''Stop'''",
+    "'$b='''" + escapedLaunchBase + "''''",
+    "'$d=[Environment]::GetFolderPath(''MyDocuments'')'",
+    "'if([string]::IsNullOrWhiteSpace($d)){$d=Join-Path $env:USERPROFILE ''Documents''}'",
+    "'$t=Join-Path $d ''REDSEBPortable'''",
+    "'$e=Get-ChildItem -LiteralPath $t -Filter ''SafeExamBrowser.exe'' -Recurse -File -Force -ErrorAction SilentlyContinue|Select-Object -First 1 -ExpandProperty FullName'",
+    "'if([string]::IsNullOrWhiteSpace($e)){Write-Host ''RED SEB Portable nao encontrado. Rode o launcher universal da RED novamente.'' -ForegroundColor Red; exit 1}'",
+    "'$r=($ArgsFromCmd -join '' '').Trim()'",
+    "'if([string]::IsNullOrWhiteSpace($r)){$r=(Read-Host ''ID ou link'').Trim()}'",
+    "'if($r -match ''^[0-9]+$''){$l=$b+$r}elseif($r -match ''^(?i)sebs?://''){$l=$r}else{Write-Host ''Entrada invalida. Informe um CMID numerico ou um link seb:// ou sebs:// completo.'' -ForegroundColor Red; exit 1}'",
+    "'Start-Process -FilePath $e -ArgumentList $l|Out-Null'",
+    "')",
+    "$psLines | Set-Content -LiteralPath $ps -Encoding UTF8",
+    "$cmdLines=@(",
+    "'@echo off'",
+    "'setlocal EnableExtensions'",
+    "'powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File \"\"%LOCALAPPDATA%\\REDSystems\\bin\\red.ps1\"\" %*'",
+    "'endlocal & exit /b %ERRORLEVEL%'",
+    "')",
+    "$cmdLines | Set-Content -LiteralPath $cmd -Encoding ASCII",
+    "$up=[Environment]::GetEnvironmentVariable('Path','User')",
+    "if([string]::IsNullOrWhiteSpace($up)){$up=''}",
+    "$exists=($up -split ';' | Where-Object { $_.Trim().ToLowerInvariant() -eq $bd.ToLowerInvariant() }).Count -gt 0",
+    "if(-not $exists){$np=if([string]::IsNullOrWhiteSpace($up)){$bd}else{($up.TrimEnd(';')+';'+$bd)};[Environment]::SetEnvironmentVariable('Path',$np,'User')}",
+    "}",
     "try{",
     "if($Host.UI.RawUI){$Host.UI.RawUI.WindowTitle='RED Systems | RED SEB Universal'}",
     "Clear-Host",
@@ -296,6 +328,7 @@ function buildPortableLauncherBat() {
     "& attrib +h $t | Out-Null",
     "$e=Get-ChildItem -LiteralPath $t -Filter 'SafeExamBrowser.exe' -Recurse -File -Force -ErrorAction SilentlyContinue|Select-Object -First 1 -ExpandProperty FullName",
     "if([string]::IsNullOrWhiteSpace($e)){throw 'SafeExamBrowser.exe nao foi encontrado depois da instalacao.'}",
+    "R",
     "C 'Tudo OK, iniciando RED.' 'Green'",
     "Start-Process -FilePath $e -ArgumentList $l|Out-Null",
     "Start-Sleep -Milliseconds 800",
@@ -1693,12 +1726,12 @@ function renderDashboard() {
       </section>
       <section class="command-panel glass">
         <h3>Launcher Universal</h3>
-        <p>Baixe um único <code>.bat</code> da RED Systems. Quando ele rodar, pergunta o <code>CMID</code> ou o link completo do exame, instala o RED SEB Portable em <code>Documentos\\REDSEBPortable</code> se faltar, abre a prova e se remove sozinho no fim. Tudo em modo usuário, sem pedir administrador.</p>
+        <p>Baixe um único <code>.bat</code> da RED Systems. Quando ele rodar, pergunta o <code>CMID</code> ou o link completo do exame, instala o RED SEB Portable em <code>Documentos\\REDSEBPortable</code> se faltar, registra o comando <code>red</code> para o usuário atual, abre a prova e se remove sozinho no fim. Tudo em modo usuário, sem pedir administrador.</p>
         <div class="download-grid">
           <button class="download-button" id="download-bat-button" type="button">Baixar launcher .bat</button>
           <a class="download-button" id="download-zip-button" href="/downloads/REDSEBPortable.zip">Baixar .zip</a>
         </div>
-        <div class="download-status" id="download-status">O launcher usa a pasta Documentos\\REDSEBPortable e roda sem precisar de admin.</div>
+        <div class="download-status" id="download-status">O launcher usa a pasta Documentos\\REDSEBPortable, registra o comando <code>red</code> para o usuário e roda sem precisar de admin. Depois da primeira execução, abra um terminal novo e use <code>red 764281</code> ou <code>red sebs://...</code>.</div>
       </section>
       <section class="stage glass">
         <div class="stage-header">
