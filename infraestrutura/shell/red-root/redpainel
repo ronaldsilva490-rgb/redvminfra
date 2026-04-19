@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -u
+
+export LANG=pt_BR.UTF-8
+export LANGUAGE=pt_BR:pt
+
+RED=$'\033[38;2;255;0;0m'
+GREEN=$'\033[38;2;0;255;120m'
+WHITE=$'\033[1;37m'
+RESET=$'\033[0m'
+
+clear_screen() {
+    if [ -t 1 ] && [ -n "${TERM:-}" ] && command -v clear >/dev/null 2>&1; then
+        clear
+    fi
+}
+
+border() {
+    printf '%b\n' "${RED}╔══════════════════════════════════════════════════════════════════════════════╗${RESET}"
+}
+
+divider() {
+    printf '%b\n' "${RED}╠══════════════════════════════════════════════════════════════════════════════╣${RESET}"
+}
+
+footer() {
+    printf '%b\n' "${RED}╚══════════════════════════════════════════════════════════════════════════════╝${RESET}"
+}
+
+line() {
+    local content="$1"
+    local plain visible pad
+    plain="$(printf '%b' "$content" | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g')"
+    visible=$(printf '%s' "$plain" | awk '{print length}')
+    pad=$((76 - visible))
+    if [ "$pad" -lt 0 ]; then
+        pad=0
+    fi
+    printf '%b%b%*s%b\n' "${RED}║ ${RESET}" "$content" "$pad" '' "${RED} ║${RESET}"
+}
+
+percent_color() {
+    local pct="$1"
+    if [ -z "$pct" ]; then
+        printf '%s' "$WHITE"
+    elif [ "$pct" -ge 85 ]; then
+        printf '%s' "$RED"
+    else
+        printf '%s' "$GREEN"
+    fi
+}
+
+while true; do
+    LOAD="$(awk '{print $1}' /proc/loadavg 2>/dev/null)"
+    UPTIME_TEXT="$(uptime -p 2>/dev/null | sed 's/^up //' | sed 's/ hours\?/ horas/g' | sed 's/ minutes\?/ minutos/g' | sed 's/ days\?/ dias/g' | sed 's/ weeks\?/ semanas/g')"
+    MEMORY_INFO="$(free -m | awk 'NR==2 {printf "%s/%s MB (%d%%)", $3, $2, int(($3/$2)*100)}')"
+    MEMORY_PCT="$(free -m | awk 'NR==2 {printf "%d", int(($3/$2)*100)}')"
+    DISK_INFO="$(df -h / | awk 'NR==2 {printf "%s/%s (%s)", $3, $2, $5}')"
+    DISK_PCT="$(df -h / | awk 'NR==2 {print $5}' | tr -d '%')"
+    IP_ADDR="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    NOW="$(date '+%d/%m/%Y %H:%M:%S')"
+    SYSTEM_STATE="$(systemctl is-system-running 2>/dev/null || true)"
+
+    if [ "$SYSTEM_STATE" = "running" ]; then
+        SYSTEM_FMT="${GREEN}OPERACIONAL${RESET}"
+    else
+        SYSTEM_FMT="${RED}${SYSTEM_STATE:-desconhecido}${RESET}"
+    fi
+
+    MEM_COLOR="$(percent_color "$MEMORY_PCT")"
+    DISK_COLOR="$(percent_color "$DISK_PCT")"
+
+    clear_screen
+    border
+    line "${RED}RED${RESET} ${WHITE}SYSTEMS | Painel em tempo real${RESET}"
+    divider
+    line "${WHITE}Horario${RESET}    : ${WHITE}${NOW}${RESET}"
+    line "${WHITE}Sistema${RESET}    : ${SYSTEM_FMT}"
+    line "${WHITE}Carga${RESET}      : ${WHITE}${LOAD:-indisponivel}${RESET}"
+    line "${WHITE}Uptime${RESET}     : ${GREEN}${UPTIME_TEXT:-indisponivel}${RESET}"
+    line "${WHITE}Memoria${RESET}    : ${MEM_COLOR}${MEMORY_INFO}${RESET}"
+    line "${WHITE}Disco raiz${RESET} : ${DISK_COLOR}${DISK_INFO}${RESET}"
+    line "${WHITE}IPv4${RESET}       : ${WHITE}${IP_ADDR:-indisponivel}${RESET}"
+    divider
+    line "${GREEN}Verde${RESET} = saudavel | ${RED}Vermelho${RESET} = atencao/ruim | ${WHITE}Branco${RESET} = informativo"
+    line "${WHITE}Saida${RESET}      : pressione Ctrl+C para voltar ao shell"
+    footer
+    sleep 2
+done

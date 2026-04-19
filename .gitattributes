@@ -1,0 +1,2 @@
+*.sh text eol=lf
+infraestrutura/shell/red-root/* text eol=lf
