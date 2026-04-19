@@ -8,6 +8,19 @@ RED=$'\033[38;2;255;0;0m'
 GREEN=$'\033[38;2;0;255;120m'
 WHITE=$'\033[1;37m'
 RESET=$'\033[0m'
+BOX_INNER=52
+FRAME_INNER=$((BOX_INNER + 2))
+
+repeat_char() {
+    local char="$1"
+    local count="$2"
+    local out=""
+    local i
+    for ((i=0; i<count; i++)); do
+        out+="$char"
+    done
+    printf '%s' "$out"
+}
 
 get_ip() {
     hostname -I 2>/dev/null | awk '{print $1}'
@@ -45,15 +58,21 @@ status_color_from_percent() {
 }
 
 border() {
-    printf '%b\n' "${RED}╔══════════════════════════════════════════════════════════════════════════════╗${RESET}"
+    local fill
+    fill="$(repeat_char '═' "${FRAME_INNER}")"
+    printf '%b\n' "${RED}╔${fill}╗${RESET}"
 }
 
 divider() {
-    printf '%b\n' "${RED}╠══════════════════════════════════════════════════════════════════════════════╣${RESET}"
+    local fill
+    fill="$(repeat_char '═' "${FRAME_INNER}")"
+    printf '%b\n' "${RED}╠${fill}╣${RESET}"
 }
 
 footer() {
-    printf '%b\n' "${RED}╚══════════════════════════════════════════════════════════════════════════════╝${RESET}"
+    local fill
+    fill="$(repeat_char '═' "${FRAME_INNER}")"
+    printf '%b\n' "${RED}╚${fill}╝${RESET}"
 }
 
 line() {
@@ -66,6 +85,25 @@ line() {
         pad=0
     fi
     printf '%b%b%*s%b\n' "${RED}║ ${RESET}" "$content" "$pad" '' "${RED} ║${RESET}"
+}
+
+center_line() {
+    local content="$1"
+    local plain visible left right
+    plain="$(printf '%b' "$content" | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g')"
+    visible=$(printf '%s' "$plain" | awk '{print length}')
+    if [ "$visible" -gt "$BOX_INNER" ]; then
+        visible="$BOX_INNER"
+    fi
+    left=$(( (BOX_INNER - visible) / 2 ))
+    if [ "$left" -lt 0 ]; then
+        left=0
+    fi
+    right=$(( BOX_INNER - visible - left ))
+    if [ "$right" -lt 0 ]; then
+        right=0
+    fi
+    printf '%b%*s%b%*s%b\n' "${RED}║ ${RESET}" "$left" '' "$content" "$right" '' "${RED} ║${RESET}"
 }
 
 service_text() {
@@ -119,12 +157,8 @@ fi
 clear_screen
 border
 line ""
-line "  ${RED}██████╗ ███████╗██████╗${RESET}"
-line "  ${RED}██╔══██╗██╔════╝██╔══██╗${RESET}"
-line "  ${RED}██████╔╝█████╗  ██║  ██║${RESET}   ${WHITE}RED SYSTEMS${RESET}"
-line "  ${RED}██╔══██╗██╔══╝  ██║  ██║${RESET}   ${WHITE}Ambiente de administracao em PT-BR${RESET}"
-line "  ${RED}██║  ██║███████╗██████╔╝${RESET}"
-line "  ${RED}╚═╝  ╚═╝╚══════╝╚═════╝${RESET}"
+center_line "${WHITE}RED SYSTEMS${RESET}"
+center_line "${WHITE}Ambiente de administracao em PT-BR${RESET}"
 line ""
 divider
 line "${WHITE}Sistema${RESET}    : ${SYSTEM_STATE_FMT}"
@@ -140,7 +174,7 @@ line "${WHITE}Zumbis${RESET}     : ${ZOMBIE_FMT}"
 line "${WHITE}Updates${RESET}    : ${UPDATES_FMT}"
 divider
 line "${WHITE}Comandos uteis${RESET}"
-line "${WHITE}painel${RESET} -> painel RED ao vivo com atualizacao em tempo real"
-line "${WHITE}motd${RESET}   -> redesenha o banner atual"
+line "${WHITE}painel${RESET} -> painel RED ao vivo"
+line "${WHITE}motd${RESET}   -> redesenha o banner"
 footer
 printf '\n'
