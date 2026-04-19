@@ -3,14 +3,13 @@
 
 const http = require("http");
 const { spawn } = require("child_process");
-
 const port = Number(process.env.SEB_WEBHOOK_PORT || 2590);
 const whatsappTarget = String(process.env.SEB_WHATSAPP_TARGET || "").trim();
+const publicPanelUrl = String(process.env.RED_SEB_PUBLIC_URL || "http://redsystems.ddns.net:2580").trim();
 const openclawBin = process.env.OPENCLAW_BIN || "/usr/local/bin/openclaw";
 const openclawChannel = process.env.OPENCLAW_CHANNEL || "whatsapp";
 const openclawHome = process.env.OPENCLAW_HOME || "/home/openclaw";
 const openclawPath = process.env.OPENCLAW_PATH || "/opt/red-openclaw/node/bin:/opt/red-openclaw/npm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
-const publicPanelUrl = String(process.env.RED_SEB_PUBLIC_URL || "http://redsystems.ddns.net:2580").trim();
 
 function asText(value, fallback = "n/d") {
   const text = String(value || "").trim();
@@ -38,31 +37,19 @@ function buildSessionMessage(sessionInfo) {
   const hasFrame = primaryView.hasFrame ? "sim" : "nao";
   return [
     "*Nova sessao SEB conectada*",
-    "",
-    `*ID*`,
-    `\`${asText(sessionInfo.sessionId)}\``,
-    "",
-    `*Aplicacao*`,
-    `${asText(sessionInfo.application, "SafeExamBrowser")}`,
-    "",
-    `*View ativa*`,
-    `- Janela: \`${asText(primaryView.viewId)}\``,
-    `- Titulo: ${asText(primaryView.title)}`,
-    `- URL: ${asText(primaryView.url)}`,
-    "",
-    `*Conexao*`,
-    `- Origem: \`${asText(sessionInfo.remoteAddress)}\``,
-    `- Views abertas: \`${asInt(sessionInfo.viewsCount, 0)}\``,
-    `- Viewport: \`${viewport}\``,
-    `- Frame valida: \`${hasFrame}\``,
-    "",
-    `*Tempos*`,
-    `- Conectado em: ${formatDate(sessionInfo.connectedAt)}`,
-    `- Atualizado em: ${formatDate(sessionInfo.timestamp)}`,
-    "",
-    `*Painel*`,
-    `${asText(sessionInfo.panelUrl || publicPanelUrl, publicPanelUrl)}`
-  ].join("\n");
+    `*ID:* \`${asText(sessionInfo.sessionId)}\``,
+    `*Aplicacao:* ${asText(sessionInfo.application, "SafeExamBrowser")}`,
+    `*View:* \`${asText(primaryView.viewId)}\``,
+    `*Titulo:* ${asText(primaryView.title)}`,
+    `*URL:* ${asText(primaryView.url)}`,
+    `*Origem:* \`${asText(sessionInfo.remoteAddress)}\``,
+    `*Views abertas:* \`${asInt(sessionInfo.viewsCount, 0)}\``,
+    `*Viewport:* \`${viewport}\``,
+    `*Frame valida:* \`${hasFrame}\``,
+    `*Conectado em:* ${formatDate(sessionInfo.connectedAt)}`,
+    `*Atualizado em:* ${formatDate(sessionInfo.timestamp)}`,
+    `*Painel:* ${asText(sessionInfo.panelUrl || publicPanelUrl, publicPanelUrl)}`
+  ].join(" • ");
 }
 
 function sendViaOpenClaw(message) {
