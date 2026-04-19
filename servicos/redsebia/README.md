@@ -41,6 +41,12 @@ Hoje o servico sobe com estes adapters:
 
 O `sandbox_pix` fica ativo por padrao para validar a stack inteira na VM sem depender de credencial externa.
 
+### Guia especifico do PagBank
+
+Se você quiser ligar o `PagBank PIX` no painel admin do REDSEBIA, use:
+
+- [PAGBANK.md](./PAGBANK.md)
+
 ## Dependencias
 
 - Python 3.11+
