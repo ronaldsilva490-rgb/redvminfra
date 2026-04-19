@@ -497,18 +497,123 @@ textarea:focus {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  align-items: start;
 }
 
 .provider-card {
-  padding: 18px;
+  display: grid;
+  gap: 18px;
+  padding: 20px;
   border-radius: var(--radius);
   border: 1px solid var(--line);
   background: rgba(8, 1, 1, 0.34);
+  align-self: start;
 }
 
-.provider-card h3 { margin: 0 0 8px; }
-.provider-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
-.provider-card .helper { margin-top: 10px; }
+.provider-card-head {
+  display: grid;
+  gap: 12px;
+}
+
+.provider-card h3 {
+  margin: 0 0 6px;
+}
+
+.provider-subtitle {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.provider-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.provider-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.field-span-2 {
+  grid-column: 1 / -1;
+}
+
+.provider-switches {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.check-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin: 0;
+}
+
+.check-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+}
+
+.check-item span {
+  display: grid;
+  gap: 4px;
+}
+
+.check-item strong {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.check-item small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.provider-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 4px;
+}
+
+.provider-links {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.provider-card .helper {
+  margin: 0;
+}
+
+.mono-link {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.provider-doc-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text);
+}
 
 .stats-card strong {
   display: block;
@@ -539,6 +644,7 @@ textarea:focus {
   .provider-grid,
   .grid-main,
   .form-grid.two,
+  .provider-form-grid,
   .charge-grid {
     grid-template-columns: 1fr;
   }
@@ -551,4 +657,5 @@ textarea:focus {
 
   .topnav { justify-content: flex-start; }
   .page-shell { width: min(100% - 24px, 100%); }
+  .provider-footer { align-items: stretch; }
 }

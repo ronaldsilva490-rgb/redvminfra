@@ -91,42 +91,98 @@
     }
 
     function renderProviders(providers) {
-      providerWrap.innerHTML = providers.map((provider) => `
-        <form class="provider-card" data-provider="${provider.code}">
-          <div class="row" style="justify-content:space-between">
-            <div>
-              <h3>${provider.display_name || provider.name}</h3>
+      providerWrap.innerHTML = providers.map((provider) => {
+        const fields = [];
+        const toggles = [
+          `
+            <label class="check-item">
+              <input type="checkbox" name="enabled" ${provider.enabled ? "checked" : ""}>
+              <span>
+                <strong>Ativar método</strong>
+                <small>Permite emissão de cobrança para clientes.</small>
+              </span>
+            </label>
+          `,
+        ];
+
+        provider.config_fields.forEach((field) => {
+          const value = provider.settings_redacted?.[field.name] ?? "";
+          if (field.type === "checkbox") {
+            toggles.push(`
+              <label class="check-item">
+                <input type="checkbox" name="${field.name}" ${value ? "checked" : ""}>
+                <span>
+                  <strong>${field.label}</strong>
+                  <small>Configuração interna deste método.</small>
+                </span>
+              </label>
+            `);
+            return;
+          }
+
+          if (field.type === "textarea") {
+            fields.push(`
+              <label class="field-span-2">${field.label}
+                <textarea name="${field.name}" placeholder="${field.placeholder || ''}">${value || ""}</textarea>
+              </label>
+            `);
+            return;
+          }
+
+          if (field.type === "select") {
+            fields.push(`
+              <label>${field.label}
+                <select name="${field.name}">${(field.options || []).map((option) => `<option value="${option}" ${value === option ? "selected" : ""}>${option}</option>`).join("")}</select>
+              </label>
+            `);
+            return;
+          }
+
+          fields.push(`
+            <label>${field.label}
+              <input type="${field.type === 'password' ? 'password' : 'text'}" name="${field.name}" value="${value || ""}" placeholder="${field.placeholder || ""}">
+            </label>
+          `);
+        });
+
+        return `
+          <form class="provider-card" data-provider="${provider.code}">
+            <div class="provider-card-head">
+              <div>
+                <h3>${provider.display_name || provider.name}</h3>
+                <p class="provider-subtitle">Configuração operacional do método ${provider.supported_methods.join(", ")}.</p>
+              </div>
               <div class="provider-meta">
                 <span class="pill ${provider.enabled ? 'ok' : 'warn'}">${provider.enabled ? 'Ativo' : 'Inativo'}</span>
                 <span class="pill">${provider.supported_methods.join(", ")}</span>
                 <span class="pill">${provider.implemented ? 'Integração pronta' : 'Credencial preparada'}</span>
               </div>
             </div>
-          </div>
-          <label>Nome exibido
-            <input type="text" name="display_name" value="${provider.display_name || provider.name}">
-          </label>
-          <label style="margin-top:10px">
-            <input type="checkbox" name="enabled" ${provider.enabled ? "checked" : ""}> Ativar método
-          </label>
-          ${provider.config_fields.map((field) => {
-            const value = provider.settings_redacted?.[field.name] ?? "";
-            if (field.type === "textarea") {
-              return `<label>${field.label}<textarea name="${field.name}" placeholder="${field.placeholder || ''}">${value || ""}</textarea></label>`;
-            }
-            if (field.type === "select") {
-              return `<label>${field.label}<select name="${field.name}">${(field.options || []).map((option) => `<option value="${option}" ${value === option ? "selected" : ""}>${option}</option>`).join("")}</select></label>`;
-            }
-            if (field.type === "checkbox") {
-              return `<label><input type="checkbox" name="${field.name}" ${value ? "checked" : ""}> ${field.label}</label>`;
-            }
-            return `<label>${field.label}<input type="${field.type === 'password' ? 'password' : 'text'}" name="${field.name}" value="${value || ""}" placeholder="${field.placeholder || ""}"></label>`;
-          }).join("")}
-          <p class="helper">Webhook do provedor: <code>${provider.webhook_url}</code></p>
-          ${provider.docs_url ? `<p class="helper"><a href="${provider.docs_url}" target="_blank" rel="noopener">Documentação oficial</a></p>` : ""}
-          <button class="btn btn-primary" type="submit">Salvar configuração</button>
-        </form>
-      `).join("");
+
+            <div class="provider-form-grid">
+              <label class="field-span-2">Nome exibido
+                <input type="text" name="display_name" value="${provider.display_name || provider.name}">
+              </label>
+              ${fields.join("")}
+            </div>
+
+            <div class="provider-switches">
+              ${toggles.join("")}
+            </div>
+
+            <div class="provider-footer">
+              <div class="provider-links">
+                <div class="helper">
+                  <span class="label">Webhook</span>
+                  <code class="mono-link">${provider.webhook_url}</code>
+                </div>
+                ${provider.docs_url ? `<a class="helper provider-doc-link" href="${provider.docs_url}" target="_blank" rel="noopener">Abrir documentação oficial</a>` : ""}
+              </div>
+              <button class="btn btn-primary" type="submit">Salvar configuração</button>
+            </div>
+          </form>
+        `;
+      }).join("");
       providerWrap.querySelectorAll("form[data-provider]").forEach((form) => {
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
