@@ -157,8 +157,11 @@ fi
 clear_screen
 border
 line ""
-center_line "${WHITE}RED SYSTEMS${RESET}"
-center_line "${WHITE}Ambiente de administracao em PT-BR${RESET}"
+center_line "${RED} ____  _____ ____ ${RESET}"
+center_line "${RED}|  _ \\| ____|  _ \\\\${RESET}"
+center_line "${RED}| |_) |  _| | | | |${RESET}"
+center_line "${RED}|  _ <| |___| |_| |${RESET}"
+center_line "${RED}|_| \\_\\\\_____|____/ ${RESET}"
 line ""
 divider
 line "${WHITE}Sistema${RESET}    : ${SYSTEM_STATE_FMT}"
