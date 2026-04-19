@@ -34,7 +34,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 COOKIE_USER = "redsebia_session"
 COOKIE_ADMIN = "redsebia_admin"
-ASSET_VERSION = "20260419-redsebia-v3"
+ASSET_VERSION = "20260419-redsebia-v4"
 
 
 def public_path(request: Request, path: str) -> str:

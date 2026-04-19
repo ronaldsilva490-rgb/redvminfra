@@ -211,7 +211,7 @@ class Database:
     def bootstrap_provider_configs(self) -> None:
         defaults = {
             "sandbox_pix": {"display_name": "PIX instantâneo", "enabled": 1, "settings": {"auto_credit": False}},
-            "manual_pix": {"display_name": "PIX Manual", "enabled": 0, "settings": {}},
+            "manual_pix": {"display_name": "PIX Manual", "enabled": 0, "settings": {"merchant_city": "Fortaleza"}},
             "asaas": {"display_name": "Asaas", "enabled": 0, "settings": {"environment": "sandbox"}},
             "efi_pix": {"display_name": "Efí Bank PIX", "enabled": 0, "settings": {"environment": "homolog"}},
             "mercadopago_pix": {"display_name": "Mercado Pago PIX", "enabled": 0, "settings": {"environment": "sandbox"}},

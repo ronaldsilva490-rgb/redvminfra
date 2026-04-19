@@ -1,7 +1,9 @@
 import base64
+import io
 import json
 import tempfile
 import time
+import unicodedata
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -9,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import segno
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
 
@@ -28,6 +31,66 @@ def fake_qr_svg(label: str) -> str:
     """.strip()
     encoded = base64.b64encode(svg.encode("utf-8")).decode("ascii")
     return f"data:image/svg+xml;base64,{encoded}"
+
+
+def qr_svg_data_uri(payload: str, scale: int = 8, border: int = 1) -> str:
+    buffer = io.BytesIO()
+    segno.make(payload, error="m").save(buffer, kind="svg", scale=scale, border=border, dark="#120404", light="#ffffff")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
+def crc16_ccitt(payload: str) -> str:
+    crc = 0xFFFF
+    for char in payload:
+        crc ^= ord(char) << 8
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+            else:
+                crc = (crc << 1) & 0xFFFF
+    return f"{crc:04X}"
+
+
+def emv_field(field_id: str, value: str) -> str:
+    return f"{field_id}{len(value):02d}{value}"
+
+
+def sanitize_pix_text(value: str, fallback: str, max_len: int) -> str:
+    raw = str(value or fallback).strip()
+    normalized = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode("ascii")
+    cleaned = " ".join(normalized.replace("|", " ").split()).upper()
+    if not cleaned:
+        cleaned = fallback.upper()
+    return cleaned[:max_len]
+
+
+def build_pix_copy_paste(
+    *,
+    pix_key: str,
+    merchant_name: str,
+    merchant_city: str,
+    amount_cents: int,
+    txid: str,
+) -> str:
+    amount_brl = f"{cents_to_brl(amount_cents):.2f}"
+    merchant_account = emv_field("00", "br.gov.bcb.pix") + emv_field("01", pix_key)
+    additional_data = emv_field("05", txid[:25] or "***")
+    payload = "".join(
+        [
+            emv_field("00", "01"),
+            emv_field("26", merchant_account),
+            emv_field("52", "0000"),
+            emv_field("53", "986"),
+            emv_field("54", amount_brl),
+            emv_field("58", "BR"),
+            emv_field("59", sanitize_pix_text(merchant_name, "RED SYSTEMS", 25)),
+            emv_field("60", sanitize_pix_text(merchant_city, "FORTALEZA", 15)),
+            emv_field("62", additional_data),
+            "6304",
+        ]
+    )
+    return f"{payload}{crc16_ccitt(payload)}"
 
 
 @dataclass
@@ -101,6 +164,7 @@ class ManualPixProvider(PaymentProvider):
     config_fields = [
         {"name": "pix_key", "label": "Chave PIX", "type": "text", "placeholder": "sua-chave-pix"},
         {"name": "recipient_name", "label": "Recebedor", "type": "text", "placeholder": "RED Systems"},
+        {"name": "merchant_city", "label": "Cidade", "type": "text", "placeholder": "Fortaleza"},
         {"name": "bank_name", "label": "Banco", "type": "text", "placeholder": "Banco"},
         {"name": "instructions", "label": "Instrucoes", "type": "textarea", "placeholder": "Envie o comprovante pelo suporte."},
     ]
@@ -110,19 +174,30 @@ class ManualPixProvider(PaymentProvider):
         if not key:
             raise ValueError("Configure a chave PIX no painel administrativo.")
         label = str(config.get("recipient_name") or "RED Systems")
+        merchant_city = str(config.get("merchant_city") or "Fortaleza")
         amount = cents_to_brl(request.amount_cents)
+        copy_paste = build_pix_copy_paste(
+            pix_key=key,
+            merchant_name=label,
+            merchant_city=merchant_city,
+            amount_cents=request.amount_cents,
+            txid=request.charge_id[:25],
+        )
         return {
             "provider_charge_id": f"manual_{request.charge_id}",
             "status": "pending",
-            "qr_code": key,
-            "qr_code_base64": fake_qr_svg(f"PIX manual R$ {amount:.2f}"),
+            "qr_code": copy_paste,
+            "qr_code_base64": qr_svg_data_uri(copy_paste),
             "payment_url": "",
             "expires_at": time.time() + 60 * 60 * 24,
             "payload": {
                 "pix_key": key,
                 "recipient_name": label,
+                "merchant_city": merchant_city,
                 "bank_name": str(config.get("bank_name") or ""),
                 "instructions": str(config.get("instructions") or ""),
+                "copy_paste": copy_paste,
+                "amount_brl": amount,
             },
         }
 

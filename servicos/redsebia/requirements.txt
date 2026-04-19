@@ -4,3 +4,4 @@ jinja2>=3.1,<4
 python-multipart>=0.0.20,<1
 httpx>=0.28,<1
 cryptography>=45,<46
+segno>=1.6,<2
