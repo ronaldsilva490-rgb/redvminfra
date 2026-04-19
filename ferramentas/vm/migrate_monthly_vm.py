@@ -93,7 +93,7 @@ SYSTEMD_FILES = [
 
 NGINX_FILES = [
     "/etc/nginx/conf.d/red-dashboard.conf",
-    "/etc/nginx/redvm-routes/red-friendly-paths.nginx.conf",
+    "/etc/nginx/redvm-routes/friendly-paths.conf",
 ]
 
 TARGET_PREP_COMMANDS = [
@@ -156,6 +156,8 @@ PRESEED_GROUPS = [
 ]
 
 FINAL_SYNC_GROUPS = [
+    SyncGroup("dashboard-data", ("/opt/redvm-dashboard/data",)),
+    SyncGroup("proxy-data", ("/var/lib/redvm-proxy",)),
     SyncGroup("redia-data", ("/opt/redia/data",)),
     SyncGroup("redtrader-data", ("/opt/redtrader/data",)),
     SyncGroup(
@@ -186,6 +188,9 @@ class Remote:
             banner_timeout=30,
             auth_timeout=30,
         )
+        transport = self.client.get_transport()
+        if transport is not None:
+            transport.set_keepalive(30)
         self.sftp = self.client.open_sftp()
 
     def close(self) -> None:
@@ -276,8 +281,16 @@ def tar_stream(source: Remote, target: Remote, group: SyncGroup) -> None:
     exit_code = stdout.channel.recv_exit_status()
     if stderr_text.strip():
         print(stderr_text.rstrip(), file=sys.stderr)
+    acceptable_warnings = (
+        "file changed as we read it",
+        "file removed before we read it",
+    )
     if exit_code != 0:
-        raise RuntimeError(f"Falha ao criar stream tar do grupo {group.name} em {source.host}")
+        lowered = stderr_text.lower()
+        if exit_code == 1 and any(marker in lowered for marker in acceptable_warnings):
+            print(f"[warn] {group.name} teve arquivos mutaveis durante o preseed; seguindo porque o sync final vai sobrescrever.")
+        else:
+            raise RuntimeError(f"Falha ao criar stream tar do grupo {group.name} em {source.host}")
     target.run(f"tar -C / -xf {shlex.quote(archive_path)}", timeout=0)
 
 
