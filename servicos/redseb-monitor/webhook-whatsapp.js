@@ -13,7 +13,6 @@ const openclawBin = process.env.OPENCLAW_BIN || "/usr/local/bin/openclaw";
 const openclawChannel = process.env.OPENCLAW_CHANNEL || "whatsapp";
 const openclawHome = process.env.OPENCLAW_HOME || "/home/openclaw";
 const openclawPath = process.env.OPENCLAW_PATH || "/opt/red-openclaw/node/bin:/opt/red-openclaw/npm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
-const WHATSAPP_VISUAL_BREAK = "\u2028";
 
 function asText(value, fallback = "n/d") {
   const text = String(value || "").trim();
@@ -44,14 +43,14 @@ function buildSessionMessage(sessionInfo) {
     `🪟 *TITULO:* ${asText(primaryView.title)}`,
     `🖥️ *RESOLUCAO:* ${viewport}`,
     `🕒 *HORA DA CONEXAO:* ${formatDate(sessionInfo.connectedAt)}`
-  ].join(WHATSAPP_VISUAL_BREAK);
+  ].join("\n");
 }
 
 function normalizeWhatsappText(text, fallback) {
   const normalized = String(text || "")
     .replace(/\r/g, "")
-    .replace(/\n+/g, WHATSAPP_VISUAL_BREAK)
-    .replace(/[ \t]*\u2028[ \t]*/g, WHATSAPP_VISUAL_BREAK)
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]*\n[ \t]*/g, "\n")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
   return normalized || fallback;
@@ -60,7 +59,7 @@ function normalizeWhatsappText(text, fallback) {
 function isAcceptableFormattedMessage(text, sessionInfo) {
   const value = String(text || "");
   const lines = value
-    .split(WHATSAPP_VISUAL_BREAK)
+    .split(/\n+/)
     .map((line) => line.trim())
     .filter(Boolean);
   const primaryView = sessionInfo?.primaryView || {};
