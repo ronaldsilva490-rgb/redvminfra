@@ -38,11 +38,11 @@ function buildSessionMessage(sessionInfo) {
   const height = asInt(primaryView.height, 0);
   const viewport = width > 0 && height > 0 ? `${width} x ${height}` : "n/d";
   return [
-    "🚨 *NOVA SESSAO SEB DETECTADA!*",
+    "🚨 *NOVA SESSÃO SEB DETECTADA!*",
     `🌐 *IP:* ${asText(sessionInfo.remoteAddress)}`,
-    `🪟 *TITULO:* ${asText(primaryView.title)}`,
-    `🖥️ *RESOLUCAO:* ${viewport}`,
-    `🕒 *HORA DA CONEXAO:* ${formatDate(sessionInfo.connectedAt)}`
+    `🪟 *TÍTULO:* ${asText(primaryView.title)}`,
+    `🖥️ *RESOLUÇÃO:* ${viewport}`,
+    `🕒 *HORA DA CONEXÃO:* ${formatDate(sessionInfo.connectedAt)}`
   ].join("\n");
 }
 
@@ -73,11 +73,11 @@ function isAcceptableFormattedMessage(text, sessionInfo) {
     formatDate(sessionInfo.connectedAt)
   ];
   const requiredLabels = [
-    "NOVA SESSAO SEB DETECTADA",
+    "NOVA SESSÃO SEB DETECTADA",
     "IP:",
-    "TITULO:",
-    "RESOLUCAO:",
-    "HORA DA CONEXAO:"
+    "TÍTULO:",
+    "RESOLUÇÃO:",
+    "HORA DA CONEXÃO:"
   ];
   if (!value || value.length > 420 || lines.length !== 5) {
     return false;
@@ -110,26 +110,26 @@ async function formatMessageWithProxy(sessionInfo, fallbackMessage) {
               "Formate alertas operacionais para WhatsApp em pt-BR.",
               "Responda com UMA mensagem curta, elegante e objetiva.",
               "Voce pode usar markdown e alguns emojis sutis.",
-              "Nao invente fatos.",
-              "Nao explique nada.",
-              "Nao adicione contexto extra.",
-              "Nao use listas longas ou frases narrativas.",
+              "Não invente fatos.",
+              "Não explique nada.",
+              "Não adicione contexto extra.",
+              "Não use listas longas ou frases narrativas.",
               "Retorne exatamente 5 linhas curtas.",
-              "Use exatamente estes rotulos: NOVA SESSAO SEB DETECTADA, IP, TITULO, RESOLUCAO e HORA DA CONEXAO.",
-              "Nao adicione cabecalhos extras, apelidos, nomes de instituicao ou comentarios.",
-              "Inclua com precisao apenas estes fatos: alerta de nova sessao, IP, titulo, resolucao e hora da conexao.",
+              "Use exatamente estes rótulos: NOVA SESSÃO SEB DETECTADA, IP, TÍTULO, RESOLUÇÃO e HORA DA CONEXÃO.",
+              "Não adicione cabeçalhos extras, apelidos, nomes de instituição ou comentários.",
+              "Inclua com precisão apenas estes fatos: alerta de nova sessão, IP, título, resolução e hora da conexão.",
               "Mantenha todos os valores exatamente como recebidos.",
-              "Use algo bem legivel para WhatsApp, com no maximo um emoji por linha e no maximo uma linha para cada campo."
+              "Use algo bem legível para WhatsApp, com no máximo um emoji por linha e no máximo uma linha para cada campo."
             ].join(" ")
           },
           {
             role: "user",
             content: [
               "Transforme estes dados em um alerta elegante para WhatsApp:",
-              `tipo=NOVA SESSAO SEB DETECTADA`,
+              `tipo=NOVA SESSÃO SEB DETECTADA`,
               `ip=${asText(sessionInfo.remoteAddress)}`,
-              `titulo=${asText(primaryView.title)}`,
-              `resolucao=${viewport}`,
+              `título=${asText(primaryView.title)}`,
+              `resolução=${viewport}`,
               `hora=${formatDate(sessionInfo.connectedAt)}`
             ].join("\n")
           }
