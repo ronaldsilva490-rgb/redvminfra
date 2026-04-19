@@ -81,6 +81,8 @@ ferramentas/
 documentacao/
   arquitetura.md
   implantacao-servicos.md
+  inventario-vm-antiga-2026-04-19.md
+  migracao-mensal-vm.md
   manual-completo.md
   preparacao-vm.md
 ```
@@ -137,6 +139,17 @@ Regra pratica:
 4. instalar a unit systemd quando houver
 5. publicar no nginx quando houver rota publica
 6. validar por sintaxe, `systemctl` e HTTP ou UI
+
+### Migracao mensal entre VMs
+
+O runbook operacional da migracao mensal completa esta em:
+
+- [documentacao/inventario-vm-antiga-2026-04-19.md](documentacao/inventario-vm-antiga-2026-04-19.md)
+- [documentacao/migracao-mensal-vm.md](documentacao/migracao-mensal-vm.md)
+
+Script-base de apoio:
+
+- [ferramentas/vm/migrate_monthly_vm.py](ferramentas/vm/migrate_monthly_vm.py)
 
 ---
 

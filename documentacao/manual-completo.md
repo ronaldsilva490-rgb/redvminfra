@@ -95,6 +95,27 @@ $env:REDSYSTEMS_SSH_PASSWORD="..."
 python ferramentas/vm/paramiko_exec.py "hostname && uptime"
 ```
 
+## 6.1 Migracao mensal da stack
+
+Documentos principais:
+
+- [inventario-vm-antiga-2026-04-19.md](inventario-vm-antiga-2026-04-19.md)
+- [migracao-mensal-vm.md](migracao-mensal-vm.md)
+
+Script-base:
+
+```powershell
+python ferramentas/vm/migrate_monthly_vm.py preseed --help
+python ferramentas/vm/migrate_monthly_vm.py cutover --help
+python ferramentas/vm/migrate_monthly_vm.py verify --help
+```
+
+Regra permanente:
+
+- a stack inteira entra;
+- o historico gigante do IQ Vision fica para tras;
+- o corte de DNS so acontece depois da nova responder por `redsystems2.ddns.net`.
+
 Para scripts mais especificos, siga o padrao:
 
 ```python
