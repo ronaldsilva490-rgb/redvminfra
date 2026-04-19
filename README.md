@@ -5,7 +5,7 @@
 <h1 align="center">RED Systems Unified VM</h1>
 
 <p align="center">
-  <strong>Repositorio oficial da stack consolidada em uma VM unica: portal, dashboard, proxy IA, RED I.A, RED Trader, OpenClaw, Rapidleech, monitor SEB e bridge da extensao IQ.</strong>
+  <strong>Repositorio oficial da stack consolidada em uma VM unica: portal, dashboard, proxy IA, RED I.A, RED Trader, OpenClaw, Rapidleech, monitor SEB, REDSEBIA e bridge da extensao IQ.</strong>
 </p>
 
 ---
@@ -26,6 +26,7 @@ Hoje a RED Systems roda com uma arquitetura de VM unica. O objetivo deste reposi
 - `/iq-bridge/` -> bridge da extensao IQ
 - `/openclaw/` -> assistente operacional privado
 - `/rapidleech/` -> transfer hub legado oficializado
+- `/redsebia/` -> portal e backend do novo produto REDSEBIA
 - `:2580` -> RED SEB Monitor
 
 ### Servicos principais
@@ -41,6 +42,7 @@ Hoje a RED Systems roda com uma arquitetura de VM unica. O objetivo deste reposi
 | Proxy Lab | `servicos/proxy-lab` | `/opt/red-proxy-lab` | `red-proxy-lab.service` |
 | Rapidleech | `servicos/rapidleech` | `/opt/rapidleech` | `rapidleech.service` |
 | RED SEB Monitor | `servicos/redseb-monitor` | `/opt/red-seb-monitor` | `red-seb-monitor.service` |
+| REDSEBIA | `servicos/redsebia` | `/opt/redsebia` | `red-sebia.service` |
 | IQ Bridge | `servicos/extensao-iq-demo/bridge` | `/opt/red-iq-vision-bridge` | `red-iq-vision-bridge.service` |
 | Deploy Agent | `servicos/deploy-agent` | legado | `red-webhook.service` |
 
@@ -59,6 +61,7 @@ servicos/
   openclaw/              Assistente operacional privado
   rapidleech/            Transfer hub legado oficializado
   redseb-monitor/        Painel remoto do ecossistema SEB
+  redsebia/              Novo portal, wallet e backend do produto REDSEBIA
   extensao-iq-demo/      Extensao Chrome e IQ Bridge
   extensao-iq-motor-lab/ Motor de laboratorio remoto para IQ
   deploy-agent/          Legado
@@ -121,6 +124,7 @@ Cada servico agora tem um guia proprio de instalacao em qualquer VM:
 - [servicos/openclaw/README.md](servicos/openclaw/README.md)
 - [servicos/rapidleech/README.md](servicos/rapidleech/README.md)
 - [servicos/redseb-monitor/README.md](servicos/redseb-monitor/README.md)
+- [servicos/redsebia/README.md](servicos/redsebia/README.md)
 - [servicos/extensao-iq-demo/README.md](servicos/extensao-iq-demo/README.md)
 - [servicos/extensao-iq-motor-lab/README.md](servicos/extensao-iq-motor-lab/README.md)
 - [servicos/deploy-agent/README.md](servicos/deploy-agent/README.md)
@@ -148,6 +152,7 @@ Regra pratica:
 - rapidleech: `/opt/rapidleech`
 - proxy-lab: `/opt/red-proxy-lab`
 - red seb monitor: `/opt/red-seb-monitor`
+- redsebia: `/opt/redsebia`
 - iq bridge: `/opt/red-iq-vision-bridge`
 - portal: `/var/www/red-portal`
 
@@ -160,6 +165,7 @@ Regra pratica:
 - proxy-lab: `/opt/red-proxy-lab/data`
 - rapidleech files: `/opt/rapidleech/files`
 - red seb monitor downloads: `/opt/red-seb-monitor/data/downloads`
+- redsebia: `/opt/redsebia/data`
 - iq bridge: `/opt/red-iq-vision-bridge/data`
 
 ---
@@ -180,6 +186,7 @@ Ele concentra as rotas amigaveis:
 - `/iq-bridge/`
 - `/openclaw/`
 - `/rapidleech/`
+- `/redsebia/`
 
 Sempre que mexer em nginx:
 

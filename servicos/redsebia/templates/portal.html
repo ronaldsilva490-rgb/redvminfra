@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Portal do cliente | REDSEBIA{% endblock %}
+{% block page_id %}portal{% endblock %}
+{% block content %}
+<section class="dashboard-hero">
+  <div>
+    <span class="eyebrow">Portal do cliente</span>
+    <h1>Saldo, PIX, historico e login do <code>red</code>.</h1>
+    <p>Esse painel ja nasce pronto para conversar com o runtime do novo SEB e cobrar uso de IA em tempo real.</p>
+  </div>
+  <button class="btn btn-ghost" id="logout-button" type="button">Sair</button>
+</section>
+
+<section class="grid-main">
+  <article class="info-card">
+    <span class="label">Conta</span>
+    <strong id="user-name">-</strong>
+    <p id="user-email" class="muted">-</p>
+    <div class="pill-row">
+      <span class="pill" id="wallet-balance">Saldo: R$ 0,00</span>
+      <span class="pill">Modo cliente</span>
+    </div>
+  </article>
+
+  <article class="info-card">
+    <span class="label">CLI</span>
+    <strong>Primeiro passo local</strong>
+    <pre class="cli-block">red login</pre>
+    <p class="muted">O comando vai abrir o navegador, aprovar o dispositivo e depois devolver o bastao para o terminal.</p>
+  </article>
+  <article class="info-card">
+    <span class="label">Uso futuro</span>
+    <strong>Runtime preparado</strong>
+    <p class="muted">Os endpoints de autorizacao, reserva e liquidacao ja estao prontos para a proxima rodada do novo SEB.</p>
+  </article>
+</section>
+
+<section class="panel-grid">
+  <article class="panel-card">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Carteira</span>
+        <h2>Adicionar saldo</h2>
+      </div>
+    </div>
+    <form id="topup-form" class="form-grid two">
+      <label>Provider
+        <select name="provider_code" id="provider-select"></select>
+      </label>
+      <label>Valor em reais
+        <input type="number" min="1" step="1" name="amount_brl" value="10" required>
+      </label>
+      <button class="btn btn-primary" type="submit">Gerar cobranca</button>
+    </form>
+    <div id="active-charge" class="charge-card hidden"></div>
+  </article>
+
+  <article class="panel-card">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Historico</span>
+        <h2>Ultimos creditos e debitos</h2>
+      </div>
+    </div>
+    <div id="ledger-list" class="list-stack"></div>
+  </article>
+</section>
+
+<section class="panel-card">
+  <div class="section-head">
+    <div>
+      <span class="eyebrow">Cobrancas</span>
+      <h2>PIX emitidos</h2>
+    </div>
+  </div>
+  <div id="charges-list" class="list-stack"></div>
+</section>
+
+<section class="panel-card">
+  <div class="section-head">
+    <div>
+      <span class="eyebrow">Cliente futuro</span>
+      <h2>Sessoes do novo SEB</h2>
+    </div>
+  </div>
+  <div id="client-sessions-list" class="list-stack"></div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ public_path('/static/portal.js') }}?v={{ asset_version }}"></script>
+{% endblock %}

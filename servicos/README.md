@@ -14,6 +14,7 @@ redtrader/              Trader demo/paper
 openclaw/               Assistente operacional privado
 rapidleech/             Transfer hub legado oficializado
 redseb-monitor/         Painel remoto do ecossistema SEB
+redsebia/              Novo portal, wallet e runtime do produto REDSEBIA
 extensao-iq-demo/       Extensao Chrome e IQ Bridge
 extensao-iq-motor-lab/  Motor secundario de experimentacao remota na IQ
 deploy-agent/           Legado
@@ -30,6 +31,7 @@ deploy-agent/           Legado
 - [openclaw/README.md](openclaw/README.md)
 - [rapidleech/README.md](rapidleech/README.md)
 - [redseb-monitor/README.md](redseb-monitor/README.md)
+- [redsebia/README.md](redsebia/README.md)
 - [extensao-iq-demo/README.md](extensao-iq-demo/README.md)
 - [extensao-iq-motor-lab/README.md](extensao-iq-motor-lab/README.md)
 - [deploy-agent/README.md](deploy-agent/README.md)
@@ -42,6 +44,7 @@ deploy-agent/           Legado
 - `openclaw/` e assistente operacional privado da stack, exposto por `/openclaw/`.
 - `rapidleech/` virou parte oficial da stack e deve ser tratado como runtime publicado por `/rapidleech/`, nao como pasta solta fora do repo.
 - `redseb-monitor/` e o painel remoto oficial do ecossistema RED SEB / Safe Exam Browser, hoje exposto em `:2580`.
+- `redsebia/` e o backend independente do novo produto REDSEBIA, com portal do cliente, admin, wallet, PIX e runtime API.
 - `extensao-iq-motor-lab/` existe para iteracao rapida por JSON remoto antes de tocar a extensao principal.
 - `deploy-agent/` e legado; so mexa se houver motivo real.
 

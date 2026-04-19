@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}REDSEBIA{% endblock %}</title>
+  <link rel="icon" href="{{ public_path('/favicon.ico') }}">
+  <link rel="stylesheet" href="{{ public_path('/static/app.css') }}?v={{ asset_version }}">
+</head>
+<body data-base-path="{{ base_path or '' }}" data-page="{% block page_id %}generic{% endblock %}">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">RED</span>
+      <div>
+        <div class="brand-kicker">ecossistema independente</div>
+        <strong>REDSEBIA</strong>
+      </div>
+    </div>
+    <nav class="topnav">
+      <a href="{{ public_path('/') }}">Inicio</a>
+      {% if current_user %}
+        <a href="{{ public_path('/portal') }}">Portal</a>
+      {% else %}
+        <a href="{{ public_path('/login') }}">Entrar</a>
+        <a href="{{ public_path('/register') }}">Criar conta</a>
+      {% endif %}
+      <a href="{{ public_path('/admin') }}">Admin</a>
+    </nav>
+  </header>
+
+  <main class="page-shell">
+    {% block content %}{% endblock %}
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

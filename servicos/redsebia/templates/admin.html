@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Admin | REDSEBIA{% endblock %}
+{% block page_id %}admin{% endblock %}
+{% block content %}
+<section class="dashboard-hero">
+  <div>
+    <span class="eyebrow">Painel administrativo</span>
+    <h1>Providers, usuarios, cobrancas e trilho do runtime.</h1>
+    <p>O produto nasce independente do SEB atual, mas ja com a espinha dorsal pronta para autenticacao, saldo, PIX e comunicacao futura com o novo cliente.</p>
+  </div>
+  <button class="btn btn-ghost" id="admin-logout-button" type="button">Sair</button>
+</section>
+
+<section class="grid-main" id="admin-stats"></section>
+
+<section class="panel-card">
+  <div class="section-head">
+    <div>
+      <span class="eyebrow">Gateways</span>
+      <h2>Configuracao de pagamento</h2>
+    </div>
+  </div>
+  <div id="provider-cards" class="provider-grid"></div>
+</section>
+
+<section class="panel-grid">
+  <article class="panel-card">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Usuarios</span>
+        <h2>Clientes recentes</h2>
+      </div>
+    </div>
+    <div id="users-list" class="list-stack"></div>
+  </article>
+  <article class="panel-card">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Cobrancas</span>
+        <h2>Ultimos top-ups</h2>
+      </div>
+    </div>
+    <div id="charges-admin-list" class="list-stack"></div>
+  </article>
+</section>
+
+<section class="panel-card">
+  <div class="section-head">
+    <div>
+      <span class="eyebrow">Runtime</span>
+      <h2>Sessoes do cliente futuro</h2>
+    </div>
+  </div>
+  <div id="client-sessions-admin-list" class="list-stack"></div>
+</section>
+
+<section class="panel-card">
+  <div class="section-head">
+    <div>
+      <span class="eyebrow">Eventos</span>
+      <h2>Log operacional</h2>
+    </div>
+  </div>
+  <div id="events-list" class="list-stack"></div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ public_path('/static/admin.js') }}?v={{ asset_version }}"></script>
+{% endblock %}

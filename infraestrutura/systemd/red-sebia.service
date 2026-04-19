@@ -1,0 +1,17 @@
+[Unit]
+Description=REDSEBIA
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/redsebia
+EnvironmentFile=-/etc/red-sebia.env
+Environment=PYTHONPATH=/opt/redsebia/src
+ExecStart=/opt/redsebia/.venv/bin/python -m redsebia.app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

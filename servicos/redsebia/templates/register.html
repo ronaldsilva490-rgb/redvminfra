@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Cadastro | REDSEBIA{% endblock %}
+{% block page_id %}register{% endblock %}
+{% block content %}
+<section class="auth-shell">
+  <form class="auth-card auth-wide" id="register-form">
+    <span class="eyebrow">Cadastro</span>
+    <h1>Criar conta no REDSEBIA</h1>
+    <div class="form-grid two">
+      <label>Nome
+        <input type="text" name="name" required autocomplete="name">
+      </label>
+      <label>CPF (opcional)
+        <input type="text" name="cpf" inputmode="numeric">
+      </label>
+      <label>E-mail
+        <input type="email" name="email" required autocomplete="email">
+      </label>
+      <label>Senha
+        <input type="password" name="password" required autocomplete="new-password">
+      </label>
+    </div>
+    <button class="btn btn-primary" type="submit">Criar conta</button>
+    <p class="helper">A senha precisa ter pelo menos 8 caracteres com letras e numeros.</p>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ public_path('/static/portal.js') }}?v={{ asset_version }}"></script>
+{% endblock %}

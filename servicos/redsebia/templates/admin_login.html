@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Admin | REDSEBIA{% endblock %}
+{% block page_id %}admin-login{% endblock %}
+{% block content %}
+<section class="auth-shell">
+  <form class="auth-card" id="admin-login-form">
+    <span class="eyebrow">Operacao</span>
+    <h1>Painel administrativo</h1>
+    <label>Senha do operador
+      <input type="password" name="password" required autocomplete="current-password">
+    </label>
+    <button class="btn btn-primary" type="submit">Entrar</button>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ public_path('/static/admin.js') }}?v={{ asset_version }}"></script>
+{% endblock %}

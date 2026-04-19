@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Autorizar dispositivo | REDSEBIA{% endblock %}
+{% block page_id %}device{% endblock %}
+{% block content %}
+<section class="auth-shell">
+  <article class="auth-card auth-wide" id="device-panel" data-user-code="{{ user_code }}">
+    <span class="eyebrow">Device auth</span>
+    <h1>Autorizar o comando <code>red</code></h1>
+    {% if device_code_row %}
+      <p>Codigo recebido: <strong>{{ user_code }}</strong></p>
+      <p class="muted">Cliente: {{ device_code_row.client_name }} | expira em {{ device_code_row.expires_at }}</p>
+      <div class="hero-actions">
+        <button class="btn btn-primary" id="device-approve" type="button">Aprovar acesso</button>
+        <button class="btn btn-ghost" id="device-deny" type="button">Negar</button>
+      </div>
+    {% else %}
+      <p>Nenhum codigo pendente com esse user code.</p>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="{{ public_path('/static/portal.js') }}?v={{ asset_version }}"></script>
+{% endblock %}

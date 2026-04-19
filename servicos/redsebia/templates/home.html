@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}REDSEBIA | Plataforma{% endblock %}
+{% block page_id %}home{% endblock %}
+{% block content %}
+<section class="hero-card">
+  <div class="hero-copy">
+    <span class="eyebrow">Novo produto</span>
+    <h1>Portal, carteira, PIX e runtime prontos para o novo REDSEBIA.</h1>
+    <p>
+      Aqui fica o ecossistema independente do cliente: cadastro, saldo, login do comando
+      <code>red</code>, autorizacao de uso e a camada financeira que depois vai conversar com o novo SEB.
+    </p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="{{ public_path('/register') }}">Criar conta</a>
+      <a class="btn btn-ghost" href="{{ public_path('/login') }}">Entrar</a>
+    </div>
+  </div>
+  <div class="hero-stats">
+    <div class="info-card compact">
+      <span class="label">Top-up</span>
+      <strong>PIX em tempo real</strong>
+      <p>Sandbox pronto hoje, gateways brasileiros configuraveis pelo admin.</p>
+    </div>
+    <div class="info-card compact">
+      <span class="label">CLI</span>
+      <strong>Device auth do red</strong>
+      <p>Fluxo pronto para a proxima passada do launcher e do ambiente local.</p>
+    </div>
+    <div class="info-card compact">
+      <span class="label">Runtime</span>
+      <strong>Reserva e debito</strong>
+      <p>Endpoints preparados para liberar uso e liquidar analise por tokens.</p>
+    </div>
+  </div>
+</section>
+{% endblock %}
