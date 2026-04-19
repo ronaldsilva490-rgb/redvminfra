@@ -3,9 +3,12 @@
 
 const http = require("http");
 const { spawn } = require("child_process");
+
 const port = Number(process.env.SEB_WEBHOOK_PORT || 2590);
 const whatsappTarget = String(process.env.SEB_WHATSAPP_TARGET || "").trim();
-const publicPanelUrl = String(process.env.RED_SEB_PUBLIC_URL || "http://redsystems.ddns.net:2580").trim();
+const proxyBase = String(process.env.RED_PROXY_BASE || "http://127.0.0.1:8080").replace(/\/+$/, "");
+const formatterModel = String(process.env.SEB_WHATSAPP_FORMATTER_MODEL || "NIM - nvidia/llama-3.1-nemotron-nano-8b-v1").trim();
+const formatterTimeoutMs = Number(process.env.SEB_WHATSAPP_FORMATTER_TIMEOUT_MS || 12000);
 const openclawBin = process.env.OPENCLAW_BIN || "/usr/local/bin/openclaw";
 const openclawChannel = process.env.OPENCLAW_CHANNEL || "whatsapp";
 const openclawHome = process.env.OPENCLAW_HOME || "/home/openclaw";
@@ -34,22 +37,104 @@ function buildSessionMessage(sessionInfo) {
   const width = asInt(primaryView.width, 0);
   const height = asInt(primaryView.height, 0);
   const viewport = width > 0 && height > 0 ? `${width} x ${height}` : "n/d";
-  const hasFrame = primaryView.hasFrame ? "sim" : "nao";
   return [
-    "*Nova sessao SEB conectada*",
-    `*ID:* \`${asText(sessionInfo.sessionId)}\``,
-    `*Aplicacao:* ${asText(sessionInfo.application, "SafeExamBrowser")}`,
-    `*View:* \`${asText(primaryView.viewId)}\``,
-    `*Titulo:* ${asText(primaryView.title)}`,
-    `*URL:* ${asText(primaryView.url)}`,
-    `*Origem:* \`${asText(sessionInfo.remoteAddress)}\``,
-    `*Views abertas:* \`${asInt(sessionInfo.viewsCount, 0)}\``,
-    `*Viewport:* \`${viewport}\``,
-    `*Frame valida:* \`${hasFrame}\``,
-    `*Conectado em:* ${formatDate(sessionInfo.connectedAt)}`,
-    `*Atualizado em:* ${formatDate(sessionInfo.timestamp)}`,
-    `*Painel:* ${asText(sessionInfo.panelUrl || publicPanelUrl, publicPanelUrl)}`
+    "🚨 *NOVA SESSAO SEB DETECTADA!*",
+    `🌐 *IP:* ${asText(sessionInfo.remoteAddress)}`,
+    `🪟 *TITULO:* ${asText(primaryView.title)}`,
+    `🖥️ *RESOLUCAO:* ${viewport}`,
+    `🕒 *HORA DA CONEXAO:* ${formatDate(sessionInfo.connectedAt)}`
   ].join(" • ");
+}
+
+function normalizeWhatsappText(text, fallback) {
+  const normalized = String(text || "")
+    .replace(/\r/g, "")
+    .replace(/\n+/g, " | ")
+    .replace(/\s+\|\s+/g, " | ")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+  return normalized || fallback;
+}
+
+function isAcceptableFormattedMessage(text, sessionInfo) {
+  const value = String(text || "");
+  const primaryView = sessionInfo?.primaryView || {};
+  const width = asInt(primaryView.width, 0);
+  const height = asInt(primaryView.height, 0);
+  const viewport = width > 0 && height > 0 ? `${width} x ${height}` : "n/d";
+  const requiredValues = [
+    asText(sessionInfo.remoteAddress),
+    asText(primaryView.title),
+    viewport,
+    formatDate(sessionInfo.connectedAt)
+  ];
+  if (!value || value.length > 360) {
+    return false;
+  }
+  return requiredValues.every((part) => value.includes(part));
+}
+
+async function formatMessageWithProxy(sessionInfo, fallbackMessage) {
+  const primaryView = sessionInfo?.primaryView || {};
+  const width = asInt(primaryView.width, 0);
+  const height = asInt(primaryView.height, 0);
+  const viewport = width > 0 && height > 0 ? `${width} x ${height}` : "n/d";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), formatterTimeoutMs);
+  try {
+    const upstream = await fetch(proxyBase + "/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: formatterModel,
+        temperature: 0.2,
+        max_tokens: 180,
+        messages: [
+          {
+            role: "system",
+            content: [
+              "Formate alertas operacionais para WhatsApp em pt-BR.",
+              "Responda com UMA mensagem curta, elegante e objetiva.",
+              "Voce pode usar markdown e alguns emojis sutis.",
+              "Nao invente fatos.",
+              "Nao explique nada.",
+              "Nao adicione contexto extra.",
+              "Nao use listas longas ou frases narrativas.",
+              "Retorne um unico paragrafo, em uma unica mensagem, usando separadores visuais curtos como ' • '.",
+              "Inclua com precisao apenas estes fatos: alerta de nova sessao, IP, titulo, resolucao e hora da conexao.",
+              "Mantenha todos os valores exatamente como recebidos."
+            ].join(" ")
+          },
+          {
+            role: "user",
+            content: [
+              "Transforme estes dados em um alerta elegante para WhatsApp:",
+              `tipo=NOVA SESSAO SEB DETECTADA`,
+              `ip=${asText(sessionInfo.remoteAddress)}`,
+              `titulo=${asText(primaryView.title)}`,
+              `resolucao=${viewport}`,
+              `hora=${formatDate(sessionInfo.connectedAt)}`
+            ].join("\n")
+          }
+        ]
+      }),
+      signal: controller.signal
+    });
+    if (!upstream.ok) {
+      throw new Error(`proxy HTTP ${upstream.status}`);
+    }
+    const data = await upstream.json();
+    const content = data?.choices?.[0]?.message?.content;
+    const normalized = normalizeWhatsappText(content, fallbackMessage);
+    if (!isAcceptableFormattedMessage(normalized, sessionInfo)) {
+      throw new Error("formatter saiu do formato esperado");
+    }
+    return normalized;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function sendViaOpenClaw(message) {
@@ -101,7 +186,14 @@ function sendViaOpenClaw(message) {
 }
 
 async function handleNewSession(sessionInfo) {
-  const message = buildSessionMessage(sessionInfo);
+  const fallbackMessage = buildSessionMessage(sessionInfo);
+  let message = fallbackMessage;
+  try {
+    message = await formatMessageWithProxy(sessionInfo, fallbackMessage);
+    console.log("[WHATSAPP] Mensagem formatada via proxy:", formatterModel);
+  } catch (error) {
+    console.warn("[WHATSAPP] Formatter fallback:", error.message);
+  }
   console.log("[WEBHOOK] Nova sessao detectada:", asText(sessionInfo.sessionId));
   console.log("[WHATSAPP] Enviando para", whatsappTarget);
   const result = await sendViaOpenClaw(message);
