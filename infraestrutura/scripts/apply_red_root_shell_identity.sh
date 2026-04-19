@@ -63,13 +63,22 @@ ff02::2 ip6-allrouters
 EOF
 
 if [[ -d /etc/update-motd.d ]]; then
-    while IFS= read -r -d '' file; do
-        if [[ "$(basename "$file")" == "00-red-header" ]]; then
-            chmod 0755 "$file"
+    install -d -m 0755 /etc/update-motd.disabled-red
+    while IFS= read -r -d '' entry; do
+        name="$(basename "$entry")"
+        if [[ "$name" == "00-red-header" ]]; then
+            chmod 0755 "$entry"
+        elif [[ "$name" == "00-header" ]]; then
+            chmod 0644 "$entry"
         else
-            chmod 0644 "$file"
+            target="/etc/update-motd.disabled-red/${name}"
+            if [[ ! -e "$target" ]]; then
+                mv "$entry" "$target"
+            else
+                rm -f "$entry"
+            fi
         fi
-    done < <(find /etc/update-motd.d -maxdepth 1 -type f -print0)
+    done < <(find /etc/update-motd.d -maxdepth 1 \( -type f -o -type l \) -print0)
 fi
 
 for path in \
@@ -82,6 +91,11 @@ do
     fi
 done
 
+install -m 0644 /dev/null /etc/motd
+/etc/update-motd.d/00-red-header > /run/motd.dynamic
+rm -f /var/lib/landscape/landscape-sysinfo.cache
+rm -f /run/motd.d/* 2>/dev/null || true
+
 echo "[ok] shell root RED aplicado em ${TARGET_HOSTNAME}"
 echo "[ok] MOTD ativo:"
-run-parts /etc/update-motd.d || true
+/etc/update-motd.d/00-red-header || true
