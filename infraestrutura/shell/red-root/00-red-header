@@ -8,6 +8,8 @@ RED=$'\033[38;2;255;0;0m'
 GREEN=$'\033[38;2;0;255;120m'
 WHITE=$'\033[1;37m'
 RESET=$'\033[0m'
+BOX_INNER=72
+FRAME_INNER=$((BOX_INNER + 2))
 
 get_ip() {
     hostname -I 2>/dev/null | awk '{print $1}'
@@ -45,15 +47,21 @@ status_color_from_percent() {
 }
 
 border() {
-    printf '%b\n' "${RED}╔══════════════════════════════════════════════════════════════════════════════╗${RESET}"
+    local fill
+    fill="$(printf '%*s' "${FRAME_INNER}" '' | tr ' ' '═')"
+    printf '%b\n' "${RED}╔${fill}╗${RESET}"
 }
 
 divider() {
-    printf '%b\n' "${RED}╠══════════════════════════════════════════════════════════════════════════════╣${RESET}"
+    local fill
+    fill="$(printf '%*s' "${FRAME_INNER}" '' | tr ' ' '═')"
+    printf '%b\n' "${RED}╠${fill}╣${RESET}"
 }
 
 footer() {
-    printf '%b\n' "${RED}╚══════════════════════════════════════════════════════════════════════════════╝${RESET}"
+    local fill
+    fill="$(printf '%*s' "${FRAME_INNER}" '' | tr ' ' '═')"
+    printf '%b\n' "${RED}╚${fill}╝${RESET}"
 }
 
 line() {
@@ -61,7 +69,7 @@ line() {
     local plain visible pad
     plain="$(printf '%b' "$content" | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g')"
     visible=$(printf '%s' "$plain" | awk '{print length}')
-    pad=$((76 - visible))
+    pad=$((BOX_INNER - visible))
     if [ "$pad" -lt 0 ]; then
         pad=0
     fi
@@ -121,8 +129,8 @@ border
 line ""
 line "  ${RED}██████╗ ███████╗██████╗${RESET}"
 line "  ${RED}██╔══██╗██╔════╝██╔══██╗${RESET}"
-line "  ${RED}██████╔╝█████╗  ██║  ██║${RESET}   ${WHITE}RED SYSTEMS${RESET}"
-line "  ${RED}██╔══██╗██╔══╝  ██║  ██║${RESET}   ${WHITE}Ambiente de administracao em PT-BR${RESET}"
+line "  ${RED}██████╔╝█████╗  ██║  ██║${RESET}   ${WHITE}RED SYSTEM'S${RESET}"
+line "  ${RED}██╔══██╗██╔══╝  ██║  ██║${RESET}"
 line "  ${RED}██║  ██║███████╗██████╔╝${RESET}"
 line "  ${RED}╚═╝  ╚═╝╚══════╝╚═════╝${RESET}"
 line ""
