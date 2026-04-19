@@ -36,23 +36,33 @@ function buildSessionMessage(sessionInfo) {
   const height = asInt(primaryView.height, 0);
   const viewport = width > 0 && height > 0 ? `${width} x ${height}` : "n/d";
   const hasFrame = primaryView.hasFrame ? "sim" : "nao";
-  const parts = [
-    "Nova sessao SEB conectada",
-    `ID: ${asText(sessionInfo.sessionId)}`,
-    `Aplicacao: ${asText(sessionInfo.application, "SafeExamBrowser")}`,
-    `View: ${asText(primaryView.viewId)}`,
-    `Titulo: ${asText(primaryView.title)}`,
-    `URL: ${asText(primaryView.url)}`,
-    `Origem: ${asText(sessionInfo.remoteAddress)}`,
-    `Views abertas: ${asInt(sessionInfo.viewsCount, 0)}`,
-    `Viewport: ${viewport}`,
-    `Frame valida: ${hasFrame}`,
-    `Conectado em: ${formatDate(sessionInfo.connectedAt)}`,
-    `Atualizado em: ${formatDate(sessionInfo.timestamp)}`,
-    `Painel: ${asText(sessionInfo.panelUrl || publicPanelUrl, publicPanelUrl)}`
-  ];
-
-  return parts.join(" | ");
+  return [
+    "*Nova sessao SEB conectada*",
+    "",
+    `*ID*`,
+    `\`${asText(sessionInfo.sessionId)}\``,
+    "",
+    `*Aplicacao*`,
+    `${asText(sessionInfo.application, "SafeExamBrowser")}`,
+    "",
+    `*View ativa*`,
+    `- Janela: \`${asText(primaryView.viewId)}\``,
+    `- Titulo: ${asText(primaryView.title)}`,
+    `- URL: ${asText(primaryView.url)}`,
+    "",
+    `*Conexao*`,
+    `- Origem: \`${asText(sessionInfo.remoteAddress)}\``,
+    `- Views abertas: \`${asInt(sessionInfo.viewsCount, 0)}\``,
+    `- Viewport: \`${viewport}\``,
+    `- Frame valida: \`${hasFrame}\``,
+    "",
+    `*Tempos*`,
+    `- Conectado em: ${formatDate(sessionInfo.connectedAt)}`,
+    `- Atualizado em: ${formatDate(sessionInfo.timestamp)}`,
+    "",
+    `*Painel*`,
+    `${asText(sessionInfo.panelUrl || publicPanelUrl, publicPanelUrl)}`
+  ].join("\n");
 }
 
 function sendViaOpenClaw(message) {
