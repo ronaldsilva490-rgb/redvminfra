@@ -4,8 +4,10 @@
 {% block content %}
 <section class="auth-shell">
   <article class="auth-card auth-wide" id="device-panel" data-user-code="{{ user_code }}">
+    <img class="auth-logo" src="{{ public_path('/brand/logo.png') }}" alt="RED Systems">
     <span class="eyebrow">Device auth</span>
     <h1>Autorizar o comando <code>red</code></h1>
+    <p class="auth-copy">Esse e o ponto de passagem entre o navegador e o terminal do cliente.</p>
     {% if device_code_row %}
       <p>Codigo recebido: <strong>{{ user_code }}</strong></p>
       <p class="muted">Cliente: {{ device_code_row.client_name }} | expira em {{ device_code_row.expires_at }}</p>

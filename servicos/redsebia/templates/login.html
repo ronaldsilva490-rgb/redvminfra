@@ -4,8 +4,10 @@
 {% block content %}
 <section class="auth-shell">
   <form class="auth-card" id="login-form" data-next="{{ next_path }}">
+    <img class="auth-logo" src="{{ public_path('/brand/logo.png') }}" alt="RED Systems">
     <span class="eyebrow">Acesso do cliente</span>
     <h1>Entrar no REDSEBIA</h1>
+    <p class="auth-copy">Saldo, PIX, historico e autorizacao do comando <code>red</code> em um trilho so.</p>
     <label>E-mail
       <input type="email" name="email" required autocomplete="email">
     </label>

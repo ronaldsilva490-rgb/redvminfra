@@ -168,6 +168,11 @@ async def favicon() -> FileResponse:
     return FileResponse(settings.repo_dir / "identidade" / "logo" / "favicon.ico")
 
 
+@app.get("/brand/logo.png")
+async def brand_logo() -> FileResponse:
+    return FileResponse(settings.repo_dir / "identidade" / "logo" / "logo.png")
+
+
 @app.get("/")
 async def home(request: Request) -> HTMLResponse:
     if get_current_user(request):

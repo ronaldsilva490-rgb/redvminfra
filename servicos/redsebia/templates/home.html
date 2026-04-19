@@ -15,22 +15,36 @@
       <a class="btn btn-ghost" href="{{ public_path('/login') }}">Entrar</a>
     </div>
   </div>
-  <div class="hero-stats">
-    <div class="info-card compact">
-      <span class="label">Top-up</span>
-      <strong>PIX em tempo real</strong>
-      <p>Sandbox pronto hoje, gateways brasileiros configuraveis pelo admin.</p>
-    </div>
-    <div class="info-card compact">
-      <span class="label">CLI</span>
-      <strong>Device auth do red</strong>
-      <p>Fluxo pronto para a proxima passada do launcher e do ambiente local.</p>
-    </div>
-    <div class="info-card compact">
-      <span class="label">Runtime</span>
-      <strong>Reserva e debito</strong>
-      <p>Endpoints preparados para liberar uso e liquidar analise por tokens.</p>
-    </div>
+  <div class="hero-rail">
+    <article class="brand-spotlight">
+      <img src="{{ public_path('/brand/logo.png') }}" alt="RED Systems">
+      <strong>RED Systems</strong>
+      <p>Mesma linguagem visual da stack principal, agora com trilho proprio para o REDSEBIA.</p>
+    </article>
+    <article class="terminal-card">
+      <header>Fluxo previsto</header>
+      <p><span>1.</span> Cliente cria conta e adiciona saldo via PIX.</p>
+      <p><span>2.</span> Ambiente local habilita o comando <code>red</code>.</p>
+      <p><span>3.</span> Runtime consulta saldo, autoriza uso e liquida consumo.</p>
+    </article>
   </div>
+</section>
+
+<section class="grid-main">
+  <article class="info-card compact">
+    <span class="label">Top-up</span>
+    <strong>PIX em tempo real</strong>
+    <p>Sandbox pronto hoje, gateways brasileiros configuraveis pelo admin.</p>
+  </article>
+  <article class="info-card compact">
+    <span class="label">CLI</span>
+    <strong>Device auth do red</strong>
+    <p>Fluxo pronto para a proxima passada do launcher e do ambiente local.</p>
+  </article>
+  <article class="info-card compact">
+    <span class="label">Runtime</span>
+    <strong>Reserva e debito</strong>
+    <p>Endpoints preparados para liberar uso e liquidar analise por tokens.</p>
+  </article>
 </section>
 {% endblock %}
