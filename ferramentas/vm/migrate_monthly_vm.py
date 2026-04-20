@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import argparse
 import io
+import os
 import posixpath
 import shlex
 import sys
 from dataclasses import dataclass
 from typing import Iterable
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
 import paramiko
 
@@ -32,6 +35,7 @@ BASE_PACKAGES = [
     "php-cli",
     "build-essential",
     "ca-certificates",
+    "unzip",
 ]
 
 SERVICE_ORDER_STOP = [
@@ -110,6 +114,7 @@ PUBLIC_URLS = [
     "http://127.0.0.1/",
     "http://127.0.0.1/dashboard/",
     "http://127.0.0.1/proxy/",
+    "http://127.0.0.1/ollama/api/tags",
     "http://127.0.0.1/redia/",
     "http://127.0.0.1/trader/healthz",
     "http://127.0.0.1/proxy-lab/healthz",
@@ -121,6 +126,25 @@ PUBLIC_URLS = [
     "http://127.0.0.1/download",
     "http://127.0.0.1:2580/",
 ]
+
+PUBLIC_PATHS = [
+    "/",
+    "/dashboard/",
+    "/proxy/",
+    "/ollama/api/tags",
+    "/redia/",
+    "/trader/healthz",
+    "/proxy-lab/healthz",
+    "/iq-bridge/healthz",
+    "/openclaw/",
+    "/rapidleech/",
+    "/redsebia/",
+    "/redsebia/admin/login",
+    "/redseb/",
+    "/download",
+]
+
+SHELL_IDENTITY_SCRIPT = "/opt/redvm-repo/infraestrutura/scripts/apply_red_root_shell_identity.sh"
 
 
 @dataclass(frozen=True)
@@ -311,6 +335,14 @@ def install_base_packages(target: Remote) -> None:
         f"apt-get update && apt-get install -y {packages}",
         timeout=0,
     )
+    target.run(
+        "NODE_MAJOR=$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1 || echo 0); "
+        "if [ \"${NODE_MAJOR:-0}\" -lt 20 ]; then "
+        "curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && "
+        "export DEBIAN_FRONTEND=noninteractive && apt-get install -y nodejs; "
+        "fi",
+        timeout=0,
+    )
     for command in TARGET_PREP_COMMANDS:
         target.run(command)
 
@@ -332,7 +364,15 @@ def finalize_target(remote: Remote) -> None:
     remote.run("nginx -t")
 
 
-def phase_preseed(source: Remote, target: Remote) -> None:
+def apply_shell_identity(remote: Remote, target_hostname: str) -> None:
+    remote.run(
+        f"chmod +x {shlex.quote(SHELL_IDENTITY_SCRIPT)} && "
+        f"TARGET_HOSTNAME={shlex.quote(target_hostname)} {shlex.quote(SHELL_IDENTITY_SCRIPT)}",
+        timeout=0,
+    )
+
+
+def phase_preseed(source: Remote, target: Remote, target_shell_hostname: str, public_host: str | None) -> None:
     install_base_packages(target)
     stop_services(target, SERVICE_ORDER_START)
     for group in PRESEED_GROUPS:
@@ -343,11 +383,14 @@ def phase_preseed(source: Remote, target: Remote) -> None:
     copy_files(source, target, ["/etc/sudoers.d/openclaw", "/usr/local/bin/openclaw"])
     target.run("chmod +x /usr/local/bin/openclaw", check=False)
     target.run("chown -R openclaw:openclaw /home/openclaw", check=False)
+    apply_shell_identity(target, target_shell_hostname)
     finalize_target(target)
-    print("\nPreseed concluido. A origem continua online.")
+    start_services(target, SERVICE_ORDER_START)
+    verify_target(target, public_host)
+    print("\nPreseed concluido. A origem continua online e a standby ja ficou validada.")
 
 
-def phase_cutover(source: Remote, target: Remote) -> None:
+def phase_cutover(source: Remote, target: Remote, target_shell_hostname: str, public_host: str | None) -> None:
     stop_services(source, SERVICE_ORDER_STOP)
     stop_services(target, SERVICE_ORDER_START)
     for group in FINAL_SYNC_GROUPS:
@@ -357,16 +400,47 @@ def phase_cutover(source: Remote, target: Remote) -> None:
     copy_files(source, target, NGINX_FILES)
     target.run("chmod +x /usr/local/bin/openclaw", check=False)
     target.run("chown -R openclaw:openclaw /home/openclaw", check=False)
+    apply_shell_identity(target, target_shell_hostname)
     finalize_target(target)
     start_services(target, SERVICE_ORDER_START)
-    verify_target(target)
+    verify_target(target, public_host)
     print(
         "\nCutover tecnico concluido. Se a validacao acima estiver limpa, o proximo passo manual e trocar o No-IP "
         "de redsystems.ddns.net para o IP da nova VM."
     )
 
 
-def verify_target(remote: Remote) -> None:
+def verify_openclaw(remote: Remote) -> None:
+    remote.run(
+        "if [ -x /usr/local/bin/openclaw ] && [ -f /etc/red-openclaw.env ]; then "
+        "token=$(awk -F= '/^OPENCLAW_GATEWAY_TOKEN=/{print $2}' /etc/red-openclaw.env | tail -n1); "
+        "if [ -n \"$token\" ]; then "
+        "sudo -u openclaw env PATH=/opt/red-openclaw/node/bin:/opt/red-openclaw/npm/bin:$PATH "
+        "HOME=/home/openclaw /usr/local/bin/openclaw gateway health --url ws://127.0.0.1:18789 --token \"$token\"; "
+        "fi; "
+        "fi",
+        timeout=300,
+        check=False,
+    )
+
+
+def verify_public_host(public_host: str) -> None:
+    urls = [f"http://{public_host}{path}" for path in PUBLIC_PATHS]
+    urls.append(f"http://{public_host}:2580/")
+    for url in urls:
+        print(f"[public] {url}")
+        req = urlrequest.Request(url, headers={"User-Agent": "redvm-migrate/1.0"})
+        try:
+            with urlrequest.urlopen(req, timeout=20) as response:
+                code = response.getcode()
+        except urlerror.HTTPError as exc:
+            code = exc.code
+        if code not in {200, 301, 302, 303}:
+            raise RuntimeError(f"validacao publica falhou em {url} (status {code})")
+        print(f"  -> {code}")
+
+
+def verify_target(remote: Remote, public_host: str | None = None) -> None:
     remote.run(
         "systemctl is-active "
         "red-dashboard red-ollama-proxy redia redtrader red-proxy-lab "
@@ -375,22 +449,45 @@ def verify_target(remote: Remote) -> None:
     )
     for url in PUBLIC_URLS:
         remote.run(f"curl -fsS -o /dev/null {shlex.quote(url)}")
+    verify_openclaw(remote)
+    if public_host:
+        verify_public_host(public_host)
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Migracao mensal da stack RED entre VMs.")
     parser.add_argument("phase", choices=["preseed", "cutover", "verify"])
     for prefix in ("source", "target"):
-        parser.add_argument(f"--{prefix}-host", required=(prefix == "target"))
-        parser.add_argument(f"--{prefix}-port", type=int, default=22)
-        parser.add_argument(f"--{prefix}-user", default="root")
-        parser.add_argument(f"--{prefix}-password", required=(prefix == "target"))
+        env_name = f"REDVM_{prefix.upper()}_HOST"
+        env_pass = f"REDVM_{prefix.upper()}_PASSWORD"
+        parser.add_argument(f"--{prefix}-host", default=os.environ.get(env_name))
+        parser.add_argument(f"--{prefix}-port", type=int, default=int(os.environ.get(f"REDVM_{prefix.upper()}_PORT", "22")))
+        parser.add_argument(f"--{prefix}-user", default=os.environ.get(f"REDVM_{prefix.upper()}_USER", "root"))
+        parser.add_argument(f"--{prefix}-password", default=os.environ.get(env_pass))
+    parser.add_argument(
+        "--target-shell-hostname",
+        default=os.environ.get("REDVM_TARGET_SHELL_HOSTNAME", "red"),
+        help="hostname funcional aplicado pelo pacote de shell identity no destino",
+    )
+    parser.add_argument(
+        "--public-host",
+        default=os.environ.get("REDVM_PUBLIC_VERIFY_HOST"),
+        help="host publico a ser validado externamente ao final (ex.: redsystems2.ddns.net)",
+    )
     return parser
 
 
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    target_missing = [
+        name
+        for name in ("target_host", "target_password")
+        if not getattr(args, name)
+    ]
+    if target_missing:
+        missing_flags = ", ".join("--" + item.replace("_", "-") for item in target_missing)
+        parser.error(f"faltam argumentos obrigatorios: {missing_flags}")
     if args.phase in {"preseed", "cutover"}:
         missing = [
             name
@@ -408,11 +505,11 @@ def main() -> int:
             source = make_remote("source", args)
         target = make_remote("target", args)
         if args.phase == "preseed":
-            phase_preseed(source, target)
+            phase_preseed(source, target, args.target_shell_hostname, args.public_host)
         elif args.phase == "cutover":
-            phase_cutover(source, target)
+            phase_cutover(source, target, args.target_shell_hostname, args.public_host)
         else:
-            verify_target(target)
+            verify_target(target, args.public_host)
         return 0
     finally:
         if source is not None:

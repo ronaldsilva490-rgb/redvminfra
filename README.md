@@ -150,6 +150,8 @@ O runbook operacional da migracao mensal completa esta em:
 Script-base de apoio:
 
 - [ferramentas/vm/migrate_monthly_vm.py](ferramentas/vm/migrate_monthly_vm.py)
+- [ferramentas/vm/run_monthly_migration.ps1](ferramentas/vm/run_monthly_migration.ps1)
+- [ferramentas/vm/migrate_monthly_vm.env.example](ferramentas/vm/migrate_monthly_vm.env.example)
 
 ---
 

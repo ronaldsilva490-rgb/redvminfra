@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+"""
+Script legado da primeira consolidacao em VM unica.
+
+Nao usar para a migracao mensal atual. O fluxo suportado e documentado hoje fica em:
+- ferramentas/vm/migrate_monthly_vm.py
+- ferramentas/vm/run_monthly_migration.ps1
+"""
+
 import argparse
 import io
 import os

@@ -105,16 +105,18 @@ Documentos principais:
 Script-base:
 
 ```powershell
-python ferramentas/vm/migrate_monthly_vm.py preseed --help
-python ferramentas/vm/migrate_monthly_vm.py cutover --help
-python ferramentas/vm/migrate_monthly_vm.py verify --help
+python ferramentas/vm/migrate_monthly_vm.py --help
+.\ferramentas\vm\run_monthly_migration.ps1 preseed
+.\ferramentas\vm\run_monthly_migration.ps1 cutover
+.\ferramentas\vm\run_monthly_migration.ps1 verify
 ```
 
 Regra permanente:
 
 - a stack inteira entra;
 - o historico gigante do IQ Vision fica para tras;
-- o corte de DNS so acontece depois da nova responder por `redsystems2.ddns.net`.
+- o corte de DNS so acontece depois da VM de standby responder por `redsystems2.ddns.net`;
+- a identidade de shell da RED entra automaticamente no destino pelo script oficial do repo.
 
 Para scripts mais especificos, siga o padrao:
 

@@ -1,6 +1,6 @@
 # Inventario Da VM Antiga - 2026-04-19
 
-Este documento congela a fotografia operacional da VM antiga (`redsystems.ddns.net`) antes da migracao mensal para a VM nova (`redsystems2.ddns.net`).
+Este documento congela a fotografia operacional da primeira VM de origem auditada em `2026-04-19`, quando `redsystems.ddns.net` ainda era a VM ativa e `redsystems2.ddns.net` era a standby. Hoje ele deve ser lido como **snapshot historico de referencia**, enquanto o runbook mensal usa sempre os papeis `VM ativa` e `VM de standby`.
 
 Objetivo:
 
@@ -341,4 +341,3 @@ No corte, o esperado e:
 - estado persistente mantido;
 - clientes reconectam no IP novo assim que o DNS apontar;
 - parte historica da IQ fica propositalmente para tras.
-

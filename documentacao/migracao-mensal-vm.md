@@ -8,11 +8,12 @@ Este runbook descreve a migracao mensal da stack inteira da VM antiga para a VM 
 - validar tudo antes do corte de DNS;
 - permitir rollback rapido se algo falhar.
 
-Escopo atual:
+Escopo operacional permanente:
 
-- origem temporaria: `redsystems.ddns.net`
-- destino temporario durante a migracao: `redsystems2.ddns.net`
-- destino final apos o corte: `redsystems.ddns.net` passa a apontar para a VM nova
+- **VM ativa** no momento: `redsystems.ddns.net`
+- **VM de standby** para o preseed: `redsystems2.ddns.net`
+- apos o corte, a VM promovida assume `redsystems.ddns.net`
+- a outra VM volta a ficar reservada para o proximo ciclo e deve ser preparada para responder em `redsystems2.ddns.net`
 
 ## 1. O Que Esta Sendo Migrado
 
@@ -69,7 +70,7 @@ Esse desenho minimiza downtime e reduz a chance de esquecer estado importante.
 
 - Ubuntu `24.04 LTS`
 - acesso root via SSH
-- hostname funcional em `redsystems2.ddns.net`
+- hostname publico de standby funcional em `redsystems2.ddns.net`
 - conectividade outbound liberada
 - disco livre suficiente
 - hora sincronizada (`timedatectl`)
@@ -80,6 +81,7 @@ Esse desenho minimiza downtime e reduz a chance de esquecer estado importante.
 - Python com `paramiko`
 - acesso SSH as duas VMs
 - acesso ao painel No-IP
+- arquivo local `ferramentas/vm/migrate_monthly_vm.env` preenchido
 - janela curta de corte combinada
 
 ### 3.3 Congelamento de mudancas
@@ -148,8 +150,10 @@ Tambem preparar na nova:
 - `/usr/local/bin/openclaw`
 - `ufw`
 - `nginx`
+- Node `20.x` para compatibilidade total com a stack atual
 - remover `default site` do nginx para nao haver conflito de `default_server`
 - pacotes de base
+- identidade de shell RED (`MOTD`, `root.bashrc`, `redpainel`) aplicada pelo script oficial do repo
 
 ### Fase C - Validacao Da VM Nova Antes Do Corte
 
@@ -159,7 +163,8 @@ Com a stack ainda usando `redsystems2.ddns.net`, validar:
 - `nginx -t`
 - servicos sobem localmente
 - health checks locais respondem
-- rotas publicas pela nova respondem em `redsystems2.ddns.net`
+- rotas publicas pela standby respondem em `redsystems2.ddns.net`
+- shell root da standby abre com o `MOTD` oficial da RED
 
 ### Fase D - Congelamento Curto Da Origem
 
@@ -280,19 +285,21 @@ Esperado:
 - `80/tcp ALLOW`
 - `2580/tcp ALLOW`
 
-Validar publicamente pela nova:
+Validar publicamente pela standby:
 
 ```text
 http://redsystems2.ddns.net/
 http://redsystems2.ddns.net/dashboard/
 http://redsystems2.ddns.net/proxy/
+http://redsystems2.ddns.net/ollama/api/tags
 http://redsystems2.ddns.net/redia/
-http://redsystems2.ddns.net/trader/
-http://redsystems2.ddns.net/proxy-lab/
+http://redsystems2.ddns.net/trader/healthz
+http://redsystems2.ddns.net/proxy-lab/healthz
 http://redsystems2.ddns.net/iq-bridge/healthz
 http://redsystems2.ddns.net/openclaw/
 http://redsystems2.ddns.net/rapidleech/
 http://redsystems2.ddns.net/redsebia/
+http://redsystems2.ddns.net/redsebia/admin/login
 http://redsystems2.ddns.net/redseb/
 http://redsystems2.ddns.net/download
 http://redsystems2.ddns.net:2580/
@@ -378,6 +385,8 @@ Passos:
 Script-base novo do repo:
 
 - [ferramentas/vm/migrate_monthly_vm.py](../ferramentas/vm/migrate_monthly_vm.py)
+- [ferramentas/vm/run_monthly_migration.ps1](../ferramentas/vm/run_monthly_migration.ps1)
+- [ferramentas/vm/migrate_monthly_vm.env.example](../ferramentas/vm/migrate_monthly_vm.env.example)
 
 Fases suportadas:
 
@@ -385,42 +394,42 @@ Fases suportadas:
 - `cutover`
 - `verify`
 
-Exemplo:
+Preparacao recomendada no operador local:
 
 ```powershell
-python ferramentas/vm/migrate_monthly_vm.py preseed `
-  --source-host redsystems.ddns.net `
-  --source-port 22 `
-  --source-user root `
-  --source-password 2580 `
-  --target-host redsystems2.ddns.net `
-  --target-port 22 `
-  --target-user root `
-  --target-password '##Ron@ld2580##'
+Copy-Item ferramentas/vm/migrate_monthly_vm.env.example ferramentas/vm/migrate_monthly_vm.env
+# editar as senhas e hosts reais
 ```
 
-Depois, na janela de corte:
+Preseed:
 
 ```powershell
-python ferramentas/vm/migrate_monthly_vm.py cutover `
-  --source-host redsystems.ddns.net `
-  --source-port 22 `
-  --source-user root `
-  --source-password 2580 `
-  --target-host redsystems2.ddns.net `
-  --target-port 22 `
-  --target-user root `
-  --target-password '##Ron@ld2580##'
+.\ferramentas\vm\run_monthly_migration.ps1 preseed
 ```
 
-Validacao final:
+Quando `REDVM_PUBLIC_VERIFY_HOST` estiver preenchido no arquivo de ambiente, o `preseed` ja sobe a stack na standby, aplica o shell oficial da RED e valida a borda publica em `redsystems2.ddns.net` antes do corte.
+
+Cutover:
 
 ```powershell
-python ferramentas/vm/migrate_monthly_vm.py verify `
-  --target-host redsystems2.ddns.net `
-  --target-port 22 `
-  --target-user root `
-  --target-password '##Ron@ld2580##'
+.\ferramentas\vm\run_monthly_migration.ps1 cutover
+```
+
+Validacao final isolada:
+
+```powershell
+.\ferramentas\vm\run_monthly_migration.ps1 verify
+```
+
+Se precisar rodar sem o wrapper, o script agora tambem aceita credenciais via variaveis de ambiente:
+
+```powershell
+$env:REDVM_SOURCE_HOST='redsystems.ddns.net'
+$env:REDVM_SOURCE_PASSWORD='troque-aqui'
+$env:REDVM_TARGET_HOST='redsystems2.ddns.net'
+$env:REDVM_TARGET_PASSWORD='troque-aqui'
+$env:REDVM_PUBLIC_VERIFY_HOST='redsystems2.ddns.net'
+python ferramentas/vm/migrate_monthly_vm.py preseed
 ```
 
 ## 12. Checklist Final De Aceite
