@@ -67,6 +67,53 @@ Na VM, o OpenClaw roda com acesso amplo ao host.
 - o usuario `openclaw` tem `sudo` sem senha para tarefas operacionais
 - o service `red-openclaw` nao deve usar `NoNewPrivileges=true`, senao o `sudo` falha dentro das tools
 
+## Hardening atual do WhatsApp
+
+No runtime atual da RED, o canal WhatsApp ficou fechado para uso privado do operador.
+
+- `channels.whatsapp.dmPolicy=allowlist`
+- `channels.whatsapp.allowFrom=["+558589098018"]`
+- `channels.whatsapp.accounts.default.dmPolicy=allowlist`
+- `channels.whatsapp.accounts.default.allowFrom=["+558589098018"]`
+- `channels.whatsapp.groupPolicy=disabled`
+- `tools.elevated.allowFrom.whatsapp=["+558589098018"]`
+
+Arquivos reais observados na VM:
+
+- runtime principal: `/home/openclaw/.openclaw/openclaw.json`
+- allowlist persistida: `/home/openclaw/.openclaw/credentials/whatsapp-default-allowFrom.json`
+
+Isso existe para evitar que o OpenClaw converse com numeros externos por engano e para garantir que operacoes elevadas no WhatsApp so venham do dono da stack.
+
+## Higiene de contexto
+
+Como o OpenClaw guarda sessoes e memoria local, vale tratar lixo de conversa cedo.
+
+Arquivos importantes:
+
+- store de sessoes: `/home/openclaw/.openclaw/agents/main/sessions/sessions.json`
+- transcricoes: `/home/openclaw/.openclaw/agents/main/sessions/*.jsonl`
+- memoria curta/curada: `/home/openclaw/.openclaw/workspace/memory/`
+- memoria longa: `/home/openclaw/.openclaw/workspace/MEMORY.md`
+
+Fluxo recomendado quando aparecer conversa estranha ou contaminada:
+
+1. fazer backup de `sessions/` e `workspace/memory/`;
+2. arquivar sessoes diretas irrelevantes ou loops externos;
+3. preservar a sessao do operador autorizado;
+4. substituir arquivos de memoria ruins por um resumo curado;
+5. rodar `openclaw memory index`.
+
+Comandos uteis:
+
+```bash
+openclaw sessions --json
+openclaw sessions cleanup --dry-run
+openclaw memory index
+```
+
+Na limpeza feita em `2026-04-20`, a sessao estrangeira `+551149508309` e a sessao direta do proprio numero do bot foram arquivadas, e um resumo curado do numero autorizado `+558589098018` foi salvo para facilitar recuperacao de contexto util.
+
 ## Curadoria atual de modelos
 
 - texto e tools principal: `red/NIM - nvidia/llama-3.1-nemotron-nano-8b-v1`
@@ -84,6 +131,12 @@ systemctl is-active red-openclaw
 openclaw gateway health
 openclaw channels status
 curl -I http://127.0.0.1:18789/openclaw/
+```
+
+Saida esperada no ambiente atual para `openclaw channels status`:
+
+```text
+WhatsApp default (RED I.A WhatsApp): enabled, configured, linked, running, connected, dm:allowlist, allow:+558589098018
 ```
 
 ## Exposicao
