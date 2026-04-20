@@ -116,13 +116,25 @@ Na limpeza feita em `2026-04-20`, a sessao estrangeira `+551149508309` e a sessa
 
 ## Curadoria atual de modelos
 
-- texto e tools principal: `red/NIM - nvidia/llama-3.1-nemotron-nano-8b-v1`
-- fallback operacional de texto e tools: `red/NIM - nvidia/nemotron-mini-4b-instruct`
-- fallback de seguranca: `ollama/minimax-m2.1`
-- visao principal: `red/NIM - meta/llama-3.2-11b-vision-instruct`
-- fallback rapido de visao: `red/NIM - nvidia/nemotron-nano-12b-v2-vl`
+- texto e tools principal: `red/NIM - mistralai/mistral-small-4-119b-2603`
+- fallback operacional de texto e tools: `ollama/minimax-m2.1`
+- candidato rapido de tool-call puro: `red/NIM - meta/llama-4-maverick-17b-128e-instruct`
+- visao principal: `red/NIM - nvidia/nemotron-nano-12b-v2-vl`
+- fallback de visao: `red/NIM - meta/llama-3.2-11b-vision-instruct`
 - fallback pesado de visao: `red/qwen3-vl:235b-instruct`
 - imagem via helper: `NIM - flux.2-klein-4b`
+- TTS operacional: `microsoft` com voz `pt-BR-ThalitaMultilingualNeural`
+
+## Resultado da bateria real
+
+Na rodada de `2026-04-20`, a selecao ficou assim:
+
+- para resposta final de status usando tools, o melhor equilibrio foi `red/NIM - mistralai/mistral-small-4-119b-2603`
+- `red/NIM - meta/llama-4-maverick-17b-128e-instruct` ficou como melhor candidato de tool-call puro, mas ainda vaza chamada crua em alguns fluxos
+- para fallback operacional no WhatsApp, `ollama/minimax-m2.1` continua util porque conclui o fluxo completo sem quebrar
+- para visao, `red/NIM - nvidia/nemotron-nano-12b-v2-vl` foi o mais rapido e consistente
+- para imagem realista, `NIM - flux.2-klein-4b` venceu a comparacao visual
+- para audio no WhatsApp, o caminho certo ficou: TTS em MP3 -> conversao para OGG/Opus -> envio
 
 ## Validacao recomendada
 
