@@ -8,19 +8,6 @@ RED=$'\033[38;2;255;0;0m'
 GREEN=$'\033[38;2;0;255;120m'
 WHITE=$'\033[1;37m'
 RESET=$'\033[0m'
-BOX_INNER=52
-FRAME_INNER=$((BOX_INNER + 2))
-
-repeat_char() {
-    local char="$1"
-    local count="$2"
-    local out=""
-    local i
-    for ((i=0; i<count; i++)); do
-        out+="$char"
-    done
-    printf '%s' "$out"
-}
 
 get_ip() {
     hostname -I 2>/dev/null | awk '{print $1}'
@@ -57,53 +44,14 @@ status_color_from_percent() {
     fi
 }
 
-border() {
-    local fill
-    fill="$(repeat_char '-' "${FRAME_INNER}")"
-    printf '%b\n' "${RED}+${fill}+${RESET}"
+separator() {
+    printf '%b\n' "${RED}------------------------------------------------------------${RESET}"
 }
 
-divider() {
-    local fill
-    fill="$(repeat_char '-' "${FRAME_INNER}")"
-    printf '%b\n' "${RED}+${fill}+${RESET}"
-}
-
-footer() {
-    local fill
-    fill="$(repeat_char '-' "${FRAME_INNER}")"
-    printf '%b\n' "${RED}+${fill}+${RESET}"
-}
-
-line() {
-    local content="$1"
-    local plain visible pad
-    plain="$(printf '%b' "$content" | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g')"
-    visible=$(printf '%s' "$plain" | awk '{print length}')
-    pad=$((BOX_INNER - visible))
-    if [ "$pad" -lt 0 ]; then
-        pad=0
-    fi
-    printf '%b%b%*s%b\n' "${RED}| ${RESET}" "$content" "$pad" '' "${RED} |${RESET}"
-}
-
-center_line() {
-    local content="$1"
-    local plain visible left right
-    plain="$(printf '%b' "$content" | sed -r 's/\x1B\[[0-9;]*[A-Za-z]//g')"
-    visible=$(printf '%s' "$plain" | awk '{print length}')
-    if [ "$visible" -gt "$BOX_INNER" ]; then
-        visible="$BOX_INNER"
-    fi
-    left=$(((BOX_INNER - visible) / 2))
-    if [ "$left" -lt 0 ]; then
-        left=0
-    fi
-    right=$((BOX_INNER - visible - left))
-    if [ "$right" -lt 0 ]; then
-        right=0
-    fi
-    printf '%b%*s%b%*s%b\n' "${RED}| ${RESET}" "$left" '' "$content" "$right" '' "${RED} |${RESET}"
+print_kv() {
+    local label="$1"
+    local value="$2"
+    printf '%b%-11s%b : %b\n' "${WHITE}" "$label" "${RESET}" "$value"
 }
 
 service_text() {
@@ -155,29 +103,29 @@ else
 fi
 
 clear_screen
-border
-line ""
-center_line "${RED} ____  _____ ____ ${RESET}"
-center_line "${RED}|  _ \\| ____|  _ \\${RESET}"
-center_line "${RED}| |_) |  _| | | | |${RESET}"
-center_line "${RED}|  _ <| |___| |_| |${RESET}"
-center_line "${RED}|_| \\_\\_____|____/ ${RESET}"
-line ""
-divider
-line "${WHITE}Sistema${RESET}    : ${SYSTEM_STATE_FMT}"
-line "${WHITE}Hostname${RESET}   : ${WHITE}$(hostname)${RESET}"
-line "${WHITE}Kernel${RESET}     : ${WHITE}$(uname -r | cut -d'-' -f1)${RESET}"
-line "${WHITE}Uptime${RESET}     : ${GREEN}${UPTIME_TEXT:-indisponivel}${RESET}"
-line "${WHITE}Carga${RESET}      : ${WHITE}${LOAD:-indisponivel}${RESET}"
-line "${WHITE}Memoria${RESET}    : ${MEM_COLOR}${MEMORY_INFO}${RESET}"
-line "${WHITE}Disco raiz${RESET} : ${DISK_COLOR}${DISK_INFO}${RESET}"
-line "${WHITE}IPv4${RESET}       : ${WHITE}${IP_ADDR:-indisponivel}${RESET}"
-line "${WHITE}SSH${RESET}        : ${SSH_STATE}"
-line "${WHITE}Zumbis${RESET}     : ${ZOMBIE_FMT}"
-line "${WHITE}Updates${RESET}    : ${UPDATES_FMT}"
-divider
-line "${WHITE}Comandos uteis${RESET}"
-line "${WHITE}painel${RESET} -> painel RED ao vivo"
-line "${WHITE}motd${RESET}   -> redesenha o banner"
-footer
+printf '\n'
+printf '%b\n' "${RED}██████╗ ███████╗██████╗${RESET}"
+printf '%b\n' "${RED}██╔══██╗██╔════╝██╔══██╗${RESET}"
+printf '%b\n' "${RED}██████╔╝█████╗  ██║  ██║${RESET}"
+printf '%b\n' "${RED}██╔══██╗██╔══╝  ██║  ██║${RESET}"
+printf '%b\n' "${RED}██║  ██║███████╗██████╔╝${RESET}"
+printf '%b\n' "${RED}╚═╝  ╚═╝╚══════╝╚═════╝ ${RESET}"
+printf '\n'
+separator
+print_kv "Sistema" "${SYSTEM_STATE_FMT}"
+print_kv "Hostname" "${WHITE}$(hostname)${RESET}"
+print_kv "Kernel" "${WHITE}$(uname -r | cut -d'-' -f1)${RESET}"
+print_kv "Uptime" "${GREEN}${UPTIME_TEXT:-indisponivel}${RESET}"
+print_kv "Carga" "${WHITE}${LOAD:-indisponivel}${RESET}"
+print_kv "Memoria" "${MEM_COLOR}${MEMORY_INFO}${RESET}"
+print_kv "Disco raiz" "${DISK_COLOR}${DISK_INFO}${RESET}"
+print_kv "IPv4" "${WHITE}${IP_ADDR:-indisponivel}${RESET}"
+print_kv "SSH" "${SSH_STATE}"
+print_kv "Zumbis" "${ZOMBIE_FMT}"
+print_kv "Updates" "${UPDATES_FMT}"
+separator
+printf '%b\n' "${WHITE}Comandos uteis${RESET}"
+printf '%b\n' "${WHITE}painel${RESET} -> painel RED ao vivo"
+printf '%b\n' "${WHITE}motd${RESET}   -> redesenha o banner"
+separator
 printf '\n'
