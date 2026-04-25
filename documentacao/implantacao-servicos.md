@@ -78,6 +78,9 @@ RED_PROXY_PORT=8080
 RED_PROXY_DATA_DIR=/var/lib/redsystems/proxy
 RED_PROXY_UPSTREAM=https://ollama.com
 RED_PROXY_NVIDIA_API_KEY=
+RED_PROXY_NVIDIA_MODEL_REFRESH_ENABLED=true
+RED_PROXY_NVIDIA_MODEL_REFRESH_TTL_SECONDS=3600
+RED_PROXY_NVIDIA_MODEL_CACHE_FILE=/var/lib/redsystems/proxy/nvidia_models_cache.json
 ```
 
 Systemd:
@@ -93,6 +96,8 @@ Health check:
 
 ```bash
 curl -s http://127.0.0.1:8080/api/tags | python3 -m json.tool | head
+curl -s -X POST http://127.0.0.1:8080/api/nvidia/models/refresh | python3 -m json.tool
+curl -s http://127.0.0.1:8080/api/nvidia/models | python3 -m json.tool | head
 curl -s -X POST http://127.0.0.1:8080/api/chat \
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen3-coder-next","messages":[{"role":"user","content":"responda ok"}],"stream":false}'

@@ -31,6 +31,23 @@ DEFAULT_EMBEDDINGS_MODEL = (os.getenv("RED_PROXY_DEFAULT_EMBEDDINGS_MODEL") or "
 ENABLE_CAPABILITY_FALLBACK = (os.getenv("RED_PROXY_ENABLE_CAPABILITY_FALLBACK", "1").strip().lower() not in ("0", "false", "no", "off"))
 NVIDIA_CHAT_MODELS_FILE = Path(__file__).resolve().with_name("nvidia_nim_chat_models.txt")
 
+
+def env_int(name, default):
+    try:
+        return int(os.getenv(name, str(default)).strip())
+    except Exception:
+        return int(default)
+
+
+NVIDIA_MODEL_REFRESH_ENABLED = (
+    os.getenv("RED_PROXY_NVIDIA_MODEL_REFRESH_ENABLED", "1").strip().lower()
+    not in ("0", "false", "no", "off")
+)
+NVIDIA_MODEL_REFRESH_TTL_SECONDS = max(60, env_int("RED_PROXY_NVIDIA_MODEL_REFRESH_TTL_SECONDS", 3600))
+NVIDIA_MODEL_CACHE_FILE = Path(
+    os.getenv("RED_PROXY_NVIDIA_MODEL_CACHE_FILE", str(Path(DATA_DIR) / "nvidia_models_cache.json"))
+)
+
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # Connection pool - reutiliza conexoes TCP com ollama.com
@@ -54,10 +71,49 @@ NVIDIA_MODEL_NOTES = {
 
 def nvidia_kind_for_model_id(model_id):
     lower = str(model_id or "").strip().lower()
-    vision_markers = ("vision", "-vl", ":vl", "multimodal", "gemma-3n")
+    embedding_markers = ("embed", "embedding", "bge-", "/bge", "gte-", "e5-", "retriever", "nvclip")
+    rerank_markers = ("rerank", "ranker")
+    image_markers = ("flux", "stable-diffusion", "sdxl", "sd3", "imagen")
+    vision_markers = ("vision", "-vl", ":vl", "vlm", "multimodal", "fuyu", "kosmos", "neva", "deplot")
+    if any(marker in lower for marker in image_markers):
+        return "image"
+    if any(marker in lower for marker in embedding_markers):
+        return "embedding"
+    if any(marker in lower for marker in rerank_markers):
+        return "rerank"
     if any(marker in lower for marker in vision_markers):
         return "vision"
     return "chat"
+
+
+def nvidia_family_for_kind(kind):
+    if kind == "image":
+        return "nvidia-image"
+    if kind == "vision":
+        return "nvidia-vision"
+    if kind == "embedding":
+        return "nvidia-embedding"
+    if kind == "rerank":
+        return "nvidia-rerank"
+    return "nvidia-chat"
+
+
+def nvidia_model_info(model_id, item=None, source="bundled"):
+    item = item or {}
+    kind = nvidia_kind_for_model_id(model_id)
+    try:
+        created = int(item.get("created") or 1775520000)
+    except Exception:
+        created = 1775520000
+    return {
+        "id": str(model_id or "").strip(),
+        "kind": kind,
+        "family": nvidia_family_for_kind(kind),
+        "note": NVIDIA_MODEL_NOTES.get(str(model_id or "").strip(), ""),
+        "created": created,
+        "owned_by": item.get("owned_by") or "nvidia",
+        "source": source,
+    }
 
 
 def load_nvidia_text_models():
@@ -75,19 +131,12 @@ def load_nvidia_text_models():
         if key in seen:
             continue
         seen.add(key)
-        kind = nvidia_kind_for_model_id(model_id)
-        models.append(
-            {
-                "id": model_id,
-                "kind": kind,
-                "family": "nvidia-vision" if kind == "vision" else "nvidia-chat",
-                "note": NVIDIA_MODEL_NOTES.get(model_id, ""),
-            }
-        )
+        models.append(nvidia_model_info(model_id, source="bundled"))
     return models
 
 
-NVIDIA_TEXT_MODELS = load_nvidia_text_models()
+NVIDIA_BUNDLED_TEXT_MODELS = load_nvidia_text_models()
+NVIDIA_TEXT_MODELS = list(NVIDIA_BUNDLED_TEXT_MODELS)
 
 
 NVIDIA_IMAGE_MODELS = [
@@ -151,6 +200,169 @@ NVIDIA_IMAGE_MODELS = [
 
 NVIDIA_MODELS = NVIDIA_TEXT_MODELS + NVIDIA_IMAGE_MODELS
 NVIDIA_MODEL_MAP = {model["id"].lower(): model for model in NVIDIA_MODELS}
+_nvidia_catalog_lock = Lock()
+_nvidia_catalog_loaded_at = 0
+_nvidia_catalog_source = "bundled"
+_nvidia_catalog_error = ""
+
+
+def dedupe_nvidia_model_infos(models):
+    out = []
+    seen = set()
+    for model in models or []:
+        if not isinstance(model, dict):
+            continue
+        model_id = str(model.get("id") or "").strip()
+        if not model_id:
+            continue
+        key = model_id.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized = dict(model)
+        normalized["id"] = model_id
+        normalized.setdefault("kind", nvidia_kind_for_model_id(model_id))
+        normalized.setdefault("family", nvidia_family_for_kind(normalized["kind"]))
+        normalized.setdefault("note", NVIDIA_MODEL_NOTES.get(model_id, ""))
+        normalized.setdefault("created", 1775520000)
+        normalized.setdefault("owned_by", "nvidia")
+        normalized.setdefault("source", "bundled")
+        out.append(normalized)
+    return out
+
+
+def invalidate_model_catalog_cache():
+    try:
+        with _cache_lock:
+            _cache.pop(MODEL_CATALOG_CACHE_KEY, None)
+            _cache.pop("/api/tags", None)
+    except NameError:
+        pass
+
+
+def set_nvidia_text_models(models, source):
+    global NVIDIA_TEXT_MODELS, NVIDIA_MODELS, NVIDIA_MODEL_MAP, _nvidia_catalog_source
+    NVIDIA_TEXT_MODELS = dedupe_nvidia_model_infos(models)
+    NVIDIA_MODELS = NVIDIA_TEXT_MODELS + NVIDIA_IMAGE_MODELS
+    NVIDIA_MODEL_MAP = {model["id"].lower(): model for model in NVIDIA_MODELS}
+    _nvidia_catalog_source = source
+    invalidate_model_catalog_cache()
+
+
+def normalize_nvidia_catalog_payload(data, source):
+    entries = data.get("data") if isinstance(data, dict) else data
+    models = []
+    for item in entries or []:
+        if not isinstance(item, dict):
+            continue
+        model_id = str(item.get("id") or item.get("name") or "").strip()
+        if not model_id:
+            continue
+        info = nvidia_model_info(model_id, item, source=source)
+        if info["kind"] == "image":
+            # Image generation still uses the dedicated NVCF/NIM endpoints below.
+            # Do not auto-add OpenAI catalog image IDs without endpoint/schema metadata.
+            continue
+        models.append(info)
+    return dedupe_nvidia_model_infos(models)
+
+
+def fetch_nvidia_catalog_from_api():
+    if not NVIDIA_API_KEY:
+        raise RuntimeError("RED_PROXY_NVIDIA_API_KEY not configured")
+    url = NVIDIA_CHAT_BASE + "/models"
+    resp = http_session.get(
+        url,
+        headers={
+            "Authorization": "Bearer " + NVIDIA_API_KEY,
+            "Accept": "application/json",
+        },
+        timeout=30,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError("NVIDIA model catalog HTTP " + str(resp.status_code) + ": " + resp.text[:160])
+    return normalize_nvidia_catalog_payload(resp.json(), source="live")
+
+
+def read_nvidia_catalog_cache():
+    try:
+        data = json.loads(NVIDIA_MODEL_CACHE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return [], 0
+    models = normalize_nvidia_catalog_payload(data.get("models") or [], source="cache")
+    try:
+        cached_at = int(data.get("cached_at") or 0)
+    except Exception:
+        cached_at = 0
+    return models, cached_at
+
+
+def write_nvidia_catalog_cache(models):
+    try:
+        NVIDIA_MODEL_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "cached_at": int(time.time()),
+            "source": NVIDIA_CHAT_BASE + "/models",
+            "models": models,
+        }
+        NVIDIA_MODEL_CACHE_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        try:
+            log_message("WARN", "Falha ao gravar cache NIM: " + str(e)[:120])
+        except NameError:
+            pass
+
+
+def ensure_nvidia_catalog(force=False):
+    global _nvidia_catalog_loaded_at, _nvidia_catalog_error
+    now = time.time()
+    if not force and _nvidia_catalog_loaded_at and (now - _nvidia_catalog_loaded_at) < NVIDIA_MODEL_REFRESH_TTL_SECONDS:
+        return
+    with _nvidia_catalog_lock:
+        now = time.time()
+        if not force and _nvidia_catalog_loaded_at and (now - _nvidia_catalog_loaded_at) < NVIDIA_MODEL_REFRESH_TTL_SECONDS:
+            return
+
+        if NVIDIA_MODEL_REFRESH_ENABLED and NVIDIA_API_KEY:
+            try:
+                live_models = fetch_nvidia_catalog_from_api()
+                if live_models:
+                    set_nvidia_text_models(live_models, "live")
+                    write_nvidia_catalog_cache(live_models)
+                    _nvidia_catalog_loaded_at = now
+                    _nvidia_catalog_error = ""
+                    return
+                _nvidia_catalog_error = "catalogo NIM remoto veio vazio"
+            except Exception as e:
+                _nvidia_catalog_error = str(e)[:300]
+                try:
+                    log_message("WARN", "Falha ao atualizar catalogo NIM: " + _nvidia_catalog_error)
+                except NameError:
+                    pass
+
+        cached_models, cached_at = read_nvidia_catalog_cache()
+        if cached_models:
+            set_nvidia_text_models(cached_models, "cache")
+            _nvidia_catalog_loaded_at = now
+            return
+
+        set_nvidia_text_models(NVIDIA_BUNDLED_TEXT_MODELS, "bundled")
+        _nvidia_catalog_loaded_at = now
+
+
+def nvidia_catalog_status():
+    ensure_nvidia_catalog()
+    return {
+        "refresh_enabled": NVIDIA_MODEL_REFRESH_ENABLED,
+        "refresh_ttl_seconds": NVIDIA_MODEL_REFRESH_TTL_SECONDS,
+        "cache_file": str(NVIDIA_MODEL_CACHE_FILE),
+        "source": _nvidia_catalog_source,
+        "last_refresh_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(_nvidia_catalog_loaded_at)) if _nvidia_catalog_loaded_at else None,
+        "last_error": _nvidia_catalog_error,
+        "text_models": len(NVIDIA_TEXT_MODELS),
+        "image_models": len(NVIDIA_IMAGE_MODELS),
+        "total_models": len(NVIDIA_MODELS),
+    }
 
 # ============ CACHE PARA ENDPOINTS READ-ONLY ============
 _cache = {}
@@ -206,6 +418,7 @@ def extract_model_name(body):
 
 
 def normalize_nvidia_model(model_name):
+    ensure_nvidia_catalog()
     if not isinstance(model_name, str):
         return None, None
     raw = model_name.strip()
@@ -259,6 +472,10 @@ def nvidia_capabilities(model_info):
         return ["image_generation"]
     if kind == "vision":
         return ["chat", "vision"]
+    if kind == "embedding":
+        return ["embeddings"]
+    if kind == "rerank":
+        return []
     return ["chat"]
 
 
@@ -295,8 +512,8 @@ def model_descriptor(model_name, item=None):
             "family": model_info.get("family") or "nvidia",
             "capabilities": ordered_unique(nvidia_capabilities(model_info)),
             "note": model_info.get("note", ""),
-            "owned_by": "nvidia",
-            "created": 1775520000,
+            "owned_by": model_info.get("owned_by") or "nvidia",
+            "created": model_info.get("created") or 1775520000,
         }
 
     item = item or {}
@@ -475,6 +692,7 @@ def normalize_openai_payload_for_upstream(payload, source_ip, endpoint_name):
 
 
 def augment_tags_body(raw_body):
+    ensure_nvidia_catalog()
     try:
         data = json.loads(raw_body.decode("utf-8") if isinstance(raw_body, (bytes, bytearray)) else raw_body)
         models = data.get("models")
@@ -490,7 +708,7 @@ def augment_tags_body(raw_body):
                 {
                     "name": name,
                     "model": name,
-                    "modified_at": "2026-04-07T00:00:00Z",
+                    "modified_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(model.get("created") or 1775520000)),
                     "size": 0,
                     "digest": "nvidia-" + uuid.uuid5(uuid.NAMESPACE_URL, model["id"]).hex,
                     "details": {
@@ -536,7 +754,7 @@ def nvidia_model_details(model_id, model_info):
             "red.note": model_info.get("note", ""),
         },
         "capabilities": descriptor["capabilities"],
-        "modified_at": "2026-04-07T00:00:00Z",
+        "modified_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(model_info.get("created") or 1775520000)),
     }
 
 
@@ -743,6 +961,7 @@ def upstream_json_request(method, path, source_ip, *, body=None, timeout=180):
 
 
 def upstream_model_entries(source_ip):
+    ensure_nvidia_catalog()
     cached_body, _cached_ct, _cached_status = cache_get(MODEL_CATALOG_CACHE_KEY)
     if cached_body is not None:
         try:
@@ -800,8 +1019,8 @@ def upstream_model_entries(source_ip):
             {
                 "id": model_name,
                 "object": "model",
-                "created": 1775520000,
-                "owned_by": "nvidia",
+                "created": model.get("created") or 1775520000,
+                "owned_by": model.get("owned_by") or "nvidia",
             }
         )
 
@@ -1208,10 +1427,50 @@ def openai_embeddings_from_ollama(data, model_name):
     }
 
 
+def nvidia_openai_embeddings_json(model_id, body, source_ip, endpoint_name):
+    if not NVIDIA_API_KEY:
+        return None, proxy_error_response("RED_PROXY_NVIDIA_API_KEY not configured", 503)
+    payload = {
+        "model": model_id,
+        "input": body.get("input") if body.get("input") is not None else body.get("prompt", ""),
+    }
+    if body.get("encoding_format") is not None:
+        payload["encoding_format"] = body.get("encoding_format")
+    started = time.time()
+    url = NVIDIA_CHAT_BASE + "/embeddings"
+    try:
+        upstream = http_session.post(url, headers=nvidia_headers(), json=payload, timeout=120)
+        latency = time.time() - started
+        log_message("INFO", "NVIDIA embeddings " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, endpoint_name, latency, upstream.status_code)
+        if upstream.status_code >= 400:
+            return None, Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+        return upstream.json(), None
+    except Exception as e:
+        latency = time.time() - started
+        log_message("ERROR", "NVIDIA embeddings " + model_id + " -> " + str(e)[:100], "nvidia", source_ip, endpoint_name, latency, 500)
+        return None, proxy_error_response(str(e), 500)
+
+
+def ollama_embeddings_from_openai(data, model_name):
+    vectors = []
+    for item in data.get("data") or []:
+        if isinstance(item, dict) and item.get("embedding") is not None:
+            vectors.append(item.get("embedding"))
+    payload = {
+        "model": model_name,
+        "embeddings": vectors,
+    }
+    if len(vectors) == 1:
+        payload["embedding"] = vectors[0]
+    return payload
+
+
 def universal_embeddings_json(body, source_ip):
     model_id, model_info = normalize_nvidia_model(extract_model_name(body))
     if model_info:
-        return None, proxy_error_response("modelos NIM configurados neste proxy nao suportam embeddings", 400, "invalid_request_error")
+        if "embeddings" not in nvidia_capabilities(model_info):
+            return None, proxy_error_response("modelo NIM nao suporta embeddings", 400, "invalid_request_error")
+        return nvidia_openai_embeddings_json(model_id, body, source_ip, "/v1/embeddings")
 
     payload = openai_embeddings_to_ollama_payload(body)
     resp, error_response = upstream_request("POST", "/api/embed", source_ip, json_body=payload, timeout=180, stream=False)
@@ -2021,6 +2280,7 @@ def admin_stats():
                 "configured": bool(NVIDIA_API_KEY),
                 "chat_base": NVIDIA_CHAT_BASE,
                 "genai_base": NVIDIA_GENAI_BASE,
+                "catalog": nvidia_catalog_status(),
                 "models": [nvidia_display_name(model["id"]) for model in NVIDIA_MODELS],
             },
             "host": PROXY_HOST,
@@ -2096,13 +2356,29 @@ def admin_reload():
 
 @app.get("/api/nvidia/models")
 def nvidia_models():
+    refresh = str(request.args.get("refresh") or "").strip().lower() in ("1", "true", "yes", "on")
+    if refresh:
+        ensure_nvidia_catalog(force=True)
     return jsonify(
         {
             "status": "ok",
             "configured": bool(NVIDIA_API_KEY),
             "prefix": NVIDIA_PREFIX,
             "legacy_suffix": NVIDIA_LEGACY_SUFFIX,
+            "catalog": nvidia_catalog_status(),
             "models": [model_descriptor(model["id"], {"id": nvidia_display_name(model["id"]), "owned_by": "nvidia"}) for model in NVIDIA_MODELS],
+        }
+    )
+
+
+@app.post("/api/nvidia/models/refresh")
+@app.post("/admin/nvidia/models/refresh")
+def nvidia_models_refresh():
+    ensure_nvidia_catalog(force=True)
+    return jsonify(
+        {
+            "status": "ok" if not _nvidia_catalog_error else "warning",
+            "catalog": nvidia_catalog_status(),
         }
     )
 
@@ -2210,6 +2486,9 @@ def openai_embeddings():
     data, error_response = universal_embeddings_json(routed_body, request.remote_addr)
     if error_response is not None:
         return error_response
+    _model_id, model_info = normalize_nvidia_model(model_name)
+    if model_info:
+        return jsonify(data)
     return jsonify(openai_embeddings_from_ollama(data, model_name))
 
 
@@ -2222,7 +2501,12 @@ def ollama_embeddings():
         return error_response
     model_id, model_info = normalize_nvidia_model(extract_model_name(routed_body))
     if model_info:
-        return jsonify({"error": "modelos NIM configurados neste proxy nao suportam embeddings"}), 400
+        if "embeddings" not in nvidia_capabilities(model_info):
+            return jsonify({"error": "modelo NIM nao suporta embeddings"}), 400
+        data, nvidia_error = nvidia_openai_embeddings_json(model_id, routed_body, request.remote_addr, "/api/embed")
+        if nvidia_error is not None:
+            return nvidia_error
+        return jsonify(ollama_embeddings_from_openai(data, extract_model_name(routed_body)))
     resp, error_response = upstream_request("POST", "/api/embed", request.remote_addr, json_body=routed_body, timeout=180, stream=False)
     if error_response is not None:
         return error_response

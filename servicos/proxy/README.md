@@ -42,6 +42,21 @@ As mais importantes:
 - `RED_PROXY_DEFAULT_CHAT_MODEL`
 - `RED_PROXY_DEFAULT_VISION_MODEL`
 - `RED_PROXY_DEFAULT_IMAGE_MODEL`
+- `RED_PROXY_NVIDIA_MODEL_REFRESH_ENABLED`
+- `RED_PROXY_NVIDIA_MODEL_REFRESH_TTL_SECONDS`
+- `RED_PROXY_NVIDIA_MODEL_CACHE_FILE`
+
+## Catalogo NVIDIA NIM
+
+O proxy nao deve depender de lista fixa para NIM. Em runtime ele consulta `RED_PROXY_NVIDIA_CHAT_BASE + /models`, deduplica os IDs retornados, classifica capabilities por nome e mescla com os modelos de imagem configurados em codigo. O arquivo `nvidia_nim_chat_models.txt` fica apenas como snapshot de fallback para boot sem rede/API.
+
+Padrao operacional:
+
+- refresh automatico habilitado por `RED_PROXY_NVIDIA_MODEL_REFRESH_ENABLED=true`;
+- TTL padrao de 3600 segundos;
+- cache persistente em `/var/lib/redvm-proxy/nvidia_models_cache.json`;
+- refresh manual por `POST /api/nvidia/models/refresh`;
+- inspecao por `GET /api/nvidia/models` ou `GET /api/nvidia/models?refresh=1`.
 
 ## Rodar localmente
 
@@ -60,6 +75,7 @@ Teste:
 ```bash
 curl http://127.0.0.1:8080/api/tags
 curl http://127.0.0.1:8080/v1/models
+curl -X POST http://127.0.0.1:8080/api/nvidia/models/refresh
 ```
 
 ## Instalacao em qualquer VM

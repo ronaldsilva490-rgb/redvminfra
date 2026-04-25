@@ -266,6 +266,8 @@ Validar localmente:
 ```bash
 curl -I http://127.0.0.1:9001/
 curl -s http://127.0.0.1:8080/api/tags | head
+curl -s -X POST http://127.0.0.1:8080/api/nvidia/models/refresh | python3 -m json.tool
+curl -s http://127.0.0.1:8080/api/nvidia/models | python3 -m json.tool | head
 curl -s http://127.0.0.1:3100/healthz
 curl -s http://127.0.0.1:3115/healthz
 curl -I http://127.0.0.1:2580/
