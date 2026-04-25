@@ -307,6 +307,13 @@ http://redsystems2.ddns.net/download
 http://redsystems2.ddns.net:2580/
 ```
 
+O proxy público exige a chave de borda:
+
+```bash
+curl -s -H 'Authorization: Bearer red' http://redsystems2.ddns.net/proxy/v1/models | head
+curl -s -H 'Authorization: Bearer red' http://redsystems2.ddns.net/ollama/api/tags | head
+```
+
 ## 8. Corte De DNS No No-IP
 
 Somente depois da validacao completa:

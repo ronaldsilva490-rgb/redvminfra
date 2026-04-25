@@ -42,9 +42,30 @@ As mais importantes:
 - `RED_PROXY_DEFAULT_CHAT_MODEL`
 - `RED_PROXY_DEFAULT_VISION_MODEL`
 - `RED_PROXY_DEFAULT_IMAGE_MODEL`
+- `RED_PROXY_PUBLIC_API_KEY_ENABLED`
+- `RED_PROXY_PUBLIC_API_KEY`
 - `RED_PROXY_NVIDIA_MODEL_REFRESH_ENABLED`
 - `RED_PROXY_NVIDIA_MODEL_REFRESH_TTL_SECONDS`
 - `RED_PROXY_NVIDIA_MODEL_CACHE_FILE`
+
+## Autenticação pública
+
+Chamadas locais diretas para `127.0.0.1:8080` continuam livres para a stack interna. Chamadas públicas via nginx, como `/proxy/` e `/ollama/`, precisam da chave configurada em `RED_PROXY_PUBLIC_API_KEY`.
+
+Padrão atual:
+
+```txt
+RED_PROXY_PUBLIC_API_KEY=red
+```
+
+Formatos aceitos:
+
+```txt
+Authorization: Bearer red
+Authorization: red
+X-API-Key: red
+api-key: red
+```
 
 ## Catalogo NVIDIA NIM
 

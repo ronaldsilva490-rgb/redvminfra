@@ -6,6 +6,7 @@ import random
 import time
 import uuid
 import base64
+import hmac
 from threading import Lock, Thread
 from copy import deepcopy
 from pathlib import Path
@@ -29,6 +30,8 @@ DEFAULT_VISION_MODEL = (os.getenv("RED_PROXY_DEFAULT_VISION_MODEL") or "").strip
 DEFAULT_IMAGE_MODEL = (os.getenv("RED_PROXY_DEFAULT_IMAGE_MODEL") or "").strip()
 DEFAULT_EMBEDDINGS_MODEL = (os.getenv("RED_PROXY_DEFAULT_EMBEDDINGS_MODEL") or "").strip()
 ENABLE_CAPABILITY_FALLBACK = (os.getenv("RED_PROXY_ENABLE_CAPABILITY_FALLBACK", "1").strip().lower() not in ("0", "false", "no", "off"))
+PUBLIC_API_KEY = (os.getenv("RED_PROXY_PUBLIC_API_KEY", "red") or "").strip()
+PUBLIC_API_KEY_ENABLED = (os.getenv("RED_PROXY_PUBLIC_API_KEY_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off"))
 NVIDIA_CHAT_MODELS_FILE = Path(__file__).resolve().with_name("nvidia_nim_chat_models.txt")
 
 
@@ -852,6 +855,86 @@ def nvidia_headers(content_type="application/json"):
 
 def proxy_error_response(message, status=500, error_type="red_proxy_error"):
     return jsonify({"error": {"message": message, "type": error_type}}), status
+
+
+def first_forwarded_ip():
+    forwarded = str(request.headers.get("X-Forwarded-For") or "").strip()
+    if not forwarded:
+        return ""
+    return forwarded.split(",", 1)[0].strip()
+
+
+def is_loopback_ip(ip):
+    return str(ip or "").strip() in ("127.0.0.1", "::1", "localhost")
+
+
+def is_local_proxy_request():
+    direct_ip = str(request.remote_addr or "").strip()
+    forwarded_ip = first_forwarded_ip()
+    if not is_loopback_ip(direct_ip):
+        return False
+    if forwarded_ip:
+        return is_loopback_ip(forwarded_ip)
+    return True
+
+
+def basic_auth_matches_public_key(value):
+    encoded = value.split(" ", 1)[1].strip() if " " in value else ""
+    if not encoded:
+        return False
+    try:
+        decoded = base64.b64decode(encoded).decode("utf-8", "replace")
+    except Exception:
+        return False
+    username, sep, password = decoded.partition(":")
+    if not sep:
+        return constant_time_equals(username, PUBLIC_API_KEY)
+    return constant_time_equals(password, PUBLIC_API_KEY)
+
+
+def constant_time_equals(a, b):
+    return hmac.compare_digest(str(a or ""), str(b or ""))
+
+
+def request_has_valid_public_api_key():
+    candidates = []
+    auth = str(request.headers.get("Authorization") or "").strip()
+    if auth:
+        if auth.lower().startswith("basic "):
+            return basic_auth_matches_public_key(auth)
+        if auth.lower().startswith("bearer "):
+            candidates.append(auth.split(" ", 1)[1].strip())
+        else:
+            candidates.append(auth)
+    for header_name in ("X-API-Key", "api-key", "apikey"):
+        value = str(request.headers.get(header_name) or "").strip()
+        if value:
+            candidates.append(value)
+    return any(constant_time_equals(candidate, PUBLIC_API_KEY) for candidate in candidates)
+
+
+@app.before_request
+def require_public_proxy_api_key():
+    if request.method == "OPTIONS":
+        return None
+    if not PUBLIC_API_KEY_ENABLED or not PUBLIC_API_KEY:
+        return None
+    if is_local_proxy_request():
+        return None
+    if request_has_valid_public_api_key():
+        return None
+    return (
+        jsonify(
+            {
+                "error": {
+                    "message": "api-key obrigatória para acesso público ao proxy RED Systems",
+                    "type": "authentication_error",
+                }
+            }
+        ),
+        401,
+        {"WWW-Authenticate": 'Bearer realm="RED Systems Proxy"'},
+    )
 
 
 def response_headers_subset(headers):
