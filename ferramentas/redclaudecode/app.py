@@ -32,6 +32,7 @@ from ferramentas.red_model_studio.client import ModelInfo, RedProxyClient, forma
 APP_NAME = "RED Claude Code"
 ORG_NAME = "RED Systems"
 DEFAULT_BASE_URL = "http://redsystems.ddns.net/proxy"
+DEFAULT_PROXY_KEY = os.getenv("RED_PROXY_PUBLIC_API_KEY") or os.getenv("RED_PROXY_KEY") or "red"
 WINDOW_SIZE = QSize(1280, 820)
 PING_INTERVAL_MS = 5000
 
@@ -542,9 +543,19 @@ class MainWindow(QMainWindow):
 
         base_url = self.current_base_url()
         env = os.environ.copy()
-        env["ANTHROPIC_AUTH_TOKEN"] = "ollama"
-        env["ANTHROPIC_API_KEY"] = ""
+        env["ANTHROPIC_AUTH_TOKEN"] = DEFAULT_PROXY_KEY
+        env["ANTHROPIC_API_KEY"] = DEFAULT_PROXY_KEY
         env["ANTHROPIC_BASE_URL"] = base_url
+        env["ANTHROPIC_MODEL"] = self.selected_model.id
+        env["ANTHROPIC_CUSTOM_MODEL_OPTION"] = self.selected_model.id
+        env["ANTHROPIC_CUSTOM_MODEL_OPTION_NAME"] = f"RED {self.selected_model.id}"
+        env["ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION"] = (
+            f"Modelo {self.selected_model.id} via proxy RED Systems"
+        )
+        env["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"] = "1"
+        env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1"
+        env["DISABLE_TELEMETRY"] = "1"
+        env["DISABLE_ERROR_REPORTING"] = "1"
 
         claude_command = subprocess.list2cmdline(["claude", "--model", self.selected_model.id])
         command = (

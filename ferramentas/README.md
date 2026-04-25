@@ -33,12 +33,21 @@ Launcher Windows para abrir o Claude Code com:
 - selecao visual de modelo do proxy
 - busca por modelo/provider
 - escolha da pasta de trabalho via Explorer
+- modo portatil: copie o `.bat` para qualquer workspace, rode ali e escolha o modelo pelo numero
 
 Executar:
 
 ```powershell
 ferramentas\redclaudecode\RED Systems Claude Code.bat
 ```
+
+Portatil:
+
+```powershell
+ferramentas\redclaudecode\RED Claude Code Portatil.bat
+```
+
+O portatil usa `RED_PROXY_BASE=http://redsystems.ddns.net/proxy` e `RED_PROXY_KEY=red` por padrao, ordena `OLLAMA` e `NIM` por provider/nome e inicia o Claude Code na pasta onde o `.bat` estiver.
 
 ## RED SEB Debug Streamer
 

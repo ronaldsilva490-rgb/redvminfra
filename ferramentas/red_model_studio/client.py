@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import re
 import socket
 import time
@@ -14,6 +15,7 @@ import requests
 
 
 THINK_BLOCK_RE = re.compile(r"<think>(.*?)</think>", re.IGNORECASE | re.DOTALL)
+DEFAULT_PUBLIC_API_KEY = os.getenv("RED_PROXY_PUBLIC_API_KEY") or os.getenv("RED_PROXY_KEY") or "red"
 
 
 def normalize_base_url(value: str) -> str:
@@ -127,10 +129,18 @@ class ImageResult:
 
 
 class RedProxyClient:
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, api_key: str | None = None) -> None:
         self.base_url = normalize_base_url(base_url)
+        self.api_key = DEFAULT_PUBLIC_API_KEY if api_key is None else api_key
         self.session = requests.Session()
         self.session.headers.update({"Accept": "application/json"})
+        if self.api_key:
+            self.session.headers.update(
+                {
+                    "Authorization": f"Bearer {self.api_key}",
+                    "X-API-Key": self.api_key,
+                }
+            )
 
     def endpoint(self, path: str) -> str:
         return join_url(self.base_url, path)
