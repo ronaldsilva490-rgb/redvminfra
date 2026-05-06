@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-title Claude RED - Proxy Normal
+title Claude RED - Proxy Normal Completo
 
 set "CLAUDE_RED_EXE=C:\Projetos\ClaudeREDDesktop\app\Claude.exe"
 if not exist "%CLAUDE_RED_EXE%" set "CLAUDE_RED_EXE=%LOCALAPPDATA%\Programs\Claude\Claude.exe"
@@ -28,7 +28,7 @@ if not exist "%CHAT_FIX%" (
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%CHAT_FIX%"
 if errorlevel 1 (
   echo.
-  echo Falha ao configurar o Claude para o proxy normal.
+  echo Falha ao configurar o Claude para o proxy normal completo.
   pause
   exit /b 1
 )

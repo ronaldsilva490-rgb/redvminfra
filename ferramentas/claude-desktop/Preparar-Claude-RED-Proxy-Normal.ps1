@@ -4,33 +4,28 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 $orgId = "ed7c7df1-5f59-4f8b-86e7-2322495fdabd"
 $proxyBaseUrl = if ($env:RED_PROXY_BASE_URL) { $env:RED_PROXY_BASE_URL.TrimEnd("/") } else { "https://redsystems.ddns.net/proxy" }
 $proxyToken = if ($env:RED_PROXY_TOKEN) { $env:RED_PROXY_TOKEN } else { "red" }
-$profileName = "RED Proxy Normal"
+$profileName = "RED Proxy Normal Completo"
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 
 $fallbackModels = @(
-  "claude-red-codestral",
-  "claude-red-devstral",
-  "claude-red-devstral-medium",
-  "claude-red-mistral-large",
-  "claude-red-mistral-medium",
-  "claude-red-mistral-small",
-  "claude-red-mistral-vibe",
-  "claude-red-nim-gemma4-31b",
-  "claude-red-nim-glm51",
-  "claude-red-nim-kimi-k26",
-  "claude-red-nim-kimi-thinking",
-  "claude-red-nim-mistral-small4",
-  "claude-red-nim-nemotron3-super",
-  "claude-red-nim-qwen35-397b",
-  "claude-red-ollama-gemma4-31b",
-  "claude-red-ollama-gpt-oss-120b",
-  "claude-red-ollama-minimax-m25",
-  "claude-red-ollama-nemotron3-super",
-  "claude-red-ollama-qwen3-coder-480b",
-  "claude-red-ollama-qwen3-vl-235b",
-  "claude-red-qwen-35-122b",
-  "claude-red-qwen-next",
-  "claude-red-qwen3-coder-next"
+  "devstral-medium-latest",
+  "devstral-latest",
+  "mistral-medium-3.5",
+  "mistral-small-latest",
+  "codestral-latest",
+  "gpt-oss:20b",
+  "gpt-oss:120b",
+  "qwen3-coder-next",
+  "qwen3-coder:480b",
+  "qwen3-next:80b",
+  "qwen3-vl:235b-instruct",
+  "minimax-m2.5",
+  "nemotron-3-super",
+  "glm-5.1",
+  "NIM - z-ai/glm-5.1",
+  "NIM - qwen/qwen3-next-80b-a3b-instruct",
+  "NIM - moonshotai/kimi-k2.6",
+  "NIM - google/gemma-4-31b-it"
 )
 
 function Write-Info($message) { Write-Host "[RED] $message" -ForegroundColor Cyan }
@@ -96,12 +91,18 @@ function Get-ProxyModels {
     $catalog = Invoke-RestMethod -Method Get -Uri "$script:proxyBaseUrl/v1/models" -Headers $headers -TimeoutSec 25
     $ids = @(
       $catalog.data |
-        Where-Object { $_.id -like "claude-red-*" -and ($_.red.gateway_alias -eq $true -or $_.id -like "claude-red-*") } |
+        Where-Object {
+          $id = [string]$_.id
+          $red = $_.red
+          $isGatewayAlias = $false
+          if ($red -and $red.gateway_alias -eq $true) { $isGatewayAlias = $true }
+          $id -and !$isGatewayAlias -and $id -notlike "claude-red-*"
+        } |
         ForEach-Object { [string]$_.id } |
         Sort-Object -Unique
     )
-    if ($ids.Count -ge 3) { return [string[]]$ids }
-    Write-Warn "Catalogo do proxy normal veio pequeno; usando lista local."
+    if ($ids.Count -ge 10) { return [string[]]$ids }
+    Write-Warn "Catalogo do proxy normal veio pequeno; usando fallback local."
   } catch {
     Write-Warn "Nao consegui consultar $script:proxyBaseUrl agora: $($_.Exception.Message)"
   }
@@ -162,7 +163,7 @@ function Configure-Library([string]$root, [string[]]$models) {
 
 Write-Host ""
 Write-Host "===============================================" -ForegroundColor DarkRed
-Write-Host "  Claude Desktop - RED Proxy Normal" -ForegroundColor Red
+Write-Host "  Claude Desktop - RED Proxy Normal Completo" -ForegroundColor Red
 Write-Host "===============================================" -ForegroundColor DarkRed
 Write-Host ""
 Write-Info "Endpoint: $proxyBaseUrl"
