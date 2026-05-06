@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -41,7 +42,7 @@ def parse_statuses(value: str) -> set[int]:
             out.add(int(item))
         except ValueError:
             pass
-    return out or {401, 403, 408, 409, 429, 500, 502, 503, 504}
+    return out or {401, 402, 403, 408, 409, 429, 500, 502, 503, 504}
 
 
 SERVICE_NAME = "redproxypro"
@@ -51,7 +52,7 @@ PORT = env_int("REDPROXYPRO_PORT", 8095)
 CONNECT_TIMEOUT = env_int("REDPROXYPRO_CONNECT_TIMEOUT", 20)
 READ_TIMEOUT = env_int("REDPROXYPRO_READ_TIMEOUT", 360)
 STREAM_CHUNK_SIZE = max(1, env_int("REDPROXYPRO_STREAM_CHUNK_SIZE", 1))
-RETRY_STATUSES = parse_statuses(os.getenv("REDPROXYPRO_RETRY_STATUSES", "401,403,408,409,429,500,502,503,504"))
+RETRY_STATUSES = parse_statuses(os.getenv("REDPROXYPRO_RETRY_STATUSES", "401,402,403,408,409,429,500,502,503,504"))
 CORS_ENABLED = env_bool("REDPROXYPRO_CORS", True)
 INBOUND_TOKENS = set(split_values(os.getenv("REDPROXYPRO_AUTH_TOKENS", os.getenv("REDPROXYPRO_AUTH_TOKEN", ""))))
 REQUIRE_AUTH = env_bool("REDPROXYPRO_REQUIRE_AUTH", bool(INBOUND_TOKENS))
@@ -555,6 +556,7 @@ class KeyState:
             "last_status": self.last_status,
             "last_error": self.last_error,
             "last_used_at": self.last_used_at,
+            "cooldown_until": self.cooldown_until,
             "total_latency": self.total_latency,
             "status_counts": self.status_counts,
             "endpoint_counts": self.endpoint_counts,
@@ -572,8 +574,9 @@ class KeyState:
         self.successes = int(data.get("successes", self.successes) or 0)
         self.failures = int(data.get("failures", self.failures) or 0)
         self.last_status = data.get("last_status", self.last_status)
-        self.last_error = str(data.get("last_error", self.last_error) or "")
+        self.last_error = sanitize_saved_error(self.last_status, str(data.get("last_error", self.last_error) or ""))
         self.last_used_at = float(data.get("last_used_at", self.last_used_at) or 0)
+        self.cooldown_until = float(data.get("cooldown_until", self.cooldown_until) or 0)
         self.total_latency = float(data.get("total_latency", self.total_latency) or 0)
         self.status_counts = normalize_int_dict(data.get("status_counts", self.status_counts))
         self.endpoint_counts = normalize_int_dict(data.get("endpoint_counts", self.endpoint_counts))
@@ -854,6 +857,8 @@ def load_keys() -> list[KeyState]:
 def cooldown_for_status(status: int) -> int:
     if status == 401:
         return env_int("REDPROXYPRO_COOLDOWN_401", 3600)
+    if status == 402:
+        return env_int("REDPROXYPRO_COOLDOWN_402", 21600)
     if status == 403:
         return env_int("REDPROXYPRO_COOLDOWN_403", 300)
     if status == 429:
@@ -863,7 +868,19 @@ def cooldown_for_status(status: int) -> int:
     return env_int(f"REDPROXYPRO_COOLDOWN_{status}", 60)
 
 
-def error_message_from_response(resp: requests.Response) -> str:
+SENSITIVE_UPSTREAM_ERROR_MARKERS = (
+    "insufficient_funds",
+    "insufficient funds",
+    "add credits",
+    "top up",
+    "top-up",
+    "billing",
+    "payment required",
+    "vercel.com/d",
+)
+
+
+def raw_error_message_from_response(resp: requests.Response) -> str:
     try:
         payload = resp.json()
         error = payload.get("error") if isinstance(payload, dict) else None
@@ -872,6 +889,77 @@ def error_message_from_response(resp: requests.Response) -> str:
     except Exception:
         pass
     return resp.text[:300]
+
+
+def is_sensitive_upstream_error(status: int, message: str) -> bool:
+    if status in {401, 402, 403}:
+        return True
+    normalized = message.lower()
+    return any(marker in normalized for marker in SENSITIVE_UPSTREAM_ERROR_MARKERS)
+
+
+def safe_upstream_error_message(status: int, message: str) -> str:
+    if status == 401:
+        return "upstream key rejected"
+    if status == 402:
+        return "upstream key unavailable"
+    if status == 403:
+        return "upstream key forbidden for this request"
+    if status == 429:
+        return "upstream key rate limited"
+    if status >= 500:
+        return "upstream provider temporarily unavailable"
+    if is_sensitive_upstream_error(status, message):
+        return "upstream provider rejected the request; details were hidden by redproxypro"
+    cleaned = re.sub(r"https?://\S+", "[redacted-url]", message or "")
+    return cleaned[:300] or f"upstream error {status}"
+
+
+def sanitize_saved_error(status: Any, message: str) -> str:
+    if not message:
+        return ""
+    try:
+        status_int = int(status)
+    except (TypeError, ValueError):
+        status_int = 0
+    return safe_upstream_error_message(status_int, message)
+
+
+def error_message_from_response(resp: requests.Response) -> str:
+    return safe_upstream_error_message(resp.status_code, raw_error_message_from_response(resp))
+
+
+def sanitized_attempts(attempts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    safe_attempts: list[dict[str, Any]] = []
+    for attempt in attempts:
+        safe = dict(attempt)
+        if "error" in safe:
+            safe["error"] = re.sub(r"https?://\S+", "[redacted-url]", str(safe["error"]))[:180]
+        safe_attempts.append(safe)
+    return safe_attempts
+
+
+def redproxypro_upstream_error_response(
+    *,
+    status: int,
+    message: str,
+    attempts: list[dict[str, Any]],
+    source_response: requests.Response | None = None,
+) -> Response:
+    payload = {
+        "error": {
+            "message": message,
+            "type": "redproxypro_upstream_unavailable",
+        },
+        "attempts": sanitized_attempts(attempts),
+    }
+    headers: dict[str, str]
+    if source_response is not None and attempts:
+        headers = response_headers(source_response, attempts[-1]["key"], attempts)
+    else:
+        headers = {"X-Request-Id": request_id(), "X-RedProxyPro-Attempts": str(len(attempts))}
+    headers["X-RedProxyPro-Last-Error"] = message[:180]
+    return Response(json.dumps(payload, ensure_ascii=False), status=status, headers=headers, content_type="application/json")
 
 
 def resolve_claude_model(
@@ -1449,6 +1537,7 @@ def proxy_v1(path: str) -> Response:
     used_names: set[str] = set()
     last_response: requests.Response | None = None
     last_error = ""
+    last_error_sensitive = False
 
     for _ in range(len(key_pool.keys)):
         key = key_pool.choose(exclude=used_names)
@@ -1471,6 +1560,7 @@ def proxy_v1(path: str) -> Response:
             key_pool.mark_failure(key, None, str(exc), latency)
             attempts.append({"key": key.name, "status": None, "latency": round(latency, 3), "error": str(exc)[:180]})
             last_error = str(exc)
+            last_error_sensitive = False
             continue
 
         latency = time.perf_counter() - started
@@ -1487,13 +1577,24 @@ def proxy_v1(path: str) -> Response:
             return Response(content, status=resp.status_code, headers=headers)
 
         last_response = resp
-        last_error = error_message_from_response(resp)
+        raw_error = raw_error_message_from_response(resp)
+        last_error = safe_upstream_error_message(resp.status_code, raw_error)
+        last_error_sensitive = is_sensitive_upstream_error(resp.status_code, raw_error)
         key_pool.mark_failure(key, resp.status_code, last_error, latency)
         if resp.status_code not in RETRY_STATUSES:
             break
         resp.close()
 
     if last_response is not None:
+        if last_response.status_code in RETRY_STATUSES or last_error_sensitive:
+            response = redproxypro_upstream_error_response(
+                status=503,
+                message="upstream provider unavailable after internal failover",
+                attempts=attempts,
+                source_response=last_response,
+            )
+            last_response.close()
+            return response
         content = last_response.content
         headers = response_headers(last_response, attempts[-1]["key"], attempts)
         headers["X-RedProxyPro-Last-Error"] = last_error[:180]
@@ -1501,15 +1602,11 @@ def proxy_v1(path: str) -> Response:
         last_response.close()
         return Response(content, status=status, headers=headers)
 
-    return jsonify(
-        {
-            "error": {
-                "message": last_error or "no available redproxypro key",
-                "type": "redproxypro_upstream_error",
-            },
-            "attempts": attempts,
-        }
-    ), 503
+    return redproxypro_upstream_error_response(
+        status=503,
+        message=last_error or "no available redproxypro key",
+        attempts=attempts,
+    )
 
 
 def stream_response(resp: requests.Response, key: KeyState, model_name: str, endpoint: str, attempts: list[dict[str, Any]]) -> Response:
@@ -1556,6 +1653,7 @@ def upstream_chat_completion(payload: dict[str, Any], *, endpoint: str, stream: 
     used_names: set[str] = set()
     last_response: requests.Response | None = None
     last_error = ""
+    last_error_sensitive = False
 
     for _ in range(len(key_pool.keys)):
         key = key_pool.choose(exclude=used_names)
@@ -1577,6 +1675,7 @@ def upstream_chat_completion(payload: dict[str, Any], *, endpoint: str, stream: 
             key_pool.mark_failure(key, None, str(exc), latency)
             attempts.append({"key": key.name, "status": None, "latency": round(latency, 3), "error": str(exc)[:180]})
             last_error = str(exc)
+            last_error_sensitive = False
             continue
 
         latency = time.perf_counter() - started
@@ -1592,13 +1691,24 @@ def upstream_chat_completion(payload: dict[str, Any], *, endpoint: str, stream: 
             return resp, key, attempts, None
 
         last_response = resp
-        last_error = error_message_from_response(resp)
+        raw_error = raw_error_message_from_response(resp)
+        last_error = safe_upstream_error_message(resp.status_code, raw_error)
+        last_error_sensitive = is_sensitive_upstream_error(resp.status_code, raw_error)
         key_pool.mark_failure(key, resp.status_code, last_error, latency)
         if resp.status_code not in RETRY_STATUSES:
             break
         resp.close()
 
     if last_response is not None:
+        if last_response.status_code in RETRY_STATUSES or last_error_sensitive:
+            response = redproxypro_upstream_error_response(
+                status=503,
+                message="upstream provider unavailable after internal failover",
+                attempts=attempts,
+                source_response=last_response,
+            )
+            last_response.close()
+            return None, None, attempts, response
         content = last_response.content
         headers = response_headers(last_response, attempts[-1]["key"], attempts)
         headers["X-RedProxyPro-Last-Error"] = last_error[:180]
@@ -1606,7 +1716,11 @@ def upstream_chat_completion(payload: dict[str, Any], *, endpoint: str, stream: 
         last_response.close()
         return None, None, attempts, Response(content, status=status, headers=headers)
 
-    return None, None, attempts, (jsonify({"error": {"message": last_error or "no available redproxypro key", "type": "redproxypro_upstream_error"}, "attempts": attempts}), 503)
+    return None, None, attempts, redproxypro_upstream_error_response(
+        status=503,
+        message=last_error or "no available redproxypro key",
+        attempts=attempts,
+    )
 
 
 @app.get("/")

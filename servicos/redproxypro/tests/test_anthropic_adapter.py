@@ -3,6 +3,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,7 +14,38 @@ os.environ.setdefault("REDPROXYPRO_AUTH_TOKENS", "red")
 import app as proxy  # noqa: E402
 
 
+class FakeUpstreamResponse:
+    def __init__(self, status_code, payload, headers=None):
+        self.status_code = status_code
+        self.headers = headers or {"Content-Type": "application/json"}
+        self._content = json.dumps(payload).encode("utf-8")
+        self.closed = False
+
+    @property
+    def content(self):
+        return self._content
+
+    @property
+    def text(self):
+        return self._content.decode("utf-8", errors="replace")
+
+    def json(self):
+        return json.loads(self.text)
+
+    def close(self):
+        self.closed = True
+
+
 class AnthropicAdapterTest(unittest.TestCase):
+    def run_with_key_pool(self, keys, callback):
+        old_pool = proxy.key_pool
+        try:
+            with patch.object(proxy.KeyPool, "load_usage", lambda self: None), patch.object(proxy.KeyPool, "save_usage_locked", lambda self: None):
+                proxy.key_pool = proxy.KeyPool([proxy.KeyState(name=name, key=key) for name, key in keys])
+                return callback(proxy.key_pool)
+        finally:
+            proxy.key_pool = old_pool
+
     def test_models_are_curated_tool_call_passed_aliases(self):
         with proxy.app.test_client() as client:
             response = client.get("/v1/models", headers={"Authorization": "Bearer red"})
@@ -237,6 +269,88 @@ class AnthropicAdapterTest(unittest.TestCase):
             )
 
         self.assertEqual(alias["id"], "anthropic/claude-sonnet-4.6")
+
+    def test_402_key_rotates_to_next_key_without_leaking_billing_error(self):
+        raw_billing_error = {
+            "error": {
+                "message": "Insufficient funds. Please add credits to your account: https://vercel.com/d?to=top-up",
+                "type": "insufficient_funds",
+            }
+        }
+        ok_completion = {
+            "id": "chatcmpl_ok",
+            "choices": [{"message": {"role": "assistant", "content": "ok"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 1},
+        }
+        responses = [FakeUpstreamResponse(402, raw_billing_error), FakeUpstreamResponse(200, ok_completion)]
+        seen_authorizations = []
+
+        def fake_request(_method, _url, **kwargs):
+            seen_authorizations.append(kwargs["headers"]["Authorization"])
+            return responses.pop(0)
+
+        def scenario(pool):
+            with patch.object(proxy.http, "request", side_effect=fake_request):
+                with proxy.app.test_client() as client:
+                    response = client.post(
+                        "/v1/messages",
+                        headers={"Authorization": "Bearer red"},
+                        json={
+                            "model": "anthropic/claude-sonnet-4.6",
+                            "max_tokens": 16,
+                            "messages": [{"role": "user", "content": "oi"}],
+                        },
+                    )
+
+            self.assertEqual(response.status_code, 200)
+            body = response.get_data(as_text=True)
+            self.assertNotIn("Insufficient funds", body)
+            self.assertNotIn("vercel.com", body)
+            self.assertEqual(seen_authorizations, ["Bearer vck_empty", "Bearer vck_good"])
+            self.assertEqual(pool.keys[0].last_status, 402)
+            self.assertGreater(pool.keys[0].cooldown_until, 0)
+            self.assertEqual(pool.keys[1].successes, 1)
+
+        self.run_with_key_pool([("empty", "vck_empty"), ("good", "vck_good")], scenario)
+
+    def test_exhausted_402_keys_return_sanitized_proxy_error(self):
+        raw_billing_error = {
+            "error": {
+                "message": "Insufficient funds. Please add credits to your account: https://vercel.com/d?to=top-up",
+                "type": "insufficient_funds",
+            }
+        }
+        responses = [FakeUpstreamResponse(402, raw_billing_error), FakeUpstreamResponse(402, raw_billing_error)]
+
+        def fake_request(_method, _url, **_kwargs):
+            return responses.pop(0)
+
+        def scenario(pool):
+            with patch.object(proxy.http, "request", side_effect=fake_request):
+                with proxy.app.test_client() as client:
+                    response = client.post(
+                        "/v1/messages",
+                        headers={"Authorization": "Bearer red"},
+                        json={
+                            "model": "anthropic/claude-sonnet-4.6",
+                            "max_tokens": 16,
+                            "messages": [{"role": "user", "content": "oi"}],
+                        },
+                    )
+
+            self.assertEqual(response.status_code, 503)
+            body = response.get_data(as_text=True)
+            self.assertNotIn("Insufficient funds", body)
+            self.assertNotIn("vercel.com", body)
+            self.assertNotIn("rotate", body)
+            data = response.get_json()
+            self.assertEqual(data["error"]["type"], "redproxypro_upstream_unavailable")
+            self.assertEqual(data["error"]["message"], "upstream provider unavailable after internal failover")
+            self.assertEqual(len(data["attempts"]), 2)
+            self.assertEqual(pool.keys[0].last_status, 402)
+            self.assertEqual(pool.keys[1].last_status, 402)
+
+        self.run_with_key_pool([("empty1", "vck_empty1"), ("empty2", "vck_empty2")], scenario)
 
 
 if __name__ == "__main__":
