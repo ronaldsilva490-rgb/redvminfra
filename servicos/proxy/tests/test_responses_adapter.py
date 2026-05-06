@@ -190,6 +190,31 @@ class ResponsesAdapterTests(unittest.TestCase):
         self.assertIn("devstral-medium-latest", names)
         self.assertIn("mistral-small-latest", names)
 
+    def test_ollama_tags_do_not_dump_full_provider_catalog_by_default(self):
+        raw = json.dumps({"models": []}).encode("utf-8")
+        nvidia_models = [
+            {"id": "z-ai/glm-5.1", "family": "nvidia-chat", "kind": "chat", "created": 1775520000},
+            {"id": "01-ai/yi-large", "family": "nvidia-chat", "kind": "chat", "created": 1775520000},
+        ]
+        mistral_models = [
+            {"id": "devstral-medium-latest", "family": "mistral-devstral", "kind": "chat", "created": 1775520000},
+            {"id": "random-mistral-test", "family": "mistral", "kind": "chat", "created": 1775520000},
+        ]
+
+        with (
+            patch.object(proxy, "ensure_nvidia_catalog", return_value=None),
+            patch.object(proxy, "ensure_mistral_catalog", return_value=None),
+            patch.object(proxy, "NVIDIA_MODELS", nvidia_models),
+            patch.object(proxy, "MISTRAL_MODELS", mistral_models),
+        ):
+            data = json.loads(proxy.augment_tags_body(raw).decode("utf-8"))
+
+        names = {item["name"] for item in data["models"]}
+        self.assertIn("NIM - z-ai/glm-5.1", names)
+        self.assertIn("devstral-medium-latest", names)
+        self.assertNotIn("NIM - 01-ai/yi-large", names)
+        self.assertNotIn("random-mistral-test", names)
+
     def test_mistral_model_details_use_ollama_show_shape(self):
         model_id, model_info = proxy.normalize_mistral_model("devstral-medium-latest")
 
@@ -206,6 +231,32 @@ class ResponsesAdapterTests(unittest.TestCase):
         self.assertEqual(descriptor["route_model"], "devstral-medium-latest")
         self.assertTrue(descriptor["gateway_alias"])
         self.assertIn("chat", descriptor["capabilities"])
+
+    def test_unknown_requested_model_does_not_fallback_to_mistral(self):
+        with proxy.app.app_context():
+            with patch.object(proxy, "find_model_descriptor", return_value=None):
+                resolved, requested, error_response = proxy.resolve_model_for_capability(
+                    "anthropic/claude-sonnet-4.6",
+                    "chat",
+                    "127.0.0.1",
+                )
+
+        self.assertIsNone(resolved)
+        self.assertIsNone(requested)
+        self.assertIsNotNone(error_response)
+        self.assertEqual(error_response[1], 404)
+
+    def test_client_catalog_hides_claude_gateway_aliases(self):
+        descriptors = [
+            proxy.model_descriptor("devstral-medium-latest"),
+            proxy.model_descriptor("claude-red-devstral-medium"),
+        ]
+
+        visible = proxy.client_catalog_descriptors(descriptors)
+        ids = [item["id"] for item in visible]
+
+        self.assertIn("devstral-medium-latest", ids)
+        self.assertNotIn("claude-red-devstral-medium", ids)
 
     def test_claude_gateway_aliases_include_all_tool_call_passed_models(self):
         expected = {

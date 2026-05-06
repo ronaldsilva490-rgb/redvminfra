@@ -421,8 +421,10 @@ def upstream_model_to_claude_alias(entry: dict[str, Any]) -> dict[str, Any] | No
 
 
 def fetch_upstream_claude_aliases() -> list[dict[str, Any]]:
+    catalog_url = f"{UPSTREAM_BASE_URL}/models"
+    separator = "&" if "?" in catalog_url else "?"
     resp = http.get(
-        f"{UPSTREAM_BASE_URL}/models",
+        f"{catalog_url}{separator}include_gateway_aliases=1&full=1",
         headers=upstream_catalog_headers(),
         timeout=(CONNECT_TIMEOUT, min(60, READ_TIMEOUT)),
     )

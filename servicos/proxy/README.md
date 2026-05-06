@@ -109,6 +109,32 @@ Use os IDs crus retornados pela Mistral, como `mistral-medium-3.5`, `devstral-la
 
 Clientes em modo Ollama, como Page Assist, buscam modelos por `GET /api/tags` e detalhes por `POST /api/show`. O proxy tambem injeta os modelos Mistral diretos nesses endpoints e roteia `POST /api/chat`/`POST /api/generate` para a API da Mistral quando o modelo selecionado for Mistral.
 
+## Catalogo publico para clientes
+
+`/api/tags` e `/v1/models` publicam por padrao um catalogo enxuto para clientes interativos como Page Assist, Codex e IDEs. Esse catalogo nao inclui aliases `claude-red-*`, modelos Pro/Vercel, embeddings, rerankers, imagens, audio nem o dump completo do NIM/Mistral.
+
+O catalogo completo de administracao continua disponivel em:
+
+```txt
+GET /proxy/v1/models?full=1
+GET /proxy/v1/models?include_gateway_aliases=1&full=1
+```
+
+A ponte Claude normal (`redclaudeproxy`) usa a segunda forma para importar os aliases `claude-red-*`, sem poluir Page Assist e outros clientes genericos.
+
+Por seguranca operacional, o proxy normal nao faz fallback silencioso quando o cliente pede um modelo inexistente. Isso evita um cliente com cache antigo pedir, por exemplo, um modelo Pro/Vercel e receber uma resposta do Devstral/Mistral como se fosse o modelo solicitado. Para reativar esse comportamento explicitamente:
+
+```txt
+RED_PROXY_ALLOW_UNKNOWN_MODEL_FALLBACK=true
+```
+
+Para publicar o dump completo dos provedores no catalogo publico:
+
+```txt
+RED_PROXY_CLIENT_CATALOG_INCLUDE_ALL_NVIDIA=true
+RED_PROXY_CLIENT_CATALOG_INCLUDE_ALL_MISTRAL=true
+```
+
 ## Compatibilidade com Codex
 
 O Codex CLI/extensao VS Code usa a OpenAI Responses API em `/v1/responses`. O proxy RED aceita esse formato e converte para `/v1/chat/completions` no upstream, mantendo:

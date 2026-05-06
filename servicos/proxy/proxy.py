@@ -46,6 +46,13 @@ def env_int(name, default):
         return int(default)
 
 
+def env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return bool(default)
+    return value.strip().lower() not in ("0", "false", "no", "off", "nao", "não")
+
+
 NVIDIA_MODEL_REFRESH_ENABLED = (
     os.getenv("RED_PROXY_NVIDIA_MODEL_REFRESH_ENABLED", "1").strip().lower()
     not in ("0", "false", "no", "off")
@@ -66,6 +73,9 @@ NVIDIA_MODEL_CACHE_FILE = Path(
 MISTRAL_MODEL_CACHE_FILE = Path(
     os.getenv("RED_PROXY_MISTRAL_MODEL_CACHE_FILE", str(Path(DATA_DIR) / "mistral_models_cache.json"))
 )
+ALLOW_UNKNOWN_MODEL_FALLBACK = env_bool("RED_PROXY_ALLOW_UNKNOWN_MODEL_FALLBACK", False)
+CLIENT_CATALOG_INCLUDE_ALL_NVIDIA = env_bool("RED_PROXY_CLIENT_CATALOG_INCLUDE_ALL_NVIDIA", False)
+CLIENT_CATALOG_INCLUDE_ALL_MISTRAL = env_bool("RED_PROXY_CLIENT_CATALOG_INCLUDE_ALL_MISTRAL", False)
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -772,6 +782,17 @@ CLAUDE_GATEWAY_MODEL_ALIASES = [
 CLAUDE_GATEWAY_ALIAS_MAP = {item["id"].lower(): item for item in CLAUDE_GATEWAY_MODEL_ALIASES}
 
 
+def claude_gateway_target_ids(include_unlisted=False):
+    targets = set()
+    for alias in CLAUDE_GATEWAY_MODEL_ALIASES:
+        if not include_unlisted and not alias.get("listed", True):
+            continue
+        target = str(alias.get("target") or "").strip().lower()
+        if target:
+            targets.add(target)
+    return targets
+
+
 def mistral_kind_for_item(model_id, capabilities=None):
     lower = str(model_id or "").strip().lower()
     capabilities = capabilities or {}
@@ -1402,7 +1423,10 @@ def augment_tags_body(raw_body):
             models = []
             data["models"] = models
         existing = {str(item.get("name", "")).lower() for item in models if isinstance(item, dict)}
+        curated_targets = claude_gateway_target_ids()
         for model in NVIDIA_MODELS:
+            if not CLIENT_CATALOG_INCLUDE_ALL_NVIDIA and str(model.get("id") or "").strip().lower() not in curated_targets:
+                continue
             name = nvidia_display_name(model["id"])
             if name.lower() in existing:
                 continue
@@ -1423,8 +1447,11 @@ def augment_tags_body(raw_body):
                     },
                 }
             )
+            existing.add(name.lower())
         for model in MISTRAL_MODELS:
             name = model["id"]
+            if not CLIENT_CATALOG_INCLUDE_ALL_MISTRAL and str(name or "").strip().lower() not in curated_targets:
+                continue
             if name.lower() in existing:
                 continue
             models.append(
@@ -1444,6 +1471,7 @@ def augment_tags_body(raw_body):
                     },
                 }
             )
+            existing.add(name.lower())
         return json.dumps(data, ensure_ascii=False).encode("utf-8")
     except Exception as e:
         log_message("WARN", "Falha ao anexar modelos extras em /api/tags: " + str(e)[:120])
@@ -1912,17 +1940,37 @@ def upstream_model_entries(source_ip):
     return merged
 
 
-def model_descriptors(source_ip):
+def model_descriptors(source_ip, include_gateway_aliases=True):
     descriptors = [model_descriptor(item.get("id") or item.get("name"), item) for item in upstream_model_entries(source_ip)]
-    seen = {descriptor["id"].lower() for descriptor in descriptors}
-    for alias in CLAUDE_GATEWAY_MODEL_ALIASES:
-        if not alias.get("listed", True):
-            continue
-        if alias["id"].lower() in seen:
-            continue
-        descriptors.append(model_descriptor(alias["id"]))
-        seen.add(alias["id"].lower())
+    if include_gateway_aliases:
+        seen = {descriptor["id"].lower() for descriptor in descriptors}
+        for alias in CLAUDE_GATEWAY_MODEL_ALIASES:
+            if not alias.get("listed", True):
+                continue
+            if alias["id"].lower() in seen:
+                continue
+            descriptors.append(model_descriptor(alias["id"]))
+            seen.add(alias["id"].lower())
     return descriptors
+
+
+def client_catalog_descriptors(descriptors):
+    curated_targets = claude_gateway_target_ids()
+    out = []
+    for descriptor in descriptors:
+        if descriptor.get("gateway_alias"):
+            continue
+        provider = descriptor.get("provider")
+        route_model = str(descriptor.get("route_model") or descriptor.get("id") or "").strip().lower()
+        kind = str(descriptor.get("kind") or "").strip().lower()
+        if kind in ("embedding", "rerank", "image", "audio", "ocr"):
+            continue
+        if provider == "nvidia" and not CLIENT_CATALOG_INCLUDE_ALL_NVIDIA and route_model not in curated_targets:
+            continue
+        if provider == "mistral" and not CLIENT_CATALOG_INCLUDE_ALL_MISTRAL and route_model not in curated_targets:
+            continue
+        out.append(descriptor)
+    return out
 
 
 def find_model_descriptor(model_name, source_ip):
@@ -1975,9 +2023,16 @@ def choose_fallback_model(capability, source_ip, preferred_provider=None):
 
 
 def resolve_model_for_capability(model_name, capability, source_ip):
-    requested = find_model_descriptor(model_name, source_ip) if model_name else None
+    requested_model_name = str(model_name or "").strip()
+    requested = find_model_descriptor(requested_model_name, source_ip) if requested_model_name else None
     if requested and capability in requested.get("capabilities", []):
         return requested, requested, None
+    if requested_model_name and requested is None and not ALLOW_UNKNOWN_MODEL_FALLBACK:
+        return None, None, proxy_error_response(
+            "modelo nao encontrado no proxy normal: " + requested_model_name,
+            404,
+            "model_not_found",
+        )
     if not ENABLE_CAPABILITY_FALLBACK:
         return None, requested, proxy_error_response("modelo nao suporta capability " + capability + " e fallback esta desativado", 400, "invalid_request_error")
 
@@ -4493,7 +4548,12 @@ def mistral_models_refresh():
 
 @app.get("/v1/models")
 def openai_models():
-    data = [public_model_entry(descriptor) for descriptor in model_descriptors(request.remote_addr)]
+    include_gateway_aliases = str(request.args.get("include_gateway_aliases") or "").strip().lower() in ("1", "true", "yes", "on")
+    full_catalog = str(request.args.get("full") or "").strip().lower() in ("1", "true", "yes", "on")
+    descriptors = model_descriptors(request.remote_addr, include_gateway_aliases=include_gateway_aliases)
+    if not full_catalog:
+        descriptors = client_catalog_descriptors(descriptors)
+    data = [public_model_entry(descriptor) for descriptor in descriptors]
     payload = {"object": "list", "data": data, "has_more": False}
     if data:
         payload["first_id"] = data[0]["id"]
