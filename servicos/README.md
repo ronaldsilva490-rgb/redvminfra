@@ -9,6 +9,7 @@ portal/                 Home publica da stack
 dashboard/              Painel principal da VM unica
 proxy/                  Proxy IA oficial
 redproxypro/            Proxy Vercel AI Gateway com rotacao de keys
+redclaudeproxy/         Ponte Claude para modelos do proxy normal
 msredpdf/               Analise juridica de PDFs com IA
 searxng/                Busca web gratuita para OpenClaude
 proxy-lab/              Laboratorio de benchmark pago
@@ -29,6 +30,7 @@ deploy-agent/           Legado
 - [dashboard/README.md](dashboard/README.md)
 - [proxy/README.md](proxy/README.md)
 - [redproxypro/README.md](redproxypro/README.md)
+- [redclaudeproxy/README.md](redclaudeproxy/README.md)
 - [msredpdf/README.md](msredpdf/README.md)
 - [searxng/README.md](searxng/README.md)
 - [proxy-lab/README.md](proxy-lab/README.md)
@@ -48,6 +50,7 @@ deploy-agent/           Legado
 - `redia/` continua existindo como runtime proprio, mas o caminho principal de operacao e `/dashboard/redia`.
 - `proxy-lab/` e laboratorio; nao trate como producao.
 - `redproxypro/` e o proxy dedicado ao Vercel AI Gateway; keys reais vivem em `/etc/redproxypro.env`, nunca no repo.
+- `redclaudeproxy/` e a ponte dedicada do Claude Desktop/Code para os modelos do proxy normal; usa `/etc/redclaudeproxy.env`.
 - `msredpdf/` e o backend de analise juridica de PDF, publicado em `/msredpdf/` e integrado ao proxy IA oficial.
 - `searxng/` e o backend de busca web gratuita usado pelo OpenClaude via provedor custom.
 - `rapidleech/` virou parte oficial da stack e deve ser tratado como runtime publicado por `/rapidleech/`, nao como pasta solta fora do repo.
@@ -62,7 +65,7 @@ deploy-agent/           Legado
 Ativos:
 
 ```text
-dashboard, proxy, redproxypro, searxng, msredpdf, rapidleech,
+dashboard, proxy, redproxypro, redclaudeproxy, searxng, msredpdf, rapidleech,
 redia, redsebia, red-seb-monitor, proxy-lab
 ```
 

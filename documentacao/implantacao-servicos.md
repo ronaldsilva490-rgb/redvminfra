@@ -10,6 +10,7 @@ Exemplo de layout remoto:
 /opt/redvm-proxy
 /opt/redvm-dashboard
 /opt/redproxypro
+/opt/redclaudeproxy
 /opt/red-searxng
 /opt/msredpdf
 /opt/rapidleech
@@ -20,6 +21,7 @@ Exemplo de layout remoto:
 /etc/nginx/snippets/
 /var/lib/redvm-proxy
 /var/lib/redproxypro
+/var/lib/redclaudeproxy
 /var/lib/msredpdf
 ```
 
@@ -226,7 +228,59 @@ curl -sS http://127.0.0.1:8095/healthz
 curl -sS http://127.0.0.1:8095/v1/models -H 'Authorization: Bearer red'
 ```
 
-## 2B. RED Search / SearXNG
+## 2B. RED Claude Proxy
+
+Servico: `servicos/redclaudeproxy`
+
+Responsabilidade:
+
+- expor a API Anthropic/Claude em `/redclaudeproxy`;
+- reutilizar o adaptador estavel do RED Proxy Pro;
+- usar o proxy normal como upstream em `http://127.0.0.1:8080/v1`;
+- publicar dinamicamente os modelos `claude-red-*` do proxy normal;
+- manter streaming SSE e tool calls no formato esperado por Claude Desktop/Code.
+
+Instalacao:
+
+```bash
+mkdir -p /opt/redclaudeproxy /var/lib/redclaudeproxy
+rsync -av servicos/redclaudeproxy/ /opt/redclaudeproxy/
+cd /opt/redclaudeproxy
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
+```
+
+Ambiente em `/etc/redclaudeproxy.env`:
+
+```env
+REDCLAUDEPROXY_HOST=127.0.0.1
+REDCLAUDEPROXY_PORT=8096
+REDCLAUDEPROXY_UPSTREAM_BASE_URL=http://127.0.0.1:8080/v1
+REDCLAUDEPROXY_UPSTREAM_TOKEN=red
+REDCLAUDEPROXY_KEYS="normal:red"
+REDCLAUDEPROXY_REQUIRE_AUTH=1
+REDCLAUDEPROXY_AUTH_TOKENS=red
+REDCLAUDEPROXY_DATA_DIR=/var/lib/redclaudeproxy
+REDCLAUDEPROXY_COOLDOWN_5XX=0
+```
+
+Systemd:
+
+```bash
+cp infraestrutura/systemd/redclaudeproxy.service /etc/systemd/system/redclaudeproxy.service
+systemctl daemon-reload
+systemctl enable --now redclaudeproxy
+systemctl status redclaudeproxy --no-pager
+```
+
+Health check:
+
+```bash
+curl -sS http://127.0.0.1:8096/healthz
+curl -sS http://127.0.0.1:8096/v1/models -H 'Authorization: Bearer red'
+```
+
+## 2C. RED Search / SearXNG
 
 Servico: `servicos/searxng`
 

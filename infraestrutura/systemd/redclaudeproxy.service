@@ -1,0 +1,22 @@
+[Unit]
+Description=RED Claude Proxy Bridge
+After=network-online.target red-ollama-proxy.service
+Wants=network-online.target
+Requires=red-ollama-proxy.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/redclaudeproxy
+Environment=REDCLAUDEPROXY_HOST=127.0.0.1
+Environment=REDCLAUDEPROXY_PORT=8096
+EnvironmentFile=-/etc/redclaudeproxy.env
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/opt/redclaudeproxy/.venv/bin/python /opt/redclaudeproxy/app.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/redclaudeproxy.log
+StandardError=append:/var/log/redclaudeproxy.log
+
+[Install]
+WantedBy=multi-user.target

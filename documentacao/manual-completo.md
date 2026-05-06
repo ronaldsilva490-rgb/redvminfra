@@ -56,7 +56,7 @@ npm run check
 Python para dashboard/proxy/redtrader:
 
 ```powershell
-python -m py_compile servicos/proxy/proxy.py servicos/dashboard/app.py servicos/redproxypro/app.py servicos/msredpdf/app.py
+python -m py_compile servicos/proxy/proxy.py servicos/dashboard/app.py servicos/redproxypro/app.py servicos/redclaudeproxy/app.py servicos/msredpdf/app.py
 python -m py_compile servicos/redtrader/src/redtrader/app.py
 ```
 

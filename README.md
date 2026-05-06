@@ -23,6 +23,7 @@ Hoje a RED Systems roda com uma arquitetura de VM unica. O objetivo deste reposi
 - `/dashboard/` -> painel principal
 - `/proxy/` -> proxy IA oficial
 - `/redproxypro/` -> proxy Vercel AI Gateway com rotacao de keys
+- `/redclaudeproxy/` -> ponte Claude Desktop/Code para os modelos do proxy normal
 - `/ollama/` -> alias do proxy IA
 - `/search/` -> busca web gratuita via SearXNG
 - `/msredpdf/` -> analise juridica de PDFs/DOCX com IA
@@ -46,6 +47,7 @@ Estado da VM em 2026-05-06: OpenClaw, RED Trader e IQ Bridge continuam no repo, 
 | Dashboard | `servicos/dashboard` | `/opt/redvm-dashboard` | `red-dashboard.service` | ativo |
 | Proxy IA | `servicos/proxy` | `/opt/redvm-proxy` | `red-ollama-proxy.service` | ativo |
 | RED Proxy Pro | `servicos/redproxypro` | `/opt/redproxypro` | `redproxypro.service` | ativo |
+| RED Claude Proxy | `servicos/redclaudeproxy` | `/opt/redclaudeproxy` | `redclaudeproxy.service` | ativo |
 | RED Search | `servicos/searxng` | `/opt/red-searxng` | `red-searxng.service` | ativo |
 | MS RED PDF | `servicos/msredpdf` | `/opt/msredpdf` | `msredpdf.service` | ativo |
 | RED I.A | `servicos/redia` | `/opt/redia` | `redia.service` | ativo |
@@ -68,6 +70,7 @@ servicos/
   dashboard/             Painel principal da VM unica
   proxy/                 Proxy IA oficial
   redproxypro/           Proxy Vercel AI Gateway com rotacao de keys
+  redclaudeproxy/        Ponte Claude para modelos do proxy normal
   searxng/               Busca web gratuita para OpenClaude
   msredpdf/              Analise juridica de PDFs/DOCX com IA
   proxy-lab/             Laboratorio pago e experimental
@@ -139,6 +142,7 @@ Cada servico agora tem um guia proprio de instalacao em qualquer VM:
 - [servicos/dashboard/README.md](servicos/dashboard/README.md)
 - [servicos/proxy/README.md](servicos/proxy/README.md)
 - [servicos/redproxypro/README.md](servicos/redproxypro/README.md)
+- [servicos/redclaudeproxy/README.md](servicos/redclaudeproxy/README.md)
 - [servicos/msredpdf/README.md](servicos/msredpdf/README.md)
 - [servicos/searxng/README.md](servicos/searxng/README.md)
 - [servicos/proxy-lab/README.md](servicos/proxy-lab/README.md)
@@ -183,6 +187,7 @@ Script-base de apoio:
 - dashboard: `/opt/redvm-dashboard`
 - proxy: `/opt/redvm-proxy`
 - red proxy pro: `/opt/redproxypro`
+- red claude proxy: `/opt/redclaudeproxy`
 - red search: `/opt/red-searxng`
 - msredpdf: `/opt/msredpdf`
 - redia: `/opt/redia`
@@ -200,6 +205,7 @@ Script-base de apoio:
 - dashboard: `/opt/redvm-dashboard/data`
 - proxy: `/var/lib/redvm-proxy`
 - red proxy pro: `/var/lib/redproxypro`
+- red claude proxy: `/var/lib/redclaudeproxy`
 - msredpdf: `/var/lib/msredpdf`
 - redia: `/opt/redia/data`
 - redtrader: `/opt/redtrader/data`
@@ -213,7 +219,7 @@ Script-base de apoio:
 
 ## Nginx
 
-O arquivo central versionado do include publico e `infraestrutura/nginx/red-friendly-paths.nginx.conf`. Na VM atual, o include ativo do nginx fica em `/etc/nginx/snippets/red-friendly-paths.nginx.conf`.
+O arquivo central versionado do include publico e `infraestrutura/nginx/red-friendly-paths.nginx.conf`. Na VM atual, o include ativo do nginx fica em `/etc/nginx/redvm-routes/red-enabled-paths.conf`; a copia em `/etc/nginx/snippets/red-friendly-paths.nginx.conf` e mantida como espelho.
 
 Ele concentra as rotas amigaveis:
 
@@ -221,6 +227,7 @@ Ele concentra as rotas amigaveis:
 - `/dashboard/`
 - `/proxy/`
 - `/redproxypro/`
+- `/redclaudeproxy/`
 - `/ollama/`
 - `/search/`
 - `/msredpdf/`

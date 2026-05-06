@@ -16,6 +16,7 @@ http/https: nginx em 80 e 443
 red-dashboard.service       active   /opt/redvm-dashboard      127.0.0.1:9001
 red-ollama-proxy.service    active   /opt/redvm-proxy          127.0.0.1:8080
 redproxypro.service         active   /opt/redproxypro          127.0.0.1:8095
+redclaudeproxy.service      active   /opt/redclaudeproxy       127.0.0.1:8096
 red-searxng.service         active   /opt/red-searxng          127.0.0.1:8088
 msredpdf.service            active   /opt/msredpdf             127.0.0.1:3142
 rapidleech.service          active   /opt/rapidleech           127.0.0.1:2581
@@ -47,6 +48,7 @@ Eles continuam versionados para compatibilidade e reinstalacao futura, mas nao e
 /proxy/                    proxy IA oficial
 /ollama/                   alias do proxy IA oficial
 /redproxypro/              RED Proxy Pro / Vercel AI Gateway
+/redclaudeproxy/           ponte Claude para modelos do proxy normal
 /search/                   SearXNG
 /msredpdf/                 analise juridica de PDF/DOCX
 /redia/                    RED I.A
@@ -106,15 +108,52 @@ claude-red-kimi-k26  -> moonshotai/kimi-k2.6
 claude-red-glm-51    -> zai/glm-5.1
 ```
 
+## RED Claude Proxy
+
+Runtime:
+
+```text
+/opt/redclaudeproxy
+/etc/redclaudeproxy.env
+/var/lib/redclaudeproxy/usage.json
+```
+
+Funcao:
+
+```text
+Claude Desktop/Code -> /redclaudeproxy -> proxy normal em 127.0.0.1:8080/v1
+```
+
+Estado validado em 2026-05-06:
+
+```text
+servico: active
+modelos publicados: 23
+catalogo: /redclaudeproxy/v1/models
+upstream: http://127.0.0.1:8080/v1
+```
+
+Validacoes feitas:
+
+```text
+chat sem streaming: OK
+streaming Anthropic SSE: OK
+tool_use forcado: OK
+count_tokens: OK
+HTTP e HTTPS publicos: OK
+```
+
 ## Validacoes recomendadas
 
 ```bash
 systemctl --failed
 systemctl status redproxypro --no-pager
+systemctl status redclaudeproxy --no-pager
 systemctl status msredpdf --no-pager
 systemctl status rapidleech --no-pager
 nginx -t
 curl -sS http://127.0.0.1:8095/v1/models -H 'Authorization: Bearer red'
+curl -sS http://127.0.0.1:8096/v1/models -H 'Authorization: Bearer red'
 curl -sS http://127.0.0.1:3142/healthz
 curl -I http://127.0.0.1:2581/
 ```

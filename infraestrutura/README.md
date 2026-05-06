@@ -18,7 +18,7 @@ Antes de aplicar qualquer unit ou config em uma VM:
 
 ## Atalhos publicos
 
-Na VM principal, `infraestrutura/nginx/red-friendly-paths.nginx.conf` e publicado no include ativo `/etc/nginx/snippets/red-friendly-paths.nginx.conf` e expoe:
+Na VM principal, `infraestrutura/nginx/red-friendly-paths.nginx.conf` e publicado no include ativo `/etc/nginx/redvm-routes/red-enabled-paths.conf`. A copia `/etc/nginx/snippets/red-friendly-paths.nginx.conf` e mantida como espelho. Ele expoe:
 
 ```text
 /             Portal
@@ -28,6 +28,7 @@ Na VM principal, `infraestrutura/nginx/red-friendly-paths.nginx.conf` e publicad
 /dashboard/   Dashboard principal
 /proxy/       Proxy IA oficial
 /redproxypro/ Proxy Vercel AI Gateway com rotacao de keys
+/redclaudeproxy/ Ponte Claude para os modelos do proxy normal
 /ollama/      Alias do proxy oficial
 /search/      Busca web gratuita via SearXNG
 /msredpdf/    Analise juridica de PDF/DOCX com IA
@@ -49,6 +50,7 @@ Na VM principal, `infraestrutura/nginx/red-friendly-paths.nginx.conf` e publicad
 red-dashboard.service
 red-ollama-proxy.service
 redproxypro.service
+redclaudeproxy.service
 red-searxng.service
 msredpdf.service
 rapidleech.service
@@ -91,5 +93,5 @@ O dashboard principal tambem responde por caminho real:
 - `rapidleech.service` agora e parte oficial da stack e deve ser publicado pelo nginx em `/rapidleech/`.
 - `red-sebia.service` agora e parte oficial da stack e deve ser publicado pelo nginx em `/redsebia/`.
 - `red-seb-monitor.service` e parte oficial da stack, mas hoje vive em porta dedicada `2580`, fora do nginx principal.
-- `msredpdf.service`, `redproxypro.service` e `red-searxng.service` fazem parte do conjunto essencial atual.
+- `msredpdf.service`, `redproxypro.service`, `redclaudeproxy.service` e `red-searxng.service` fazem parte do conjunto essencial atual.
 - `openclaw`, `redtrader` e `iq-bridge` ficam no repo para reativacao futura, mas nao devem ser tratados como essenciais na VM principal atual.
