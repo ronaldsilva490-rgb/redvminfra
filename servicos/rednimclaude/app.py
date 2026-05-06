@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 import uuid
 from copy import deepcopy
@@ -17,6 +18,13 @@ def env_int(name: str, default: int) -> int:
         return int(os.getenv(name, str(default)).strip())
     except Exception:
         return int(default)
+
+
+def env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)).strip())
+    except Exception:
+        return float(default)
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -51,6 +59,11 @@ TLS_KEY = (os.getenv("REDNIMCLAUDE_TLS_KEY") or "").strip()
 TOKEN_SAFETY_MARGIN = max(0, env_int("REDNIMCLAUDE_TOKEN_SAFETY_MARGIN", 512))
 MIN_COMPLETION_TOKENS = max(1, env_int("REDNIMCLAUDE_MIN_COMPLETION_TOKENS", 256))
 MAX_CONTEXT_RETRIES = max(1, env_int("REDNIMCLAUDE_MAX_CONTEXT_RETRIES", 3))
+RATE_LIMIT_MIN_INTERVAL_SECONDS = max(0.0, env_float("REDNIMCLAUDE_RATE_LIMIT_MIN_INTERVAL_SECONDS", 3.25))
+RATE_LIMIT_COOLDOWN_SECONDS = max(0.0, env_float("REDNIMCLAUDE_RATE_LIMIT_COOLDOWN_SECONDS", 6.0))
+RATE_LIMIT_COOLDOWN_STEP_SECONDS = max(0.0, env_float("REDNIMCLAUDE_RATE_LIMIT_COOLDOWN_STEP_SECONDS", 2.0))
+RATE_LIMIT_MAX_COOLDOWN_SECONDS = max(0.0, env_float("REDNIMCLAUDE_RATE_LIMIT_MAX_COOLDOWN_SECONDS", 20.0))
+MAX_429_RETRIES = max(0, env_int("REDNIMCLAUDE_MAX_429_RETRIES", 3))
 
 http = requests.Session()
 http.headers.update({"Accept": "application/json"})
@@ -149,6 +162,39 @@ MODEL_BY_ID = {item["id"].lower(): item for item in MODELS}
 MODEL_BY_TARGET = {item["target"].lower(): item for item in MODELS}
 
 app = Flask(__name__)
+
+
+class NIMRateLimiter:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._next_allowed_at = 0.0
+        self._cooldown_until = 0.0
+        self._consecutive_429 = 0
+
+    def wait_for_slot(self) -> None:
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                target = max(self._next_allowed_at, self._cooldown_until)
+                if now >= target:
+                    self._next_allowed_at = now + RATE_LIMIT_MIN_INTERVAL_SECONDS
+                    return
+                sleep_for = max(0.05, target - now)
+            time.sleep(min(sleep_for, 0.25))
+
+    def on_success(self) -> None:
+        with self._lock:
+            self._consecutive_429 = 0
+
+    def on_429(self) -> None:
+        with self._lock:
+            self._consecutive_429 += 1
+            penalty = RATE_LIMIT_COOLDOWN_SECONDS + (max(0, self._consecutive_429 - 1) * RATE_LIMIT_COOLDOWN_STEP_SECONDS)
+            penalty = min(RATE_LIMIT_MAX_COOLDOWN_SECONDS, penalty)
+            self._cooldown_until = max(self._cooldown_until, time.monotonic() + penalty)
+
+
+NIM_RATE_LIMITER = NIMRateLimiter()
 
 
 def request_id() -> str:
@@ -489,14 +535,23 @@ def proxy_openai_chat_with_context_retry(
     guarded_payload = apply_context_guard(payload, input_tokens=input_tokens, context_window=context_window)
     current_payload = deepcopy(guarded_payload)
     extra_margin = 0
-    for _attempt in range(MAX_CONTEXT_RETRIES + 1):
+    rate_retries_left = MAX_429_RETRIES
+    for _attempt in range(MAX_CONTEXT_RETRIES + MAX_429_RETRIES + 1):
+        NIM_RATE_LIMITER.wait_for_slot()
         response = proxy_openai_chat(current_payload, stream=stream)
         if response.status_code < 400:
+            NIM_RATE_LIMITER.on_success()
             return response
         try:
             body_text = response.text
         except Exception:
             body_text = ""
+        if response.status_code == 429:
+            NIM_RATE_LIMITER.on_429()
+            if rate_retries_left <= 0:
+                return response
+            rate_retries_left -= 1
+            continue
         if not is_context_error(response.status_code, body_text):
             return response
         limits = parse_context_error_limits(body_text)

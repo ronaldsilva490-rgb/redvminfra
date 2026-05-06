@@ -217,6 +217,36 @@ class RedNimClaudeTests(unittest.TestCase):
         self.assertIs(response, ok)
         self.assertEqual(calls[:3], [31487, 30718, 30420])
 
+    def test_rate_limit_retry_hides_single_429(self):
+        limited = FakeResponse(status_code=429, payload={"status": 429, "title": "Too Many Requests"})
+        ok = FakeResponse(
+            payload={
+                "id": "chatcmpl_4",
+                "choices": [{"finish_reason": "stop", "message": {"content": "OK"}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+            }
+        )
+        calls = []
+
+        def fake_proxy(payload, *, stream):
+            calls.append(payload["max_tokens"])
+            return limited if len(calls) == 1 else ok
+
+        with patch.object(proxy, "proxy_openai_chat", side_effect=fake_proxy), \
+             patch.object(proxy.NIM_RATE_LIMITER, "wait_for_slot", return_value=None), \
+             patch.object(proxy.NIM_RATE_LIMITER, "on_429", return_value=None) as on_429, \
+             patch.object(proxy.NIM_RATE_LIMITER, "on_success", return_value=None) as on_success:
+            response = proxy.proxy_openai_chat_with_context_retry(
+                {"model": "qwen/qwen3.5-122b-a10b", "messages": [{"role": "user", "content": "oi"}], "max_tokens": 100},
+                stream=False,
+                context_window=262144,
+                input_tokens=1000,
+            )
+        self.assertIs(response, ok)
+        self.assertEqual(len(calls), 2)
+        on_429.assert_called_once()
+        on_success.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
