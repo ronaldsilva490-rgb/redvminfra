@@ -27,6 +27,10 @@ class FakeResponse:
 
 
 class RedNimClaudeTests(unittest.TestCase):
+    def test_clamp_max_tokens_reduces_only_output_budget(self):
+        clamped = proxy.clamp_max_tokens(32000, 230145, 262144)
+        self.assertEqual(clamped, 31487)
+
     def test_resolve_model_accepts_alias_and_target(self):
         alias = proxy.resolve_model("nim-glm-5.1")
         raw = proxy.resolve_model("z-ai/glm-5.1")
@@ -131,6 +135,41 @@ class RedNimClaudeTests(unittest.TestCase):
         body = response.get_json()
         self.assertEqual(body["model"], "nim-qwen-next-80b")
         self.assertEqual(body["content"][0]["text"], "OK")
+
+    def test_context_retry_reduces_max_tokens_after_upstream_400(self):
+        too_long = FakeResponse(
+            status_code=400,
+            payload={
+                "error": {
+                    "message": "This model's maximum context length is 262144 tokens. However, you requested 32000 output tokens and your prompt contains at least 230145 input tokens, for a total of at least 262145 tokens. Please reduce the length of the messages.",
+                    "type": "upstream_error",
+                }
+            },
+        )
+        ok = FakeResponse(
+            payload={
+                "id": "chatcmpl_2",
+                "choices": [{"finish_reason": "stop", "message": {"content": "OK"}}],
+                "usage": {"prompt_tokens": 230145, "completion_tokens": 12},
+            }
+        )
+        calls = []
+
+        def fake_proxy(payload, *, stream):
+            calls.append((payload["max_tokens"], stream))
+            return too_long if len(calls) == 1 else ok
+
+        with patch.object(proxy, "proxy_openai_chat", side_effect=fake_proxy):
+            response = proxy.proxy_openai_chat_with_context_retry(
+                {"model": "qwen/qwen3.5-122b-a10b", "messages": [{"role": "user", "content": "oi"}], "max_tokens": 32000},
+                stream=False,
+                context_window=262144,
+                input_tokens=1000,
+            )
+        self.assertIs(response, ok)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][0], 32000)
+        self.assertEqual(calls[1][0], 31487)
 
 
 if __name__ == "__main__":

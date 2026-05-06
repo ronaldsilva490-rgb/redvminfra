@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import uuid
 from copy import deepcopy
@@ -47,6 +48,8 @@ CONNECT_TIMEOUT = env_int("REDNIMCLAUDE_CONNECT_TIMEOUT", 20)
 READ_TIMEOUT = env_int("REDNIMCLAUDE_READ_TIMEOUT", 360)
 TLS_CERT = (os.getenv("REDNIMCLAUDE_TLS_CERT") or "").strip()
 TLS_KEY = (os.getenv("REDNIMCLAUDE_TLS_KEY") or "").strip()
+TOKEN_SAFETY_MARGIN = max(0, env_int("REDNIMCLAUDE_TOKEN_SAFETY_MARGIN", 512))
+MIN_COMPLETION_TOKENS = max(1, env_int("REDNIMCLAUDE_MIN_COMPLETION_TOKENS", 256))
 
 http = requests.Session()
 http.headers.update({"Accept": "application/json"})
@@ -59,7 +62,7 @@ MODELS = [
         "provider": "nvidia",
         "kind": "chat",
         "capabilities": ["chat", "tools"],
-        "context_window": 200000,
+        "context_window": 262144,
         "tool_call_tested": True,
         "default": False,
     },
@@ -70,7 +73,7 @@ MODELS = [
         "provider": "nvidia",
         "kind": "chat",
         "capabilities": ["chat", "tools"],
-        "context_window": 200000,
+        "context_window": 262144,
         "tool_call_tested": True,
         "default": True,
     },
@@ -81,7 +84,7 @@ MODELS = [
         "provider": "nvidia",
         "kind": "chat",
         "capabilities": ["chat", "tools"],
-        "context_window": 200000,
+        "context_window": 262144,
         "tool_call_tested": True,
         "default": False,
     },
@@ -92,7 +95,7 @@ MODELS = [
         "provider": "nvidia",
         "kind": "chat",
         "capabilities": ["chat", "tools"],
-        "context_window": 200000,
+        "context_window": 262144,
         "tool_call_tested": True,
         "default": False,
     },
@@ -103,7 +106,7 @@ MODELS = [
         "provider": "nvidia",
         "kind": "chat",
         "capabilities": ["chat", "tools"],
-        "context_window": 200000,
+        "context_window": 262144,
         "tool_call_tested": True,
         "default": False,
     },
@@ -114,7 +117,7 @@ MODELS = [
         "provider": "nvidia",
         "kind": "chat",
         "capabilities": ["chat", "tools"],
-        "context_window": 200000,
+        "context_window": 262144,
         "tool_call_tested": True,
         "default": False,
     },
@@ -125,7 +128,7 @@ MODELS = [
         "provider": "nvidia",
         "kind": "chat",
         "capabilities": ["chat", "tools"],
-        "context_window": 200000,
+        "context_window": 262144,
         "tool_call_tested": True,
         "default": False,
     },
@@ -406,6 +409,103 @@ def estimate_tokens(body: dict[str, Any]) -> int:
     return text_tokens + (image_count * 512)
 
 
+def estimate_openai_tokens(payload: dict[str, Any]) -> int:
+    text_parts: list[str] = []
+    image_count = 0
+    for message in payload.get("messages") or []:
+        if not isinstance(message, dict):
+            continue
+        text_parts.append(str(message.get("role") or ""))
+        content = message.get("content")
+        if isinstance(content, str):
+            text_parts.append(content)
+        elif isinstance(content, list):
+            for item in content:
+                if not isinstance(item, dict):
+                    text_parts.append(str(item))
+                    continue
+                item_type = str(item.get("type") or "")
+                if item_type == "text":
+                    text_parts.append(str(item.get("text") or ""))
+                elif item_type == "image_url":
+                    image_count += 1
+                else:
+                    text_parts.append(json.dumps(item, ensure_ascii=False))
+        elif isinstance(content, dict):
+            text_parts.append(json.dumps(content, ensure_ascii=False))
+        elif content is not None:
+            text_parts.append(str(content))
+        for tool_call in message.get("tool_calls") or []:
+            text_parts.append(json.dumps(tool_call, ensure_ascii=False))
+    for tool in payload.get("tools") or []:
+        if isinstance(tool, dict):
+            text_parts.append(json.dumps(tool, ensure_ascii=False))
+    raw = "\n".join(part for part in text_parts if part)
+    text_tokens = max(1, len(raw) // 4) if raw else 1
+    return text_tokens + (image_count * 512)
+
+
+def clamp_max_tokens(requested: Any, input_tokens: int, context_window: int) -> int:
+    try:
+        requested_int = int(requested)
+    except Exception:
+        requested_int = 2048
+    requested_int = max(1, requested_int)
+    available = max(1, int(context_window) - max(0, int(input_tokens)) - TOKEN_SAFETY_MARGIN)
+    if available < MIN_COMPLETION_TOKENS:
+        return max(1, available)
+    return max(1, min(requested_int, available))
+
+
+def apply_context_guard(payload: dict[str, Any], *, input_tokens: int, context_window: int) -> dict[str, Any]:
+    guarded = deepcopy(payload)
+    guarded["max_tokens"] = clamp_max_tokens(guarded.get("max_tokens") or 2048, input_tokens, context_window)
+    return guarded
+
+
+def parse_context_error_limits(body: str) -> tuple[int, int] | None:
+    if not body:
+        return None
+    max_match = re.search(r"maximum context length is\s+(\d+)", body, re.IGNORECASE)
+    prompt_match = re.search(r"prompt contains at least\s+(\d+)\s+input tokens", body, re.IGNORECASE)
+    if max_match and prompt_match:
+        return int(max_match.group(1)), int(prompt_match.group(1))
+    return None
+
+
+def is_context_error(status_code: int, body: str) -> bool:
+    lowered = (body or "").lower()
+    return status_code == 400 and "maximum context length" in lowered and "input tokens" in lowered
+
+
+def proxy_openai_chat_with_context_retry(
+    payload: dict[str, Any],
+    *,
+    stream: bool,
+    context_window: int,
+    input_tokens: int,
+) -> requests.Response:
+    guarded_payload = apply_context_guard(payload, input_tokens=input_tokens, context_window=context_window)
+    response = proxy_openai_chat(guarded_payload, stream=stream)
+    if response.status_code < 400:
+        return response
+    try:
+        body_text = response.text
+    except Exception:
+        body_text = ""
+    if not is_context_error(response.status_code, body_text):
+        return response
+    limits = parse_context_error_limits(body_text)
+    if not limits:
+        return response
+    max_context, prompt_tokens = limits
+    retry_payload = deepcopy(guarded_payload)
+    retry_payload["max_tokens"] = clamp_max_tokens(retry_payload.get("max_tokens") or 2048, prompt_tokens, max_context)
+    if retry_payload["max_tokens"] >= int(guarded_payload.get("max_tokens") or 0):
+        return response
+    return proxy_openai_chat(retry_payload, stream=stream)
+
+
 def nim_headers() -> dict[str, str]:
     return {
         "Authorization": f"Bearer {NVIDIA_API_KEY}",
@@ -680,7 +780,12 @@ def anthropic_messages() -> Response:
         return error_response("model not available in rednimclaude", 404, "model_not_found")
     payload = anthropic_to_openai_payload(body, alias)
     stream = bool(body.get("stream"))
-    upstream = proxy_openai_chat(payload, stream=stream)
+    upstream = proxy_openai_chat_with_context_retry(
+        payload,
+        stream=stream,
+        context_window=int(alias["context_window"]),
+        input_tokens=estimate_tokens(body),
+    )
     if upstream.status_code >= 400:
         try:
             body_text = upstream.text
@@ -712,7 +817,12 @@ def openai_chat_completions() -> Response:
     payload = deepcopy(body)
     payload["model"] = alias["target"]
     stream = bool(payload.get("stream"))
-    upstream = proxy_openai_chat(payload, stream=stream)
+    upstream = proxy_openai_chat_with_context_retry(
+        payload,
+        stream=stream,
+        context_window=int(alias["context_window"]),
+        input_tokens=estimate_openai_tokens(payload),
+    )
     if upstream.status_code >= 400:
         try:
             body_text = upstream.text
