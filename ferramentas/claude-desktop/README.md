@@ -7,6 +7,8 @@ Ferramentas Windows para apontar o Claude Desktop para os gateways RED.
 - `Configurar-Claude-RED-ProxyPro.cmd`: grava a configuracao 3P/gateway do Claude Desktop com `https://redsystems.ddns.net/redproxypro`.
 - `Preparar-Claude-RED-Proxy-Normal.ps1`: grava a configuracao 3P/gateway do Claude Desktop com `https://redsystems.ddns.net/proxy`, preservando sessoes e storage local e usando os IDs crus do catalogo publico de `/proxy/v1/models`.
 - `Iniciar-Claude-RED-Proxy-Normal-Sem-VMP.cmd`: aplica o preparo do proxy normal completo e abre o Claude RED portatil.
+- `Preparar-Claude-RED-NIM5050.ps1`: grava a configuracao 3P/gateway do Claude Desktop com `https://redsystems.ddns.net:5050`, usando somente o catalogo direto do `rednimclaude`.
+- `Iniciar-Claude-RED-NIM5050-Sem-VMP.cmd`: aplica o preparo do gateway NIM direto e abre o Claude RED portatil.
 - `Preparar-Claude-RED-ClaudeProxy.ps1`: grava a configuracao 3P/gateway do Claude Desktop com `https://redsystems.ddns.net/redclaudeproxy`.
 - `Iniciar-Claude-RED-ClaudeProxy-Sem-VMP.cmd`: aplica o preparo da ponte Claude para o proxy normal e abre o Claude RED portatil.
 - `Ativar-VMP-para-Claude-Desktop.cmd`: tenta ativar Virtual Machine Platform em Windows completo.
@@ -21,6 +23,7 @@ O Windows local usado para operacao esta reduzido/capado e falha ao ativar VMP p
 C:\Users\Ronyd\Desktop\Claude RED Sem VMP.cmd
 C:\Users\Ronyd\Desktop\Claude RED Proxy Normal.cmd
 C:\Users\Ronyd\Desktop\Claude RED ClaudeProxy.cmd
+C:\Users\Ronyd\Desktop\Claude RED NIM 5050.cmd
 ```
 
 Esse modo serve para chat/modelos customizados pelo RED Proxy Pro ou pelo proxy normal. Ele nao entrega workspace/Code real do Claude Desktop, porque essa parte depende do backend local/sandbox que exige VMP.
@@ -34,5 +37,7 @@ A lista principal do RED Proxy Pro vem de `/redproxypro/v1/models`.
 A lista do proxy normal completo vem de `/proxy/v1/models`, igual ao catalogo publico usado por clientes genericos como Page Assist.
 
 A lista da ponte Claude vem de `/redclaudeproxy/v1/models`, que importa dinamicamente os modelos `claude-red-*` publicados pelo proxy normal.
+
+A lista do gateway NIM direto vem de `https://redsystems.ddns.net:5050/v1/models`, sem passar por nginx nem pelo proxy normal.
 
 Sempre que atualizar modelos fixos, revise `Preparar-Claude-RED-Chat.ps1`, `Configurar-Claude-RED-ProxyPro.cmd` e os fallbacks dos scripts do proxy normal. O `Preparar-Claude-RED-ClaudeProxy.ps1` prefere o catalogo vivo de `/redclaudeproxy/v1/models`.

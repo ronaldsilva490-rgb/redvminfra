@@ -25,6 +25,7 @@ Hoje a RED Systems roda com uma arquitetura de VM unica. O objetivo deste reposi
 - `/redproxypro/` -> proxy Vercel AI Gateway com rotacao de keys
 - `/redclaudeproxy/` -> ponte Claude Desktop/Code para os modelos do proxy normal
 - `/ollama/` -> alias do proxy IA
+- `:5050` -> RED NIM Claude direto para Claude Desktop
 - `/search/` -> busca web gratuita via SearXNG
 - `/msredpdf/` -> analise juridica de PDFs/DOCX com IA
 - `/redia/` -> runtime standalone da RED I.A
@@ -48,6 +49,7 @@ Estado da VM em 2026-05-06: OpenClaw, RED Trader e IQ Bridge continuam no repo, 
 | Proxy IA | `servicos/proxy` | `/opt/redvm-proxy` | `red-ollama-proxy.service` | ativo |
 | RED Proxy Pro | `servicos/redproxypro` | `/opt/redproxypro` | `redproxypro.service` | ativo |
 | RED Claude Proxy | `servicos/redclaudeproxy` | `/opt/redclaudeproxy` | `redclaudeproxy.service` | ativo |
+| RED NIM Claude | `servicos/rednimclaude` | `/opt/rednimclaude` | `rednimclaude.service` | ativo |
 | RED Search | `servicos/searxng` | `/opt/red-searxng` | `red-searxng.service` | ativo |
 | MS RED PDF | `servicos/msredpdf` | `/opt/msredpdf` | `msredpdf.service` | ativo |
 | RED I.A | `servicos/redia` | `/opt/redia` | `redia.service` | ativo |

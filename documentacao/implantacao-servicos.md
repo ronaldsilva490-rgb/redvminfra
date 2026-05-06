@@ -228,7 +228,69 @@ curl -sS http://127.0.0.1:8095/healthz
 curl -sS http://127.0.0.1:8095/v1/models -H 'Authorization: Bearer red'
 ```
 
-## 2B. RED Claude Proxy
+## 2B. RED NIM Claude
+
+Servico: `servicos/rednimclaude`
+
+Responsabilidade:
+
+- expor API Anthropic-compatible para Claude Desktop;
+- falar direto com `https://integrate.api.nvidia.com/v1`;
+- publicar apenas modelos NIM validados para chat, tools e visao;
+- servir TLS direto na porta publica `5050`, sem nginx.
+
+Instalacao:
+
+```bash
+mkdir -p /opt/rednimclaude /var/lib/rednimclaude
+rsync -av servicos/rednimclaude/ /opt/rednimclaude/
+cd /opt/rednimclaude
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
+```
+
+Ambiente em `/etc/rednimclaude.env`:
+
+```env
+REDNIMCLAUDE_HOST=0.0.0.0
+REDNIMCLAUDE_PORT=5050
+REDNIMCLAUDE_NIM_BASE_URL=https://integrate.api.nvidia.com/v1
+REDNIMCLAUDE_NVIDIA_API_KEY=
+REDNIMCLAUDE_REQUIRE_AUTH=1
+REDNIMCLAUDE_AUTH_TOKENS=red
+REDNIMCLAUDE_DEFAULT_MODEL=nim-qwen-next-80b
+REDNIMCLAUDE_TLS_CERT=/etc/letsencrypt/live/redsystems.ddns.net/fullchain.pem
+REDNIMCLAUDE_TLS_KEY=/etc/letsencrypt/live/redsystems.ddns.net/privkey.pem
+```
+
+Firewall:
+
+```bash
+ufw allow 5050/tcp
+```
+
+Systemd:
+
+```bash
+cp infraestrutura/systemd/rednimclaude.service /etc/systemd/system/rednimclaude.service
+systemctl daemon-reload
+systemctl enable --now rednimclaude
+systemctl status rednimclaude --no-pager
+```
+
+Health checks:
+
+```bash
+curl -sk https://127.0.0.1:5050/healthz
+curl -sk https://127.0.0.1:5050/v1/models -H 'Authorization: Bearer red' | python3 -m json.tool
+curl -sk https://127.0.0.1:5050/v1/messages \
+  -H 'Authorization: Bearer red' \
+  -H 'Anthropic-Version: 2023-06-01' \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"nim-qwen-next-80b","max_tokens":32,"messages":[{"role":"user","content":"responda OK"}]}'
+```
+
+## 2C. RED Claude Proxy
 
 Servico: `servicos/redclaudeproxy`
 

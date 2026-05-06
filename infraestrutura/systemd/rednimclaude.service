@@ -1,0 +1,21 @@
+[Unit]
+Description=RED NIM Claude Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/rednimclaude
+Environment=REDNIMCLAUDE_HOST=0.0.0.0
+Environment=REDNIMCLAUDE_PORT=5050
+EnvironmentFile=-/etc/rednimclaude.env
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/opt/rednimclaude/.venv/bin/python /opt/rednimclaude/app.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/rednimclaude.log
+StandardError=append:/var/log/rednimclaude.log
+
+[Install]
+WantedBy=multi-user.target

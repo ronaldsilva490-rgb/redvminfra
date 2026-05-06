@@ -1,0 +1,137 @@
+import json
+import sys
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import app as proxy  # noqa: E402
+
+
+class FakeResponse:
+    def __init__(self, status_code=200, payload=None, lines=None):
+        self.status_code = status_code
+        self._payload = payload or {}
+        self._lines = lines or []
+        self.content = json.dumps(self._payload).encode("utf-8")
+        self.text = self.content.decode("utf-8", "replace")
+
+    def json(self):
+        return self._payload
+
+    def iter_lines(self, decode_unicode=False, chunk_size=1):
+        for item in self._lines:
+            yield item
+
+
+class RedNimClaudeTests(unittest.TestCase):
+    def test_resolve_model_accepts_alias_and_target(self):
+        alias = proxy.resolve_model("nim-glm-5.1")
+        raw = proxy.resolve_model("z-ai/glm-5.1")
+        self.assertEqual(alias["target"], "z-ai/glm-5.1")
+        self.assertEqual(raw["id"], "nim-glm-5.1")
+
+    def test_anthropic_payload_converts_tools_and_tool_results(self):
+        body = {
+            "model": "nim-qwen-next-80b",
+            "system": "Seja conciso.",
+            "messages": [
+                {"role": "user", "content": [{"type": "text", "text": "Veja isso"}]},
+                {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_1", "name": "shell", "input": {"command": "dir"}}]},
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "ok"}]},
+            ],
+            "tools": [{"name": "shell", "description": "Executa", "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}}}],
+            "tool_choice": {"type": "tool", "name": "shell"},
+        }
+        payload = proxy.anthropic_to_openai_payload(body, proxy.resolve_model(body["model"]))
+        self.assertEqual(payload["model"], "qwen/qwen3-next-80b-a3b-instruct")
+        self.assertEqual(payload["messages"][0]["role"], "system")
+        self.assertEqual(payload["messages"][2]["tool_calls"][0]["function"]["name"], "shell")
+        self.assertEqual(payload["messages"][3]["role"], "tool")
+        self.assertEqual(payload["tool_choice"]["function"]["name"], "shell")
+
+    def test_anthropic_message_from_openai_maps_tool_calls(self):
+        payload = {
+            "id": "chatcmpl_1",
+            "choices": [
+                {
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "content": "",
+                        "tool_calls": [
+                            {"id": "call_1", "type": "function", "function": {"name": "shell", "arguments": "{\"command\":\"dir\"}"}}
+                        ],
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": 12, "completion_tokens": 3},
+        }
+        message = proxy.anthropic_message_from_openai(payload, "nim-glm-5.1")
+        self.assertEqual(message["stop_reason"], "tool_use")
+        self.assertEqual(message["content"][0]["type"], "tool_use")
+        self.assertEqual(message["content"][0]["name"], "shell")
+
+    def test_stream_conversion_emits_text_and_stop(self):
+        lines = [
+            b'data: {"choices":[{"delta":{"content":"ola "},"finish_reason":null}]}',
+            b'data: {"choices":[{"delta":{"content":"mundo"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2}}',
+            b"data: [DONE]",
+        ]
+        response = FakeResponse(lines=lines)
+        text = "".join(proxy.anthropic_sse_from_openai_stream(response, "nim-glm-5.1"))
+        self.assertIn('"type": "message_start"', text)
+        self.assertIn('"text": "ola "', text)
+        self.assertIn('"text": "mundo"', text)
+        self.assertIn('"stop_reason": "end_turn"', text)
+
+    def test_stream_conversion_emits_tool_use(self):
+        lines = [
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"shell","arguments":"{\\"command\\""}}]},"finish_reason":null}]}',
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\\"dir\\"}"}}]},"finish_reason":"tool_calls"}]}',
+            b"data: [DONE]",
+        ]
+        response = FakeResponse(lines=lines)
+        text = "".join(proxy.anthropic_sse_from_openai_stream(response, "nim-glm-5.1"))
+        self.assertIn('"type": "tool_use"', text)
+        self.assertIn('"partial_json": "{\\"command\\""', text)
+        self.assertIn('"stop_reason": "tool_use"', text)
+
+    def test_models_endpoint_requires_auth(self):
+        with proxy.app.test_client() as client:
+            response = client.get("/v1/models")
+        self.assertEqual(response.status_code, 401)
+
+    def test_models_endpoint_lists_curated_models(self):
+        with proxy.app.test_client() as client:
+            response = client.get("/v1/models", headers={"Authorization": "Bearer red"})
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        ids = [item["id"] for item in data["data"]]
+        self.assertIn("nim-qwen-next-80b", ids)
+        self.assertNotIn("nim-nemotron-3-super", ids)
+
+    def test_messages_endpoint_forwards_to_nim(self):
+        fake = FakeResponse(
+            payload={
+                "id": "chatcmpl_1",
+                "choices": [{"finish_reason": "stop", "message": {"content": "OK"}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+            }
+        )
+        with patch.object(proxy, "proxy_openai_chat", return_value=fake), patch.object(proxy, "NVIDIA_API_KEY", "fake"):
+            with proxy.app.test_client() as client:
+                response = client.post(
+                    "/v1/messages",
+                    headers={"Authorization": "Bearer red"},
+                    json={"model": "nim-qwen-next-80b", "messages": [{"role": "user", "content": "oi"}]},
+                )
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["model"], "nim-qwen-next-80b")
+        self.assertEqual(body["content"][0]["text"], "OK")
+
+
+if __name__ == "__main__":
+    unittest.main()
