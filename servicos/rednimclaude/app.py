@@ -56,9 +56,10 @@ CONNECT_TIMEOUT = env_int("REDNIMCLAUDE_CONNECT_TIMEOUT", 20)
 READ_TIMEOUT = env_int("REDNIMCLAUDE_READ_TIMEOUT", 360)
 TLS_CERT = (os.getenv("REDNIMCLAUDE_TLS_CERT") or "").strip()
 TLS_KEY = (os.getenv("REDNIMCLAUDE_TLS_KEY") or "").strip()
-TOKEN_SAFETY_MARGIN = max(0, env_int("REDNIMCLAUDE_TOKEN_SAFETY_MARGIN", 512))
+TOKEN_SAFETY_MARGIN = max(0, env_int("REDNIMCLAUDE_TOKEN_SAFETY_MARGIN", 4096))
 MIN_COMPLETION_TOKENS = max(1, env_int("REDNIMCLAUDE_MIN_COMPLETION_TOKENS", 256))
-MAX_CONTEXT_RETRIES = max(1, env_int("REDNIMCLAUDE_MAX_CONTEXT_RETRIES", 3))
+MAX_CONTEXT_RETRIES = max(1, env_int("REDNIMCLAUDE_MAX_CONTEXT_RETRIES", 5))
+CONTEXT_RETRY_MARGIN_STEP = max(0, env_int("REDNIMCLAUDE_CONTEXT_RETRY_MARGIN_STEP", 1024))
 RATE_LIMIT_MIN_INTERVAL_SECONDS = max(0.0, env_float("REDNIMCLAUDE_RATE_LIMIT_MIN_INTERVAL_SECONDS", 3.25))
 RATE_LIMIT_COOLDOWN_SECONDS = max(0.0, env_float("REDNIMCLAUDE_RATE_LIMIT_COOLDOWN_SECONDS", 6.0))
 RATE_LIMIT_COOLDOWN_STEP_SECONDS = max(0.0, env_float("REDNIMCLAUDE_RATE_LIMIT_COOLDOWN_STEP_SECONDS", 2.0))
@@ -559,7 +560,7 @@ def proxy_openai_chat_with_context_retry(
             return response
         max_context, prompt_tokens = limits
         next_payload = deepcopy(current_payload)
-        extra_margin += 256
+        extra_margin += CONTEXT_RETRY_MARGIN_STEP
         next_payload["max_tokens"] = clamp_max_tokens(
             next_payload.get("max_tokens") or 2048,
             prompt_tokens,

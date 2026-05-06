@@ -29,7 +29,7 @@ class FakeResponse:
 class RedNimClaudeTests(unittest.TestCase):
     def test_clamp_max_tokens_reduces_only_output_budget(self):
         clamped = proxy.clamp_max_tokens(32000, 230145, 262144)
-        self.assertEqual(clamped, 31487)
+        self.assertEqual(clamped, 27903)
 
     def test_resolve_model_accepts_alias_and_target(self):
         alias = proxy.resolve_model("nim-glm-5.1")
@@ -169,7 +169,7 @@ class RedNimClaudeTests(unittest.TestCase):
         self.assertIs(response, ok)
         self.assertEqual(len(calls), 2)
         self.assertEqual(calls[0][0], 32000)
-        self.assertEqual(calls[1][0], 31231)
+        self.assertEqual(calls[1][0], 26879)
 
     def test_context_retry_can_retry_more_than_once(self):
         too_long_1 = FakeResponse(
@@ -215,7 +215,7 @@ class RedNimClaudeTests(unittest.TestCase):
                 input_tokens=230145,
             )
         self.assertIs(response, ok)
-        self.assertEqual(calls[:3], [31487, 30718, 30420])
+        self.assertEqual(calls[:3], [27903, 26366, 25300])
 
     def test_rate_limit_retry_hides_single_429(self):
         limited = FakeResponse(status_code=429, payload={"status": 429, "title": "Too Many Requests"})
