@@ -74,6 +74,140 @@ http_session = requests.Session()
 http_session.headers.update({"Accept": "application/json"})
 
 
+def split_csv_ints(value, fallback):
+    out = []
+    for raw in str(value or "").replace(";", ",").split(","):
+        item = raw.strip()
+        if not item:
+            continue
+        try:
+            out.append(int(item))
+        except Exception:
+            pass
+    return set(out or fallback)
+
+
+RETRY_STATUSES = split_csv_ints(
+    os.getenv("RED_PROXY_RETRY_STATUSES", "401,402,403,404,408,409,429,500,502,503,504"),
+    {401, 402, 403, 404, 408, 409, 429, 500, 502, 503, 504},
+)
+MAX_FAILOVER_KEYS = max(1, env_int("RED_PROXY_MAX_FAILOVER_KEYS", 16))
+SENSITIVE_UPSTREAM_ERROR_MARKERS = (
+    "insufficient_funds",
+    "insufficient funds",
+    "add credits",
+    "top up",
+    "top-up",
+    "billing",
+    "payment required",
+    "vercel.com/d",
+)
+
+
+def cooldown_for_status(status_code):
+    try:
+        status = int(status_code)
+    except Exception:
+        status = 0
+    if status == 401:
+        return env_int("RED_PROXY_COOLDOWN_401", 3600)
+    if status == 402:
+        return env_int("RED_PROXY_COOLDOWN_402", 21600)
+    if status == 403:
+        return env_int("RED_PROXY_COOLDOWN_403", 300)
+    if status == 404:
+        return env_int("RED_PROXY_COOLDOWN_404", 60)
+    if status == 429:
+        return env_int("RED_PROXY_COOLDOWN_429", 180)
+    if status >= 500:
+        return env_int("RED_PROXY_COOLDOWN_5XX", 60)
+    return env_int("RED_PROXY_COOLDOWN_DEFAULT", 60)
+
+
+def should_failover_status(status_code):
+    try:
+        status = int(status_code)
+    except Exception:
+        return False
+    return status in RETRY_STATUSES or status >= 500
+
+
+def raw_error_message_from_response(resp):
+    try:
+        payload = resp.json()
+        error = payload.get("error") if isinstance(payload, dict) else None
+        if isinstance(error, dict):
+            return str(error.get("message") or error.get("type") or resp.text[:300])
+    except Exception:
+        pass
+    try:
+        return str(resp.text[:300])
+    except Exception:
+        return ""
+
+
+def is_sensitive_upstream_error(status_code, message):
+    try:
+        status = int(status_code)
+    except Exception:
+        status = 0
+    if status in (401, 402, 403):
+        return True
+    normalized = str(message or "").lower()
+    return any(marker in normalized for marker in SENSITIVE_UPSTREAM_ERROR_MARKERS)
+
+
+def safe_upstream_error_message(status_code, message):
+    try:
+        status = int(status_code)
+    except Exception:
+        status = 0
+    if status == 401:
+        return "upstream key rejected"
+    if status == 402:
+        return "upstream key unavailable"
+    if status == 403:
+        return "upstream key forbidden for this request"
+    if status == 404:
+        return "upstream key has no access to this model or endpoint"
+    if status == 429:
+        return "upstream key rate limited"
+    if status >= 500:
+        return "upstream provider temporarily unavailable"
+    if is_sensitive_upstream_error(status, message):
+        return "upstream provider rejected the request"
+    cleaned = re.sub(r"https?://\S+", "[redacted-url]", str(message or ""))
+    return cleaned[:300] or ("upstream error " + str(status))
+
+
+def failover_attempt_limit():
+    active_count = 0
+    try:
+        active_count = key_pool.active_count()
+    except Exception:
+        active_count = 0
+    return max(1, min(MAX_FAILOVER_KEYS, max(MAX_RETRIES + 1, active_count or 1)))
+
+
+def sanitized_proxy_error(message="upstream provider unavailable after internal failover", status=503, attempts=None):
+    payload = {
+        "error": {
+            "message": message,
+            "type": "red_proxy_upstream_unavailable",
+        }
+    }
+    if attempts is not None:
+        payload["attempts"] = attempts
+    return Response(json.dumps(payload, ensure_ascii=False), status=status, content_type="application/json")
+
+
+def provider_error_response(resp):
+    raw_error = raw_error_message_from_response(resp)
+    if should_failover_status(resp.status_code) or is_sensitive_upstream_error(resp.status_code, raw_error):
+        return sanitized_proxy_error()
+    return Response(resp.content, status=resp.status_code, content_type=resp.headers.get("Content-Type", "application/json"))
+
+
 NVIDIA_MODEL_NOTES = {
     "qwen/qwen3-next-80b-a3b-instruct": "Melhor default geral para REDIA: contexto, JSON e baixa alucinacao.",
     "meta/llama-4-maverick-17b-128e-instruct": "Fallback rapido para papo simples.",
@@ -1614,10 +1748,13 @@ def proxy_response_from_upstream(resp):
 def upstream_request(method, path, source_ip, *, json_body=None, raw_data=None, timeout=180, stream=False, extra_headers=None):
     req_path = path
     last_error = None
-    for attempt in range(MAX_RETRIES + 1):
-        key_id, api_key = key_pool.get_key()
+    attempts = []
+    used_keys = set()
+    for attempt in range(failover_attempt_limit()):
+        key_id, api_key = key_pool.get_key(exclude=used_keys)
         if not api_key:
-            return None, Response('{"error":"No keys available"}', status=503, content_type="application/json")
+            break
+        used_keys.add(key_id)
 
         started = time.time()
         try:
@@ -1641,38 +1778,40 @@ def upstream_request(method, path, source_ip, *, json_body=None, raw_data=None, 
                 allow_redirects=False,
             )
             latency = time.time() - started
+            attempts.append({"key": key_id, "status": resp.status_code, "latency": round(latency, 3)})
 
-            if resp.status_code == 429 and attempt < MAX_RETRIES:
-                key_pool.report_failure(key_id, is_rate_limit=True)
-                log_message("WARN", "429 key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 429)
-                continue
-            if resp.status_code == 404 and attempt < MAX_RETRIES:
-                key_pool.report_failure(key_id, is_rate_limit=False)
-                log_message("WARN", "404 key " + str(key_id) + " (sem acesso?) -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 404)
-                continue
-            if resp.status_code >= 500 and attempt < MAX_RETRIES:
-                key_pool.report_failure(key_id, is_rate_limit=False)
-                log_message("WARN", str(resp.status_code) + " key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, resp.status_code)
+            if should_failover_status(resp.status_code) and attempt < (failover_attempt_limit() - 1):
+                raw_error = raw_error_message_from_response(resp)
+                last_error = safe_upstream_error_message(resp.status_code, raw_error)
+                key_pool.report_failure(key_id, status_code=resp.status_code, error_message=raw_error)
+                log_message("WARN", str(resp.status_code) + " key " + str(key_id) + " -> internal failover " + str(attempt + 1), key_id, source_ip, req_path, latency, resp.status_code)
+                resp.close()
                 continue
 
             if resp.status_code < 400:
                 key_pool.report_success(key_id)
             else:
-                key_pool.report_failure(key_id, resp.status_code == 429)
+                raw_error = raw_error_message_from_response(resp)
+                last_error = safe_upstream_error_message(resp.status_code, raw_error)
+                key_pool.report_failure(key_id, resp.status_code == 429, status_code=resp.status_code, error_message=raw_error)
+                if should_failover_status(resp.status_code) or is_sensitive_upstream_error(resp.status_code, raw_error):
+                    resp.close()
+                    return None, sanitized_proxy_error(attempts=attempts)
 
             log_message("INFO", method + " " + req_path + " -> HTTP " + str(resp.status_code), key_id, source_ip, req_path, latency, resp.status_code)
             return resp, None
         except Exception as e:
             latency = time.time() - started
             last_error = str(e)
-            key_pool.report_failure(key_id, is_rate_limit=False)
-            if attempt < MAX_RETRIES:
-                log_message("WARN", "Exception key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 0)
+            attempts.append({"key": key_id, "status": None, "latency": round(latency, 3)})
+            key_pool.report_failure(key_id, is_rate_limit=False, status_code=0, error_message=last_error)
+            if attempt < (failover_attempt_limit() - 1):
+                log_message("WARN", "Exception key " + str(key_id) + " -> internal failover " + str(attempt + 1), key_id, source_ip, req_path, latency, 0)
                 continue
             log_message("ERROR", method + " " + req_path + " -> " + last_error[:80], key_id, source_ip, req_path, latency, 500)
-            return None, Response(json.dumps({"error": last_error}), status=500, content_type="application/json")
+            return None, sanitized_proxy_error(attempts=attempts)
 
-    return None, Response(json.dumps({"error": last_error or "Max retries exceeded"}), status=502, content_type="application/json")
+    return None, sanitized_proxy_error(attempts=attempts)
 
 
 def upstream_json_request(method, path, source_ip, *, body=None, timeout=180):
@@ -1682,7 +1821,7 @@ def upstream_json_request(method, path, source_ip, *, body=None, timeout=180):
     if resp is None:
         return None, Response('{"error":"upstream unavailable"}', status=502, content_type="application/json")
     if resp.status_code >= 400:
-        return None, Response(resp.content, status=resp.status_code, content_type=resp.headers.get("Content-Type", "application/json"))
+        return None, provider_error_response(resp)
     try:
         return resp.json(), None
     except Exception:
@@ -2715,7 +2854,7 @@ def nvidia_openai_chat_json(model_id, model_info, body, source_ip, endpoint_name
                 upstream = retry_upstream
                 latency += retry_latency
         if upstream.status_code >= 400:
-            return None, Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+            return None, provider_error_response(upstream)
         return upstream.json(), None
     except Exception as e:
         latency = time.time() - started
@@ -2756,7 +2895,7 @@ def mistral_openai_chat_json(model_id, model_info, body, source_ip, endpoint_nam
                 )
                 upstream = retry_upstream
         if upstream.status_code >= 400:
-            return None, Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+            return None, provider_error_response(upstream)
         return upstream.json(), None
     except Exception as e:
         latency = time.time() - started
@@ -2810,7 +2949,7 @@ def mistral_openai_chat_request(model_id, model_info, body, source_ip):
                 log_message("INFO", "Mistral openai stream textual tool retry " + model_id + " -> HTTP " + str(upstream.status_code), "mistral", source_ip, "/v1/chat/completions.tool_text_retry", retry_latency, upstream.status_code)
 
         if upstream.status_code >= 400:
-            return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+            return provider_error_response(upstream)
 
         def generate_openai_stream():
             chunk_count = 0
@@ -2913,7 +3052,7 @@ def nvidia_openai_embeddings_json(model_id, body, source_ip, endpoint_name):
         latency = time.time() - started
         log_message("INFO", "NVIDIA embeddings " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, endpoint_name, latency, upstream.status_code)
         if upstream.status_code >= 400:
-            return None, Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+            return None, provider_error_response(upstream)
         return upstream.json(), None
     except Exception as e:
         latency = time.time() - started
@@ -2960,7 +3099,7 @@ def universal_embeddings_json(body, source_ip):
     if resp is None:
         return None, proxy_error_response("upstream unavailable", 502)
     if resp.status_code >= 400:
-        return None, Response(resp.content, status=resp.status_code, content_type=resp.headers.get("Content-Type", "application/json"))
+        return None, provider_error_response(resp)
     try:
         return resp.json(), None
     except Exception:
@@ -3001,7 +3140,7 @@ def nvidia_openai_chat_request(model_id, model_info, body, source_ip):
         latency = time.time() - started
         log_message("INFO", "NVIDIA openai " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, "/v1/chat/completions", latency, upstream.status_code)
         if upstream.status_code >= 400:
-            return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+            return provider_error_response(upstream)
 
         if payload.get("stream"):
             def generate_openai_stream():
@@ -3511,7 +3650,7 @@ def openai_chat_stream_to_anthropic_response(body, source_ip, endpoint_name, res
         latency = time.time() - started
         log_message("INFO", "NVIDIA anthropic stream " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, endpoint_name, latency, upstream.status_code)
         if upstream.status_code >= 400:
-            return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+            return provider_error_response(upstream)
         return Response(
             anthropic_sse_from_openai_stream(upstream, response_model_name or nvidia_display_name(model_id)),
             status=200,
@@ -3537,7 +3676,7 @@ def openai_chat_stream_to_anthropic_response(body, source_ip, endpoint_name, res
         latency = time.time() - started
         log_message("INFO", "Mistral anthropic stream " + model_id + " -> HTTP " + str(upstream.status_code), "mistral", source_ip, endpoint_name, latency, upstream.status_code)
         if upstream.status_code >= 400:
-            return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+            return provider_error_response(upstream)
         return Response(
             anthropic_sse_from_openai_stream(upstream, response_model_name or model_id),
             status=200,
@@ -3559,7 +3698,7 @@ def openai_chat_stream_to_anthropic_response(body, source_ip, endpoint_name, res
     if error_response is not None:
         return error_response
     if upstream.status_code >= 400:
-        return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+        return provider_error_response(upstream)
     return Response(
         anthropic_sse_from_openai_stream(upstream, response_model_name or extract_model_name(payload)),
         status=200,
@@ -3596,7 +3735,7 @@ def nvidia_anthropic_messages_request(model_id, model_info, body, source_ip, res
         latency = time.time() - started
         log_message("INFO", "NVIDIA anthropic " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, "/v1/messages", latency, upstream.status_code)
         if upstream.status_code >= 400:
-            return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+            return provider_error_response(upstream)
 
         message = anthropic_response_from_openai(upstream.json(), response_model_name or nvidia_display_name(model_id))
         if body.get("stream"):
@@ -3623,7 +3762,7 @@ def nvidia_chat_request(model_id, body, base_path, source_ip):
             latency = time.time() - started
             log_message("INFO", "NVIDIA stream " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, base_path, latency, upstream.status_code)
             if upstream.status_code >= 400:
-                return Response(upstream.text, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+                return provider_error_response(upstream)
 
             def generate_chat_stream():
                 chunk_count = 0
@@ -3669,7 +3808,7 @@ def nvidia_chat_request(model_id, body, base_path, source_ip):
         latency = time.time() - started
         log_message("INFO", "NVIDIA " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, base_path, latency, upstream.status_code)
         if upstream.status_code >= 400:
-            return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+            return provider_error_response(upstream)
 
         data = upstream.json()
         choice = (data.get("choices") or [{}])[0]
@@ -3728,7 +3867,7 @@ def mistral_chat_request(model_id, body, base_path, source_ip):
             latency = time.time() - started
             log_message("INFO", "Mistral stream " + model_id + " -> HTTP " + str(upstream.status_code), "mistral", source_ip, base_path, latency, upstream.status_code)
             if upstream.status_code >= 400:
-                return Response(upstream.text, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+                return provider_error_response(upstream)
 
             def generate_chat_stream():
                 chunk_count = 0
@@ -3875,7 +4014,7 @@ def nvidia_image_request(model_id, model_info, body, source_ip, as_ollama_genera
         latency = time.time() - started
         log_message("INFO", "NVIDIA image " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, "/api/images/generate", latency, upstream.status_code)
         if upstream.status_code >= 400:
-            return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+            return provider_error_response(upstream)
         data = upstream.json()
         artifacts = data.get("artifacts") or []
         images = []
@@ -3926,11 +4065,14 @@ def forward_to_upstream(full_path=None):
     base_path = full_path.split("?")[0]
     ttl = CACHEABLE_GETS.get(base_path) if request.method == "GET" else None
     last_error = None
+    attempts = []
+    used_keys = set()
 
-    for attempt in range(MAX_RETRIES + 1):
-        key_id, api_key = key_pool.get_key()
+    for attempt in range(failover_attempt_limit()):
+        key_id, api_key = key_pool.get_key(exclude=used_keys)
         if not api_key:
-            return '{"error": "No keys available"}', 503
+            break
+        used_keys.add(key_id)
 
         start = time.time()
         try:
@@ -3952,24 +4094,25 @@ def forward_to_upstream(full_path=None):
                 allow_redirects=False,
             )
             latency = time.time() - start
+            attempts.append({"key": key_id, "status": resp.status_code, "latency": round(latency, 3)})
 
-            if resp.status_code == 429 and attempt < MAX_RETRIES:
-                key_pool.report_failure(key_id, is_rate_limit=True)
-                log_message("WARN", "429 key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 429)
-                continue
-            if resp.status_code == 404 and attempt < MAX_RETRIES:
-                key_pool.report_failure(key_id, is_rate_limit=False)
-                log_message("WARN", "404 key " + str(key_id) + " (sem acesso?) -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 404)
-                continue
-            if resp.status_code >= 500 and attempt < MAX_RETRIES:
-                key_pool.report_failure(key_id, is_rate_limit=False)
-                log_message("WARN", str(resp.status_code) + " key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, resp.status_code)
+            if should_failover_status(resp.status_code) and attempt < (failover_attempt_limit() - 1):
+                raw_error = raw_error_message_from_response(resp)
+                last_error = safe_upstream_error_message(resp.status_code, raw_error)
+                key_pool.report_failure(key_id, status_code=resp.status_code, error_message=raw_error)
+                log_message("WARN", str(resp.status_code) + " key " + str(key_id) + " -> internal failover " + str(attempt + 1), key_id, source_ip, req_path, latency, resp.status_code)
+                resp.close()
                 continue
 
             if resp.status_code < 400:
                 key_pool.report_success(key_id)
             else:
-                key_pool.report_failure(key_id, resp.status_code == 429)
+                raw_error = raw_error_message_from_response(resp)
+                last_error = safe_upstream_error_message(resp.status_code, raw_error)
+                key_pool.report_failure(key_id, resp.status_code == 429, status_code=resp.status_code, error_message=raw_error)
+                if should_failover_status(resp.status_code) or is_sensitive_upstream_error(resp.status_code, raw_error):
+                    resp.close()
+                    return sanitized_proxy_error(attempts=attempts)
 
             log_message("INFO", request.method + " " + req_path + " -> HTTP " + str(resp.status_code), key_id, source_ip, req_path, latency, resp.status_code)
 
@@ -3996,14 +4139,15 @@ def forward_to_upstream(full_path=None):
         except Exception as e:
             latency = time.time() - start
             last_error = str(e)
-            key_pool.report_failure(key_id, is_rate_limit=False)
-            if attempt < MAX_RETRIES:
-                log_message("WARN", "Exception key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 0)
+            attempts.append({"key": key_id, "status": None, "latency": round(latency, 3)})
+            key_pool.report_failure(key_id, is_rate_limit=False, status_code=0, error_message=last_error)
+            if attempt < (failover_attempt_limit() - 1):
+                log_message("WARN", "Exception key " + str(key_id) + " -> internal failover " + str(attempt + 1), key_id, source_ip, req_path, latency, 0)
                 continue
             log_message("ERROR", request.method + " " + req_path + " -> " + last_error[:80], key_id, source_ip, req_path, latency, 500)
-            return json.dumps({"error": last_error}), 500
+            return sanitized_proxy_error(attempts=attempts)
 
-    return json.dumps({"error": last_error or "Max retries exceeded"}), 502
+    return sanitized_proxy_error(attempts=attempts)
 
 
 # ============ LOGGING COM ROTACAO ============
@@ -4098,18 +4242,17 @@ class KeyPool:
                 if self._dirty:
                     self._save_to_disk()
 
-    def get_key(self):
+    def get_key(self, exclude=None):
         """Retorna (key_id, api_key) de uma key disponivel. Incrementa contador in-memory."""
+        exclude = set(exclude or [])
         with self._lock:
             self._check_reload()
             now = time.time()
-            available = [k for k in self._keys if k.get("active") and now > k.get("cooldown_until", 0)]
-            if not available:
-                # Se todas estao em cooldown, reseta cooldowns
-                for k in self._keys:
-                    if k.get("active"):
-                        k["cooldown_until"] = 0
-                available = [k for k in self._keys if k.get("active")]
+            available = [
+                k
+                for k in self._keys
+                if k.get("active") and k.get("id") not in exclude and now > k.get("cooldown_until", 0)
+            ]
             if not available:
                 return None, None
             key = random.choice(available)
@@ -4126,15 +4269,24 @@ class KeyPool:
                     self._dirty = True
                     break
 
-    def report_failure(self, key_id, is_rate_limit=False):
+    def report_failure(self, key_id, is_rate_limit=False, status_code=None, error_message=""):
         with self._lock:
             for k in self._keys:
                 if k["id"] == key_id:
                     k["failures"] = k.get("failures", 0) + 1
-                    cooldown = 60 if is_rate_limit else 15
+                    status = status_code if status_code is not None else (429 if is_rate_limit else 0)
+                    cooldown = cooldown_for_status(status)
                     k["cooldown_until"] = time.time() + cooldown
+                    k["last_status"] = status
+                    if error_message:
+                        k["last_error"] = safe_upstream_error_message(status, error_message)
                     self._dirty = True
                     break
+
+    def active_count(self):
+        with self._lock:
+            self._check_reload()
+            return sum(1 for k in self._keys if k.get("active"))
 
     def get_stats(self):
         with self._lock:
@@ -4181,6 +4333,8 @@ def public_key_stats(keys):
                 "total_requests": int(key.get("total_requests", 0) or 0),
                 "successes": int(key.get("successes", 0) or 0),
                 "failures": int(key.get("failures", 0) or 0),
+                "last_status": key.get("last_status"),
+                "last_error": key.get("last_error", ""),
             }
         )
     return out
@@ -4209,6 +4363,8 @@ def admin_stats():
             },
             "host": PROXY_HOST,
             "port": PROXY_PORT,
+            "retry_statuses": sorted(RETRY_STATUSES),
+            "max_failover_keys": MAX_FAILOVER_KEYS,
             "keys": public_key_stats(keys),
             "summary": summarize_keys(keys),
             "router": {
@@ -4494,10 +4650,14 @@ def ollama_embeddings():
     if error_response is not None:
         return error_response
     if resp is not None and resp.status_code not in (404, 405):
+        if resp.status_code >= 400:
+            return provider_error_response(resp)
         return Response(resp.content, status=resp.status_code, content_type=resp.headers.get("Content-Type", "application/json"))
     legacy_resp, legacy_error = upstream_request("POST", "/api/embeddings", request.remote_addr, json_body=routed_body, timeout=180, stream=False)
     if legacy_error is not None:
         return legacy_error
+    if legacy_resp.status_code >= 400:
+        return provider_error_response(legacy_resp)
     return Response(legacy_resp.content, status=legacy_resp.status_code, content_type=legacy_resp.headers.get("Content-Type", "application/json"))
 
 
@@ -4582,10 +4742,13 @@ def catch_all(path):
 
     # --- Request com retry ---
     last_error = None
-    for attempt in range(MAX_RETRIES + 1):
-        key_id, api_key = key_pool.get_key()
+    attempts = []
+    used_keys = set()
+    for attempt in range(failover_attempt_limit()):
+        key_id, api_key = key_pool.get_key(exclude=used_keys)
         if not api_key:
-            return '{"error": "No keys available"}', 503
+            break
+        used_keys.add(key_id)
 
         start = time.time()
 
@@ -4609,30 +4772,26 @@ def catch_all(path):
             )
 
             latency = time.time() - start
+            attempts.append({"key": key_id, "status": resp.status_code, "latency": round(latency, 3)})
 
-            # Rate limited - retry com outra key
-            if resp.status_code == 429 and attempt < MAX_RETRIES:
-                key_pool.report_failure(key_id, is_rate_limit=True)
-                log_message("WARN", "429 key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 429)
-                continue
-
-            # 404 - key pode nao ter acesso ao modelo/endpoint - retry com outra key
-            if resp.status_code == 404 and attempt < MAX_RETRIES:
-                key_pool.report_failure(key_id, is_rate_limit=False)
-                log_message("WARN", "404 key " + str(key_id) + " (sem acesso?) -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 404)
-                continue
-
-            # Server error - retry com outra key
-            if resp.status_code >= 500 and attempt < MAX_RETRIES:
-                key_pool.report_failure(key_id, is_rate_limit=False)
-                log_message("WARN", str(resp.status_code) + " key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, resp.status_code)
+            if should_failover_status(resp.status_code) and attempt < (failover_attempt_limit() - 1):
+                raw_error = raw_error_message_from_response(resp)
+                last_error = safe_upstream_error_message(resp.status_code, raw_error)
+                key_pool.report_failure(key_id, status_code=resp.status_code, error_message=raw_error)
+                log_message("WARN", str(resp.status_code) + " key " + str(key_id) + " -> internal failover " + str(attempt + 1), key_id, source_ip, req_path, latency, resp.status_code)
+                resp.close()
                 continue
 
             # Sucesso ou erro final
             if resp.status_code < 400:
                 key_pool.report_success(key_id)
             else:
-                key_pool.report_failure(key_id, resp.status_code == 429)
+                raw_error = raw_error_message_from_response(resp)
+                last_error = safe_upstream_error_message(resp.status_code, raw_error)
+                key_pool.report_failure(key_id, resp.status_code == 429, status_code=resp.status_code, error_message=raw_error)
+                if should_failover_status(resp.status_code) or is_sensitive_upstream_error(resp.status_code, raw_error):
+                    resp.close()
+                    return sanitized_proxy_error(attempts=attempts)
 
             log_message("INFO", request.method + " " + req_path + " -> HTTP " + str(resp.status_code), key_id, source_ip, req_path, latency, resp.status_code)
 
@@ -4662,14 +4821,15 @@ def catch_all(path):
         except Exception as e:
             latency = time.time() - start
             last_error = str(e)
-            key_pool.report_failure(key_id, is_rate_limit=False)
-            if attempt < MAX_RETRIES:
-                log_message("WARN", "Exception key " + str(key_id) + " -> retry " + str(attempt + 1), key_id, source_ip, req_path, latency, 0)
+            attempts.append({"key": key_id, "status": None, "latency": round(latency, 3)})
+            key_pool.report_failure(key_id, is_rate_limit=False, status_code=0, error_message=last_error)
+            if attempt < (failover_attempt_limit() - 1):
+                log_message("WARN", "Exception key " + str(key_id) + " -> internal failover " + str(attempt + 1), key_id, source_ip, req_path, latency, 0)
                 continue
             log_message("ERROR", request.method + " " + req_path + " -> " + last_error[:80], key_id, source_ip, req_path, latency, 500)
-            return json.dumps({"error": last_error}), 500
+            return sanitized_proxy_error(attempts=attempts)
 
-    return json.dumps({"error": last_error or "Max retries exceeded"}), 502
+    return sanitized_proxy_error(attempts=attempts)
 
 
 if __name__ == "__main__":

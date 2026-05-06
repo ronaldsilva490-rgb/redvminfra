@@ -2,6 +2,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -9,7 +10,109 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import proxy  # noqa: E402
 
 
+class FakeUpstreamResponse:
+    def __init__(self, status_code, payload):
+        self.status_code = status_code
+        self.headers = {"Content-Type": "application/json"}
+        self._content = json.dumps(payload).encode("utf-8")
+        self.closed = False
+
+    @property
+    def content(self):
+        return self._content
+
+    @property
+    def text(self):
+        return self._content.decode("utf-8", errors="replace")
+
+    def json(self):
+        return json.loads(self.text)
+
+    def close(self):
+        self.closed = True
+
+
+class FakeKeyPool:
+    def __init__(self):
+        self.keys = [
+            {"id": 1, "key": "vck_empty", "failures": 0, "successes": 0, "cooldown_until": 0},
+            {"id": 2, "key": "vck_good", "failures": 0, "successes": 0, "cooldown_until": 0},
+        ]
+
+    def get_key(self, exclude=None):
+        exclude = set(exclude or [])
+        for key in self.keys:
+            if key["id"] not in exclude:
+                return key["id"], key["key"]
+        return None, None
+
+    def report_failure(self, key_id, is_rate_limit=False, status_code=None, error_message=""):
+        for key in self.keys:
+            if key["id"] == key_id:
+                key["failures"] += 1
+                key["last_status"] = status_code
+                key["last_error"] = proxy.safe_upstream_error_message(status_code or 0, error_message)
+                key["cooldown_until"] = 1
+
+    def report_success(self, key_id):
+        for key in self.keys:
+            if key["id"] == key_id:
+                key["successes"] += 1
+
+    def active_count(self):
+        return len(self.keys)
+
+
 class ResponsesAdapterTests(unittest.TestCase):
+    def test_upstream_request_failovers_402_without_leaking_billing_error(self):
+        raw_billing_error = {
+            "error": {
+                "message": "Insufficient funds. Please add credits: https://vercel.com/d?to=top-up",
+                "type": "insufficient_funds",
+            }
+        }
+        ok_payload = {"choices": [{"message": {"role": "assistant", "content": "ok"}}]}
+        responses = [FakeUpstreamResponse(402, raw_billing_error), FakeUpstreamResponse(200, ok_payload)]
+        seen_auth = []
+        fake_pool = FakeKeyPool()
+
+        def fake_request(**kwargs):
+            seen_auth.append(kwargs["headers"]["Authorization"])
+            return responses.pop(0)
+
+        with patch.object(proxy, "key_pool", fake_pool), patch.object(proxy.http_session, "request", side_effect=fake_request):
+            resp, error_response = proxy.upstream_request("POST", "/v1/chat/completions", "127.0.0.1", json_body={"model": "x"})
+
+        self.assertIsNone(error_response)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(seen_auth, ["Bearer vck_empty", "Bearer vck_good"])
+        self.assertEqual(fake_pool.keys[0]["last_status"], 402)
+        self.assertEqual(fake_pool.keys[0]["last_error"], "upstream key unavailable")
+        self.assertEqual(fake_pool.keys[1]["successes"], 1)
+
+    def test_upstream_request_exhausted_402_returns_sanitized_error(self):
+        raw_billing_error = {
+            "error": {
+                "message": "Insufficient funds. Please add credits: https://vercel.com/d?to=top-up",
+                "type": "insufficient_funds",
+            }
+        }
+        responses = [FakeUpstreamResponse(402, raw_billing_error), FakeUpstreamResponse(402, raw_billing_error)]
+        fake_pool = FakeKeyPool()
+
+        def fake_request(**_kwargs):
+            return responses.pop(0)
+
+        with patch.object(proxy, "key_pool", fake_pool), patch.object(proxy.http_session, "request", side_effect=fake_request):
+            resp, error_response = proxy.upstream_request("POST", "/v1/chat/completions", "127.0.0.1", json_body={"model": "x"})
+
+        self.assertIsNone(resp)
+        self.assertEqual(error_response.status_code, 503)
+        body = error_response.get_data(as_text=True)
+        self.assertNotIn("Insufficient funds", body)
+        self.assertNotIn("vercel.com", body)
+        self.assertIn("internal failover", body)
+
     def test_codex_tool_catalog_converts_without_dropping_function_tools(self):
         codex_tools = [
             {
