@@ -169,7 +169,53 @@ class RedNimClaudeTests(unittest.TestCase):
         self.assertIs(response, ok)
         self.assertEqual(len(calls), 2)
         self.assertEqual(calls[0][0], 32000)
-        self.assertEqual(calls[1][0], 31487)
+        self.assertEqual(calls[1][0], 31231)
+
+    def test_context_retry_can_retry_more_than_once(self):
+        too_long_1 = FakeResponse(
+            status_code=400,
+            payload={
+                "error": {
+                    "message": "This model's maximum context length is 262144 tokens. However, you requested 31487 output tokens and your prompt contains at least 230658 input tokens, for a total of at least 262145 tokens. Please reduce the length of the messages.",
+                    "type": "upstream_error",
+                }
+            },
+        )
+        too_long_2 = FakeResponse(
+            status_code=400,
+            payload={
+                "error": {
+                    "message": "This model's maximum context length is 262144 tokens. However, you requested 31231 output tokens and your prompt contains at least 230700 input tokens, for a total of at least 261931 tokens. Please reduce the length of the messages.",
+                    "type": "upstream_error",
+                }
+            },
+        )
+        ok = FakeResponse(
+            payload={
+                "id": "chatcmpl_3",
+                "choices": [{"finish_reason": "stop", "message": {"content": "OK"}}],
+                "usage": {"prompt_tokens": 230700, "completion_tokens": 12},
+            }
+        )
+        calls = []
+
+        def fake_proxy(payload, *, stream):
+            calls.append(payload["max_tokens"])
+            if len(calls) == 1:
+                return too_long_1
+            if len(calls) == 2:
+                return too_long_2
+            return ok
+
+        with patch.object(proxy, "proxy_openai_chat", side_effect=fake_proxy):
+            response = proxy.proxy_openai_chat_with_context_retry(
+                {"model": "qwen/qwen3.5-122b-a10b", "messages": [{"role": "user", "content": "oi"}], "max_tokens": 32000},
+                stream=False,
+                context_window=262144,
+                input_tokens=230145,
+            )
+        self.assertIs(response, ok)
+        self.assertEqual(calls[:3], [31487, 30718, 30420])
 
 
 if __name__ == "__main__":

@@ -50,6 +50,7 @@ TLS_CERT = (os.getenv("REDNIMCLAUDE_TLS_CERT") or "").strip()
 TLS_KEY = (os.getenv("REDNIMCLAUDE_TLS_KEY") or "").strip()
 TOKEN_SAFETY_MARGIN = max(0, env_int("REDNIMCLAUDE_TOKEN_SAFETY_MARGIN", 512))
 MIN_COMPLETION_TOKENS = max(1, env_int("REDNIMCLAUDE_MIN_COMPLETION_TOKENS", 256))
+MAX_CONTEXT_RETRIES = max(1, env_int("REDNIMCLAUDE_MAX_CONTEXT_RETRIES", 3))
 
 http = requests.Session()
 http.headers.update({"Accept": "application/json"})
@@ -445,13 +446,13 @@ def estimate_openai_tokens(payload: dict[str, Any]) -> int:
     return text_tokens + (image_count * 512)
 
 
-def clamp_max_tokens(requested: Any, input_tokens: int, context_window: int) -> int:
+def clamp_max_tokens(requested: Any, input_tokens: int, context_window: int, *, extra_margin: int = 0) -> int:
     try:
         requested_int = int(requested)
     except Exception:
         requested_int = 2048
     requested_int = max(1, requested_int)
-    available = max(1, int(context_window) - max(0, int(input_tokens)) - TOKEN_SAFETY_MARGIN)
+    available = max(1, int(context_window) - max(0, int(input_tokens)) - TOKEN_SAFETY_MARGIN - max(0, int(extra_margin)))
     if available < MIN_COMPLETION_TOKENS:
         return max(1, available)
     return max(1, min(requested_int, available))
@@ -486,24 +487,34 @@ def proxy_openai_chat_with_context_retry(
     input_tokens: int,
 ) -> requests.Response:
     guarded_payload = apply_context_guard(payload, input_tokens=input_tokens, context_window=context_window)
-    response = proxy_openai_chat(guarded_payload, stream=stream)
-    if response.status_code < 400:
-        return response
-    try:
-        body_text = response.text
-    except Exception:
-        body_text = ""
-    if not is_context_error(response.status_code, body_text):
-        return response
-    limits = parse_context_error_limits(body_text)
-    if not limits:
-        return response
-    max_context, prompt_tokens = limits
-    retry_payload = deepcopy(guarded_payload)
-    retry_payload["max_tokens"] = clamp_max_tokens(retry_payload.get("max_tokens") or 2048, prompt_tokens, max_context)
-    if retry_payload["max_tokens"] >= int(guarded_payload.get("max_tokens") or 0):
-        return response
-    return proxy_openai_chat(retry_payload, stream=stream)
+    current_payload = deepcopy(guarded_payload)
+    extra_margin = 0
+    for _attempt in range(MAX_CONTEXT_RETRIES + 1):
+        response = proxy_openai_chat(current_payload, stream=stream)
+        if response.status_code < 400:
+            return response
+        try:
+            body_text = response.text
+        except Exception:
+            body_text = ""
+        if not is_context_error(response.status_code, body_text):
+            return response
+        limits = parse_context_error_limits(body_text)
+        if not limits:
+            return response
+        max_context, prompt_tokens = limits
+        next_payload = deepcopy(current_payload)
+        extra_margin += 256
+        next_payload["max_tokens"] = clamp_max_tokens(
+            next_payload.get("max_tokens") or 2048,
+            prompt_tokens,
+            max_context,
+            extra_margin=extra_margin,
+        )
+        if next_payload["max_tokens"] >= int(current_payload.get("max_tokens") or 0):
+            return response
+        current_payload = next_payload
+    return response
 
 
 def nim_headers() -> dict[str, str]:
