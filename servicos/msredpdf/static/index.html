@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MS RED PDF | Analise juridica com IA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="/portal-assets/favicon.ico" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #1a0202;
+      --bg-deep: #0c0000;
+      --panel: rgba(36, 3, 3, 0.84);
+      --panel-2: rgba(59, 5, 5, 0.92);
+      --surface: rgba(25, 3, 3, 0.68);
+      --surface-2: rgba(20, 2, 2, 0.9);
+      --line: rgba(232, 68, 44, 0.28);
+      --line-2: rgba(232, 68, 44, 0.16);
+      --red: #db2315;
+      --red-2: #ee4d31;
+      --red-soft: #ff7a59;
+      --green: #34d399;
+      --text: #fff3f1;
+      --muted: #d9b7b3;
+      --soft: #f0d5d1;
+      --chrome: #e8e4e3;
+      --shadow: 0 28px 80px rgba(12, 0, 0, 0.62);
+      --mono: "IBM Plex Mono", "Consolas", monospace;
+      --sans: "Space Grotesk", "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: var(--sans);
+      letter-spacing: 0;
+      background:
+        radial-gradient(circle at top left, rgba(238, 77, 49, 0.3), transparent 22rem),
+        radial-gradient(circle at top right, rgba(219, 35, 21, 0.22), transparent 20rem),
+        radial-gradient(circle at center, rgba(154, 18, 14, 0.18), transparent 28rem),
+        linear-gradient(180deg, var(--bg-deep) 0%, var(--bg) 100%);
+      overflow-x: hidden;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(rgba(232, 228, 227, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(232, 228, 227, 0.025) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: linear-gradient(to bottom, black, transparent 82%);
+    }
+    button, input, select { font: inherit; }
+    a { color: inherit; }
+    .shell {
+      position: relative;
+      width: min(1240px, calc(100vw - 32px));
+      margin: 0 auto;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 24px 0 38px;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      min-height: 74px;
+      padding: 12px 16px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(20, 2, 2, 0.82);
+      box-shadow: 0 16px 60px rgba(0, 0, 0, 0.24);
+      backdrop-filter: blur(18px);
+      position: sticky;
+      top: 12px;
+      z-index: 10;
+    }
+    .brand { display: flex; align-items: center; gap: 16px; min-width: 0; text-decoration: none; }
+    .brand img {
+      width: 104px;
+      height: auto;
+      flex: 0 0 auto;
+      filter: drop-shadow(0 0 22px rgba(238, 77, 49, 0.32));
+    }
+    .brand strong { display: block; font-size: 15px; text-transform: uppercase; }
+    .brand span { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 40px;
+      padding: 0 13px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--muted);
+      background: rgba(16, 2, 2, 0.78);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; }
+    .hero {
+      margin: 24px 0 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(360px, .95fr);
+      gap: 22px;
+      align-items: stretch;
+    }
+    .intro {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        radial-gradient(circle at top right, rgba(238, 77, 49, 0.12), transparent 18rem),
+        linear-gradient(120deg, rgba(219, 35, 21, 0.22), transparent 38%),
+        linear-gradient(180deg, rgba(36, 3, 3, 0.96), rgba(20, 2, 2, 0.98));
+      box-shadow: var(--shadow);
+      padding: 34px;
+      display: grid;
+      align-content: space-between;
+      min-height: 430px;
+      overflow: hidden;
+    }
+    .eyebrow {
+      color: var(--red-soft);
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    h1 {
+      margin: 0 0 18px;
+      font-size: 58px;
+      line-height: .96;
+      max-width: 780px;
+    }
+    .lead { color: var(--soft); font-size: 18px; line-height: 1.6; max-width: 740px; margin: 0; }
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 26px;
+    }
+    .metric {
+      border: 1px solid var(--line-2);
+      border-radius: 8px;
+      background: rgba(16, 2, 2, 0.72);
+      padding: 14px;
+      min-height: 86px;
+    }
+    .metric strong { display: block; font-size: 22px; color: var(--red-soft); }
+    .metric span { display: block; margin-top: 6px; color: var(--muted); font-size: 13px; line-height: 1.3; }
+    .upload-panel {
+      border: 1px solid var(--line-2);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 16px 60px rgba(0, 0, 0, 0.24);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 430px;
+    }
+    .drop {
+      border: 1px dashed rgba(255, 75, 85, 0.52);
+      border-radius: 8px;
+      background:
+        linear-gradient(135deg, rgba(238, 77, 49, 0.12), transparent),
+        rgba(16, 2, 2, 0.78);
+      min-height: 180px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 22px;
+      cursor: pointer;
+      transition: border-color .16s ease, background .16s ease;
+    }
+    .drop:hover, .drop.drag { border-color: var(--red-2); background: rgba(59, 5, 5, 0.72); }
+    .drop strong { display: block; font-size: 20px; margin-bottom: 8px; }
+    .drop span { color: var(--muted); font-size: 14px; }
+    #file { display: none; }
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .field { display: grid; gap: 6px; min-width: 0; }
+    label { color: var(--red-soft); font-size: 12px; text-transform: uppercase; font-weight: 900; }
+    select {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid var(--line-2);
+      border-radius: 8px;
+      background: rgba(16, 2, 2, 0.78);
+      color: var(--text);
+      padding: 0 10px;
+      outline: none;
+    }
+    .actions { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+    .file-name { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .btn {
+      border: 0;
+      min-height: 46px;
+      padding: 0 18px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--red), var(--red-2));
+      color: #fff;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 14px 34px rgba(238, 77, 49, 0.28);
+    }
+    .btn:disabled { background: rgba(130, 150, 170, 0.22); cursor: not-allowed; color: #bdbdbd; box-shadow: none; }
+    .workspace {
+      margin: 22px 0 0;
+      display: grid;
+      grid-template-columns: minmax(300px, .72fr) minmax(0, 1.28fr);
+      gap: 22px;
+    }
+    .panel {
+      border: 1px solid var(--line-2);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 16px 60px rgba(0, 0, 0, 0.24);
+      min-width: 0;
+      overflow: hidden;
+    }
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 56px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line-2);
+      background: rgba(16, 2, 2, 0.5);
+    }
+    .panel-head strong { font-size: 15px; }
+    .progress-wrap { padding: 16px; }
+    .bar {
+      height: 12px;
+      background: rgba(16, 2, 2, 0.78);
+      border: 1px solid var(--line-2);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .bar > div { height: 100%; width: 0%; background: linear-gradient(90deg, var(--red), var(--red-2)); transition: width .25s ease; }
+    .stage-list { display: grid; gap: 8px; padding: 0 16px 16px; }
+    .stage {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 10px;
+      background: var(--surface);
+      border: 1px solid var(--line-2);
+      border-radius: 8px;
+    }
+    .stage i {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #444;
+      margin-top: 5px;
+    }
+    .stage.active i { background: var(--red); }
+    .stage.done i { background: var(--green); }
+    .stage b { display: block; font-size: 13px; }
+    .stage small { display: block; color: var(--muted); margin-top: 3px; line-height: 1.35; }
+    .log {
+      height: 360px;
+      overflow: auto;
+      padding: 14px 16px 16px;
+      background: rgba(16, 2, 2, 0.78);
+      font-family: var(--mono);
+      color: #c8ffe5;
+      font-size: 12px;
+      line-height: 1.55;
+      border-top: 1px solid var(--line-2);
+    }
+    .log div { border-bottom: 1px solid rgba(232, 68, 44, 0.12); padding: 6px 0; }
+    .result { padding: 16px; display: grid; gap: 14px; }
+    .empty {
+      min-height: 326px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed var(--line-2);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 24px;
+    }
+    .result-grid { display: grid; gap: 12px; }
+    .result-card {
+      border: 1px solid var(--line-2);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 14px;
+    }
+    .result-card h3 { margin: 0 0 8px; font-size: 15px; color: var(--red-soft); }
+    .result-card p, .result-card li { color: var(--soft); line-height: 1.5; }
+    .result-card ul { margin: 8px 0 0; padding-left: 18px; }
+    .history {
+      border-top: 1px solid var(--line-2);
+      padding: 14px 16px 16px;
+      display: grid;
+      gap: 8px;
+    }
+    .history h2 {
+      margin: 0 0 4px;
+      font-size: 13px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .history-item {
+      border: 1px solid var(--line-2);
+      border-radius: 8px;
+      background: var(--surface);
+      padding: 10px;
+      color: var(--soft);
+      cursor: pointer;
+    }
+    .history-item strong { display: block; font-size: 13px; color: var(--text); }
+    .history-item span { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
+    .report-markdown {
+      border: 1px solid var(--line-2);
+      border-radius: 8px;
+      background: var(--surface-2);
+      padding: 18px;
+      color: var(--soft);
+      line-height: 1.62;
+    }
+    .report-markdown h2 {
+      margin: 22px 0 10px;
+      color: var(--red-soft);
+      font-size: 20px;
+    }
+    .report-markdown h2:first-child { margin-top: 0; }
+    .report-markdown h3 {
+      margin: 18px 0 8px;
+      color: #fff;
+      font-size: 16px;
+    }
+    .report-markdown p { margin: 8px 0; }
+    .report-markdown ul, .report-markdown ol { margin: 8px 0 12px; padding-left: 24px; }
+    .report-markdown li { margin: 6px 0; }
+    .report-markdown strong { color: #fff; }
+    .report-live-raw {
+      min-height: 300px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #f1f1f1;
+      font: 14px/1.62 var(--mono);
+      caret-color: var(--red);
+    }
+    .typing-caret {
+      display: inline-block;
+      width: 8px;
+      height: 1.1em;
+      margin-left: 2px;
+      background: var(--red-2);
+      vertical-align: -2px;
+      animation: blink .85s steps(1) infinite;
+    }
+    @keyframes blink { 50% { opacity: .15; } }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #e6e6e6;
+      font: 12px/1.55 var(--mono);
+    }
+    @media (max-width: 900px) {
+      .shell { width: min(100vw - 24px, 1240px); padding-top: 14px; }
+      .topbar { position: static; }
+      .status-pill { display: none; }
+      .hero, .workspace { grid-template-columns: 1fr; }
+      .intro, .upload-panel { min-height: auto; }
+      .metric-row, .controls { grid-template-columns: 1fr; }
+      .actions { grid-template-columns: 1fr; }
+      .btn { width: 100%; }
+      h1 { font-size: 42px; }
+      .brand img { width: 88px; }
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="RED Systems">
+      <img src="/portal-assets/logo.png" alt="RED" />
+      <div><strong>MS RED PDF</strong><span>RED Systems Legal AI</span></div>
+    </a>
+    <div class="status-pill"><span class="dot"></span><span id="health">Conectando</span><span>:: /msredpdf/</span></div>
+  </header>
+
+  <section class="hero">
+    <div class="intro">
+      <div>
+        <div class="eyebrow">Analise juridica assistida por IA</div>
+        <h1>Contratos lidos com trilha, risco e sugestao.</h1>
+        <p class="lead">O cliente acompanha PDF ou DOCX virar texto, a estrategia de analise ser escolhida e um relatorio juridico completo nascer em tempo real dentro da stack RED Systems.</p>
+      </div>
+      <div class="metric-row">
+        <div class="metric"><strong>PDF/DOCX</strong><span>texto extraido por pagina ou bloco</span></div>
+        <div class="metric"><strong>Risco</strong><span>clausulas, impacto e sugestoes</span></div>
+        <div class="metric"><strong>LGPD</strong><span>privacidade e dados sensiveis no fluxo</span></div>
+      </div>
+    </div>
+
+    <form class="upload-panel" id="form">
+      <label for="file">Documento</label>
+      <div class="drop" id="drop">
+        <div>
+          <strong>Solte o documento aqui</strong>
+          <span>ou clique para selecionar PDF/DOCX</span>
+        </div>
+      </div>
+      <input id="file" name="file" type="file" accept="application/pdf,.pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+      <div class="controls">
+        <div class="field">
+          <label for="model">Modelo</label>
+          <select id="model" name="model"></select>
+        </div>
+        <div class="field">
+          <label for="mode">Estrategia</label>
+          <select id="mode" name="mode">
+            <option value="auto">Automatica</option>
+            <option value="whole">Documento inteiro</option>
+            <option value="pages">Pagina por pagina</option>
+          </select>
+        </div>
+      </div>
+      <div class="actions">
+        <div class="file-name" id="fileName">Nenhum arquivo selecionado</div>
+        <button class="btn" id="submit" type="submit" disabled>Analisar documento</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="workspace">
+    <aside class="panel">
+      <div class="panel-head"><strong>Execucao</strong><span id="percent">0%</span></div>
+      <div class="progress-wrap"><div class="bar"><div id="bar"></div></div></div>
+      <div class="stage-list" id="stages"></div>
+      <div class="history">
+        <h2>Historico</h2>
+        <div id="historyList"><div class="history-item"><span>Nenhuma analise carregada</span></div></div>
+      </div>
+    </aside>
+
+    <main class="panel">
+      <div class="panel-head"><strong>Relatorio</strong><span id="jobState">Aguardando PDF</span></div>
+      <div class="result" id="result">
+        <div class="empty">O relatorio aparece aqui assim que a analise terminar.</div>
+      </div>
+      <div class="log" id="log"></div>
+    </main>
+  </section>
+</div>
+
+<script>
+const fileInput = document.getElementById("file");
+const drop = document.getElementById("drop");
+const form = document.getElementById("form");
+const submit = document.getElementById("submit");
+const fileName = document.getElementById("fileName");
+const modelSelect = document.getElementById("model");
+const modeSelect = document.getElementById("mode");
+const health = document.getElementById("health");
+const bar = document.getElementById("bar");
+const percent = document.getElementById("percent");
+const stages = document.getElementById("stages");
+const log = document.getElementById("log");
+const result = document.getElementById("result");
+const jobState = document.getElementById("jobState");
+let liveReport = "";
+let liveTypeQueue = "";
+let liveTypeTimer = null;
+
+const stageNames = {
+  upload: "Recebimento",
+  start: "Preparacao",
+  extract: "Extracao",
+  ocr: "OCR",
+  strategy: "Estrategia",
+  ai: "Analise IA",
+  "ai-page": "Paginas",
+  "report-reset": "Relatorio ao vivo",
+  "report-delta": "Relatorio ao vivo",
+  history: "Historico",
+  done: "Finalizacao",
+  error: "Erro"
+};
+
+function setProgress(value) {
+  const v = Math.max(0, Math.min(100, Number(value || 0)));
+  bar.style.width = `${v}%`;
+  percent.textContent = `${v}%`;
+}
+
+function appendLog(event) {
+  const row = document.createElement("div");
+  const time = new Date((event.time || Date.now() / 1000) * 1000).toLocaleTimeString("pt-BR");
+  row.textContent = `[${time}] ${event.message}`;
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+}
+
+function markStage(stage, message, done) {
+  const id = `stage-${stage}`;
+  let el = document.getElementById(id);
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "stage active";
+    el.id = id;
+    el.innerHTML = `<i></i><div><b>${stageNames[stage] || stage}</b><small></small></div>`;
+    stages.appendChild(el);
+  }
+  el.className = `stage ${done ? "done" : "active"}`;
+  el.querySelector("small").textContent = message;
+}
+
+function textValue(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value, null, 2);
+}
+
+function renderList(title, items) {
+  if (!Array.isArray(items) || !items.length) return "";
+  return `<div class="result-card"><h3>${title}</h3><ul>${items.map(item => `<li>${escapeHtml(textValue(item))}</li>`).join("")}</ul></div>`;
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+
+function inlineMarkdown(str) {
+  return escapeHtml(str).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+}
+
+function markdownToHtml(markdown) {
+  const lines = String(markdown || "").split(/\r?\n/);
+  const html = [];
+  let list = null;
+  function closeList() {
+    if (list) {
+      html.push(`</${list}>`);
+      list = null;
+    }
+  }
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      closeList();
+      continue;
+    }
+    if (line.startsWith("### ")) {
+      closeList();
+      html.push(`<h3>${inlineMarkdown(line.slice(4))}</h3>`);
+      continue;
+    }
+    if (line.startsWith("## ")) {
+      closeList();
+      html.push(`<h2>${inlineMarkdown(line.slice(3))}</h2>`);
+      continue;
+    }
+    if (line.startsWith("# ")) {
+      closeList();
+      html.push(`<h2>${inlineMarkdown(line.slice(2))}</h2>`);
+      continue;
+    }
+    const ordered = line.match(/^\d+\.\s+(.*)$/);
+    if (ordered) {
+      if (list !== "ol") {
+        closeList();
+        list = "ol";
+        html.push("<ol>");
+      }
+      html.push(`<li>${inlineMarkdown(ordered[1])}</li>`);
+      continue;
+    }
+    if (line.startsWith("- ")) {
+      if (list !== "ul") {
+        closeList();
+        list = "ul";
+        html.push("<ul>");
+      }
+      html.push(`<li>${inlineMarkdown(line.slice(2))}</li>`);
+      continue;
+    }
+    closeList();
+    html.push(`<p>${inlineMarkdown(line)}</p>`);
+  }
+  closeList();
+  return html.join("");
+}
+
+function renderResult(job) {
+  const data = job.result || {};
+  const cards = [];
+  const unitLabel = data.document?.unit_label || "pagina";
+  cards.push(`<div class="result-card"><h3>Documento</h3><p>${escapeHtml(data.filename || job.filename)} - ${escapeHtml(data.document?.type || job.document_type || "")} - ${data.document?.pages || 0} ${escapeHtml(unitLabel)}(s) - ${data.strategy || "auto"} - ${data.model || job.model}</p></div>`);
+  if (data.report_markdown) {
+    cards.push(`<div class="report-markdown">${markdownToHtml(data.report_markdown)}</div>`);
+  } else {
+    const analysis = data.analysis || {};
+    if (analysis.resumo_executivo) cards.push(`<div class="result-card"><h3>Resumo executivo</h3><p>${escapeHtml(textValue(analysis.resumo_executivo))}</p></div>`);
+    cards.push(renderList("Riscos", analysis.riscos || analysis.riscos_priorizados));
+    cards.push(renderList("LGPD", analysis.lgpd || analysis.riscos_lgpd));
+    cards.push(renderList("Clausulas para revisar", analysis.clausulas_para_revisar || analysis.clausulas_relevantes));
+    cards.push(renderList("Proximos passos", analysis.proximos_passos));
+  }
+  result.innerHTML = `<div class="result-grid">${cards.filter(Boolean).join("")}</div>`;
+}
+
+function ensureLiveReport(title) {
+  if (!document.getElementById("liveReport")) {
+    result.innerHTML = `
+      <div class="result-grid">
+        <div class="result-card"><h3>Relatorio ao vivo</h3><p>${escapeHtml(title || "O modelo comecou a escrever. O texto aparece aqui em tempo real.")}</p></div>
+        <div class="report-markdown">
+          <pre class="report-live-raw" id="liveReport"></pre><span class="typing-caret" id="liveCaret"></span>
+        </div>
+      </div>`;
+  }
+}
+
+function renderLiveReportNow() {
+  const target = document.getElementById("liveReport");
+  if (!target) return;
+  target.textContent = liveReport || "Aguardando os primeiros trechos do modelo...";
+}
+
+function resetLiveReport(message) {
+  liveReport = "";
+  liveTypeQueue = "";
+  if (liveTypeTimer) {
+    clearTimeout(liveTypeTimer);
+    liveTypeTimer = null;
+  }
+  ensureLiveReport(message);
+  renderLiveReportNow();
+}
+
+function appendLiveReport(delta) {
+  if (!delta) return;
+  ensureLiveReport("Streaming ativo. O relatorio esta sendo montado agora.");
+  liveTypeQueue += delta;
+  drainTypeQueue();
+}
+
+function drainTypeQueue() {
+  if (liveTypeTimer) return;
+  const target = document.getElementById("liveReport");
+  if (!target) return;
+  const step = () => {
+    if (!liveTypeQueue.length) {
+      liveTypeTimer = null;
+      return;
+    }
+    const take = Math.min(liveTypeQueue.length, Math.max(4, Math.min(18, Math.ceil(liveTypeQueue.length / 80))));
+    const chunk = liveTypeQueue.slice(0, take);
+    liveTypeQueue = liveTypeQueue.slice(take);
+    liveReport += chunk;
+    target.textContent = liveReport;
+    target.parentElement.scrollIntoView({ block: "nearest" });
+    liveTypeTimer = setTimeout(step, 8);
+  };
+  liveTypeTimer = setTimeout(step, 0);
+}
+
+function flushLiveTyping() {
+  if (liveTypeTimer) {
+    clearTimeout(liveTypeTimer);
+    liveTypeTimer = null;
+  }
+  if (liveTypeQueue) {
+    liveReport += liveTypeQueue;
+    liveTypeQueue = "";
+    const target = document.getElementById("liveReport");
+    if (target) target.textContent = liveReport;
+  }
+}
+
+async function loadHistory() {
+  const holder = document.getElementById("historyList");
+  try {
+    const res = await fetch("api/history");
+    const data = await res.json();
+    const items = data.items || [];
+    if (!items.length) {
+      holder.innerHTML = `<div class="history-item"><span>Nenhuma analise salva ainda</span></div>`;
+      return;
+    }
+    holder.innerHTML = items.slice(0, 8).map(item => {
+      const when = item.finished_at ? new Date(item.finished_at * 1000).toLocaleString("pt-BR") : "";
+      return `<div class="history-item" data-job="${escapeHtml(item.id)}"><strong>${escapeHtml(item.filename)}</strong><span>${escapeHtml(item.document_type || "")} - ${escapeHtml(item.model || "")} - ${when}</span></div>`;
+    }).join("");
+    holder.querySelectorAll("[data-job]").forEach(el => {
+      el.addEventListener("click", async () => {
+        const res = await fetch(`api/jobs/${el.dataset.job}`);
+        if (res.ok) renderResult(await res.json());
+      });
+    });
+  } catch {
+    holder.innerHTML = `<div class="history-item"><span>Historico indisponivel</span></div>`;
+  }
+}
+
+async function loadModels() {
+  const res = await fetch("api/models");
+  const data = await res.json();
+  modelSelect.innerHTML = "";
+  for (const model of data.recommended || []) {
+    const option = document.createElement("option");
+    option.value = model.id;
+    option.textContent = `${model.label} - ${model.role}`;
+    if (model.id === data.default) option.selected = true;
+    modelSelect.appendChild(option);
+  }
+}
+
+async function checkHealth() {
+  try {
+    const res = await fetch("healthz");
+    const data = await res.json();
+    health.textContent = data.ok ? "Operacional" : "Indisponivel";
+  } catch {
+    health.textContent = "Indisponivel";
+  }
+}
+
+drop.addEventListener("click", () => fileInput.click());
+drop.addEventListener("dragover", event => { event.preventDefault(); drop.classList.add("drag"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("drag"));
+drop.addEventListener("drop", event => {
+  event.preventDefault();
+  drop.classList.remove("drag");
+  if (event.dataTransfer.files.length) {
+    fileInput.files = event.dataTransfer.files;
+    updateFile();
+  }
+});
+fileInput.addEventListener("change", updateFile);
+
+function updateFile() {
+  const file = fileInput.files[0];
+  fileName.textContent = file ? file.name : "Nenhum arquivo selecionado";
+  submit.disabled = !file;
+}
+
+form.addEventListener("submit", async event => {
+  event.preventDefault();
+  const file = fileInput.files[0];
+  if (!file) return;
+  submit.disabled = true;
+  stages.innerHTML = "";
+  log.innerHTML = "";
+  liveReport = "";
+  result.innerHTML = `<div class="empty">Analise em andamento. Assim que o modelo comecar a responder, o relatorio aparece aqui ao vivo.</div>`;
+  jobState.textContent = "Enviando documento";
+  setProgress(0);
+  const body = new FormData();
+  body.append("file", file);
+  body.append("model", modelSelect.value);
+  body.append("mode", modeSelect.value);
+  const res = await fetch("api/jobs", { method: "POST", body });
+  if (!res.ok) {
+    const err = await res.text();
+    jobState.textContent = "Falha no envio";
+    log.textContent = err;
+    submit.disabled = false;
+    return;
+  }
+  const job = await res.json();
+  jobState.textContent = `Job ${job.id}`;
+  const source = new EventSource(`api/jobs/${job.id}/events`);
+  source.addEventListener("progress", event => {
+    const payload = JSON.parse(event.data);
+    setProgress(payload.progress);
+    if (payload.stage === "report-reset") {
+      resetLiveReport(payload.message);
+      markStage(payload.stage, payload.message, false);
+      jobState.textContent = "Streaming do relatorio";
+      return;
+    }
+    if (payload.stage === "report-delta") {
+      appendLiveReport(payload.detail?.delta || "");
+      jobState.textContent = "Escrevendo relatorio";
+      return;
+    }
+    appendLog(payload);
+    markStage(payload.stage, payload.message, payload.stage === "done");
+    jobState.textContent = payload.status;
+  });
+  source.addEventListener("final", event => {
+    const payload = JSON.parse(event.data);
+    flushLiveTyping();
+    setProgress(payload.progress);
+    jobState.textContent = payload.status === "completed" ? "Concluido" : "Falhou";
+    if (payload.status === "completed") renderResult(payload);
+    else result.innerHTML = `<div class="empty">${escapeHtml(payload.error || "Analise falhou")}</div>`;
+    loadHistory();
+    source.close();
+    submit.disabled = false;
+  });
+  source.onerror = () => {
+    source.close();
+    submit.disabled = false;
+  };
+});
+
+loadModels();
+checkHealth();
+loadHistory();
+</script>
+</body>
+</html>

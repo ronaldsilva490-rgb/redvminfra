@@ -340,9 +340,9 @@
         <aside class="terminal-card" aria-label="Status">
           <header>boot sequence</header>
           <p><span>&gt;</span> vm unica online em redsystems.ddns.net</p>
-          <p><span>&gt;</span> dashboard, redia e trader em localhost</p>
+          <p><span>&gt;</span> dashboard, redia e redsebia em localhost</p>
           <p><span>&gt;</span> proxy principal e proxy-lab separados</p>
-          <p><span>&gt;</span> iq bridge limpo e pronto para novos snapshots</p>
+          <p><span>&gt;</span> searxng publicado em /search/</p>
           <p><span>&gt;</span> rapidleech oficializado em /rapidleech/</p>
           <p><span>&gt;</span> red seb monitor dedicado em :2580</p>
           <p><span>&gt;</span> repo centralizado em /opt/redvm-repo</p>
@@ -362,11 +362,11 @@
           <p>Runtime principal do WhatsApp com memoria, audio, imagem, tarefas internas e automacoes.</p>
           <span class="path">/redia/</span>
         </a>
-        <a class="card" href="/trader/">
-          <small>Paper Lab</small>
-          <h2>RED Trader</h2>
-          <p>Painel de paper trading e pesquisa operacional com comite, perfis de risco e integracao local.</p>
-          <span class="path">/trader/</span>
+        <a class="card" href="/search/">
+          <small>Web Search</small>
+          <h2>RED Search</h2>
+          <p>Busca web privada via SearXNG, publicada pela VM para pesquisa e apoio aos agentes.</p>
+          <span class="path">/search/</span>
         </a>
         <a class="card" href="/proxy/api/tags">
           <small>IA Gateway</small>
@@ -380,17 +380,11 @@
           <p>Laboratorio isolado para benchmark de modelos pagos, separado do proxy oficial que alimenta a stack.</p>
           <span class="path">/proxy-lab/healthz</span>
         </a>
-        <a class="card" href="/iq-bridge/healthz">
-          <small>Vision bridge</small>
-          <h2>IQ Bridge</h2>
-          <p>Bridge da extensao Chrome da IQ demo com snapshots, logs e comandos remotos para observabilidade.</p>
-          <span class="path">/iq-bridge/healthz</span>
-        </a>
-        <a class="card" href="/openclaw/">
-          <small>Ops AI</small>
-          <h2>OpenClaw</h2>
-          <p>Assistente operacional privado da stack, ligado ao proxy RED e aos canais internos de automacao.</p>
-          <span class="path">/openclaw/</span>
+        <a class="card" href="/redsebia/">
+          <small>Auth Hub</small>
+          <h2>REDSEBIA</h2>
+          <p>Portal de clientes, dispositivos, modelos e sessoes runtime integrado ao proxy RED.</p>
+          <span class="path">/redsebia/</span>
         </a>
         <a class="card" href="/rapidleech/">
           <small>Transfer Hub</small>
@@ -418,9 +412,9 @@
               <code>/opt/redvm-dashboard</code>
             </div>
             <div class="line-item">
-              <strong>REDIA + RED Trader</strong>
-              <span>Apps principais da stack, cada um com seu runtime e seus dados.</span>
-              <code>/opt/redia :: /opt/redtrader</code>
+              <strong>REDIA + REDSEBIA</strong>
+              <span>Apps principais ativos da stack, cada um com seu runtime e seus dados.</span>
+              <code>/opt/redia :: /opt/redsebia</code>
             </div>
             <div class="line-item">
               <strong>Proxy principal + Proxy Lab</strong>
@@ -428,9 +422,9 @@
               <code>/opt/redvm-proxy :: /opt/red-proxy-lab</code>
             </div>
             <div class="line-item">
-              <strong>IQ Bridge limpo</strong>
-              <span>Bridge reiniciado do zero, so com a base, pronto para telemetria nova.</span>
-              <code>/opt/red-iq-vision-bridge</code>
+              <strong>RED Search</strong>
+              <span>SearXNG isolado em Docker e publicado no prefixo de busca da VM.</span>
+              <code>/opt/red-searxng :: /search/</code>
             </div>
             <div class="line-item">
               <strong>RED SEB Monitor</strong>
@@ -452,7 +446,7 @@
           <div class="line-list">
             <div class="line-item">
               <strong>servicos/</strong>
-              <span>Portal, dashboard, proxy, proxy-lab, REDIA, RED Trader, OpenClaw, Rapidleech, RED SEB Monitor e extensao IQ demo.</span>
+              <span>Portal, dashboard, proxy, proxy-lab, REDIA, REDSEBIA, RED Search, Rapidleech e RED SEB Monitor.</span>
               <code>servicos/*</code>
             </div>
             <div class="line-item">

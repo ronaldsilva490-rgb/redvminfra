@@ -5,7 +5,9 @@ export LANG=pt_BR.UTF-8
 export LANGUAGE=pt_BR:pt
 
 RED=$'\033[38;2;255;0;0m'
+DIM=$'\033[2m'
 GREEN=$'\033[38;2;0;255;120m'
+YELLOW=$'\033[38;2;255;210;80m'
 WHITE=$'\033[1;37m'
 RESET=$'\033[0m'
 
@@ -16,7 +18,6 @@ get_ip() {
 format_uptime() {
     uptime -p 2>/dev/null \
         | sed 's/^up //' \
-        | sed 's/, /, /g' \
         | sed 's/ hours\?/ horas/g' \
         | sed 's/ hour / hora /g' \
         | sed 's/ minutes\?/ minutos/g' \
@@ -39,28 +40,38 @@ status_color_from_percent() {
         printf '%s' "$WHITE"
     elif [ "$pct" -ge 85 ]; then
         printf '%s' "$RED"
+    elif [ "$pct" -ge 70 ]; then
+        printf '%s' "$YELLOW"
     else
         printf '%s' "$GREEN"
     fi
 }
 
 separator() {
-    printf '%b\n' "${RED}------------------------------------------------------------${RESET}"
+    printf '%b\n' "${RED}----------------------------------------------------------------${RESET}"
 }
 
 print_kv() {
     local label="$1"
     local value="$2"
-    printf '%b%-11s%b : %b\n' "${WHITE}" "$label" "${RESET}" "$value"
+    printf '%b%-12s%b : %b\n' "${WHITE}" "$label" "${RESET}" "$value"
 }
 
 service_text() {
     local svc="$1"
     if systemctl is-active --quiet "$svc" 2>/dev/null; then
-        printf '%sATIVO%s' "$GREEN" "$RESET"
+        printf '%sON%s' "$GREEN" "$RESET"
+    elif systemctl list-unit-files "$svc.service" >/dev/null 2>&1; then
+        printf '%sOFF%s' "$RED" "$RESET"
     else
-        printf '%sINATIVO%s' "$RED" "$RESET"
+        printf '%sN/A%s' "$DIM" "$RESET"
     fi
+}
+
+service_line() {
+    local label="$1"
+    local svc="$2"
+    printf '%b%-14s%b %b\n' "${WHITE}" "$label" "${RESET}" "$(service_text "$svc")"
 }
 
 SYSTEM_STATE="$(systemctl is-system-running 2>/dev/null || true)"
@@ -71,18 +82,13 @@ MEMORY_PCT="$(free -m | awk 'NR==2 {printf "%d", int(($3/$2)*100)}')"
 DISK_INFO="$(df -h / | awk 'NR==2 {printf "%s/%s (%s)", $3, $2, $5}')"
 DISK_PCT="$(df -h / | awk 'NR==2 {print $5}' | tr -d '%')"
 IP_ADDR="$(get_ip)"
-SSH_STATE="$(service_text ssh)"
 ZOMBIES="$(ps -eo stat= | awk '$1 ~ /^Z/ {count++} END {print count+0}')"
-UPDATES="N/D"
-
-if command -v apt >/dev/null 2>&1; then
-    UPDATES="$(apt list --upgradable 2>/dev/null | tail -n +2 | wc -l)"
-fi
+NOW="$(TZ=America/Fortaleza date '+%d/%m/%Y %H:%M:%S BRT' 2>/dev/null)"
 
 if [ "$SYSTEM_STATE" = "running" ]; then
     SYSTEM_STATE_FMT="${GREEN}OPERACIONAL${RESET}"
 else
-    SYSTEM_STATE_FMT="${RED}${SYSTEM_STATE:-desconhecido}${RESET}"
+    SYSTEM_STATE_FMT="${YELLOW}${SYSTEM_STATE:-desconhecido}${RESET}"
 fi
 
 MEM_COLOR="$(status_color_from_percent "$MEMORY_PCT")"
@@ -94,38 +100,46 @@ else
     ZOMBIE_FMT="${GREEN}0${RESET}"
 fi
 
-if [ "$UPDATES" = "N/D" ]; then
-    UPDATES_FMT="${WHITE}N/D${RESET}"
-elif [ "$UPDATES" -gt 0 ]; then
-    UPDATES_FMT="${RED}${UPDATES}${RESET}"
-else
-    UPDATES_FMT="${GREEN}0${RESET}"
-fi
-
 clear_screen
 printf '\n'
-printf '%b\n' "${RED}██████╗ ███████╗██████╗${RESET}"
-printf '%b\n' "${RED}██╔══██╗██╔════╝██╔══██╗${RESET}"
-printf '%b\n' "${RED}██████╔╝█████╗  ██║  ██║${RESET}"
-printf '%b\n' "${RED}██╔══██╗██╔══╝  ██║  ██║${RESET}"
-printf '%b\n' "${RED}██║  ██║███████╗██████╔╝${RESET}"
-printf '%b\n' "${RED}╚═╝  ╚═╝╚══════╝╚═════╝ ${RESET}"
-printf '\n'
+printf '%b\n' "${RED} ____  _____ ____      ______   ______ _____ _____ __  __ ____ ${RESET}"
+printf '%b\n' "${RED}|  _ \\| ____|  _ \\    / ___\\ \\ / / ___|_   _| ____|  \\/  / ___|${RESET}"
+printf '%b\n' "${RED}| |_) |  _| | | | |   \\___ \\\\ V /\\___ \\ | | |  _| | |\\/| \\___ \\${RESET}"
+printf '%b\n' "${RED}|  _ <| |___| |_| |    ___) || |  ___) || | | |___| |  | |___) |${RESET}"
+printf '%b\n' "${RED}|_| \\_\\_____|____/    |____/ |_| |____/ |_| |_____|_|  |_|____/ ${RESET}"
+printf '%b\n' "${DIM}VM unica RED Systems - producao pessoal, automacoes e laboratorios${RESET}"
 separator
-print_kv "Sistema" "${SYSTEM_STATE_FMT}"
-print_kv "Hostname" "${WHITE}$(hostname)${RESET}"
-print_kv "Kernel" "${WHITE}$(uname -r | cut -d'-' -f1)${RESET}"
+print_kv "Status" "${SYSTEM_STATE_FMT}"
+print_kv "Host" "${WHITE}$(hostname)${RESET}"
+print_kv "Data" "${WHITE}${NOW:-indisponivel}${RESET}"
+print_kv "Kernel" "${WHITE}$(uname -r)${RESET}"
 print_kv "Uptime" "${GREEN}${UPTIME_TEXT:-indisponivel}${RESET}"
 print_kv "Carga" "${WHITE}${LOAD:-indisponivel}${RESET}"
 print_kv "Memoria" "${MEM_COLOR}${MEMORY_INFO}${RESET}"
-print_kv "Disco raiz" "${DISK_COLOR}${DISK_INFO}${RESET}"
+print_kv "Disco /" "${DISK_COLOR}${DISK_INFO}${RESET}"
 print_kv "IPv4" "${WHITE}${IP_ADDR:-indisponivel}${RESET}"
-print_kv "SSH" "${SSH_STATE}"
 print_kv "Zumbis" "${ZOMBIE_FMT}"
-print_kv "Updates" "${UPDATES_FMT}"
+separator
+printf '%b\n' "${WHITE}Rotas publicas${RESET}"
+printf '%b\n' "  ${RED}Portal${RESET}      http://redsystems.ddns.net/"
+printf '%b\n' "  ${RED}Dashboard${RESET}   http://redsystems.ddns.net/dashboard/"
+printf '%b\n' "  ${RED}MS RED PDF${RESET}  http://redsystems.ddns.net/msredpdf/"
+printf '%b\n' "  ${RED}Proxy${RESET}       http://redsystems.ddns.net/proxy/v1"
+printf '%b\n' "  ${RED}Rapidleech${RESET}  http://redsystems.ddns.net/rapidleech/"
+separator
+printf '%b\n' "${WHITE}Servicos essenciais${RESET}"
+service_line "nginx" "nginx"
+service_line "dashboard" "red-dashboard"
+service_line "msredpdf" "msredpdf"
+service_line "proxy" "red-ollama-proxy"
+service_line "rapidleech" "rapidleech"
+service_line "redia" "redia"
+service_line "searxng" "red-searxng"
+service_line "sebia" "red-sebia"
 separator
 printf '%b\n' "${WHITE}Comandos uteis${RESET}"
-printf '%b\n' "${WHITE}painel${RESET} -> painel RED ao vivo"
-printf '%b\n' "${WHITE}motd${RESET}   -> redesenha o banner"
+printf '%b\n' "  ${WHITE}painel${RESET} -> painel RED ao vivo"
+printf '%b\n' "  ${WHITE}motd${RESET}   -> redesenha este banner"
+printf '%b\n' "  ${WHITE}sv${RESET}     -> status rapido da stack"
 separator
 printf '\n'

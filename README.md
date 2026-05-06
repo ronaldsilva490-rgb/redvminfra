@@ -5,7 +5,7 @@
 <h1 align="center">RED Systems Unified VM</h1>
 
 <p align="center">
-  <strong>Repositorio oficial da stack consolidada em uma VM unica: portal, dashboard, proxy IA, RED I.A, RED Trader, OpenClaw, Rapidleech, monitor SEB, REDSEBIA e bridge da extensao IQ.</strong>
+  <strong>Repositorio oficial da stack consolidada em uma VM unica: portal, dashboard, proxies de IA, busca web, MS RED PDF, RED I.A, Rapidleech, monitor SEB e REDSEBIA.</strong>
 </p>
 
 ---
@@ -17,9 +17,15 @@ Hoje a RED Systems roda com uma arquitetura de VM unica. O objetivo deste reposi
 ### Rotas publicas atuais
 
 - `/` -> portal
+- `/portal-assets/` -> assets publicos do portal
+- `/modelo1/` -> landing estatica modelo 1
+- `/modelo2/` -> landing estatica modelo 2
 - `/dashboard/` -> painel principal
 - `/proxy/` -> proxy IA oficial
+- `/redproxypro/` -> proxy Vercel AI Gateway com rotacao de keys
 - `/ollama/` -> alias do proxy IA
+- `/search/` -> busca web gratuita via SearXNG
+- `/msredpdf/` -> analise juridica de PDFs/DOCX com IA
 - `/redia/` -> runtime standalone da RED I.A
 - `/trader/` -> RED Trader
 - `/proxy-lab/` -> laboratorio de benchmark
@@ -27,24 +33,30 @@ Hoje a RED Systems roda com uma arquitetura de VM unica. O objetivo deste reposi
 - `/openclaw/` -> assistente operacional privado
 - `/rapidleech/` -> transfer hub legado oficializado
 - `/redsebia/` -> portal e backend do novo produto REDSEBIA
+- `/redseb/` e `/download/` -> caminhos nginx do SEB Monitor
 - `:2580` -> RED SEB Monitor
+
+Estado da VM em 2026-05-06: OpenClaw, RED Trader e IQ Bridge continuam no repo, mas estao inativos na VM principal por decisao operacional. O snapshot atual esta em [documentacao/estado-atual-vm-2026-05-06.md](documentacao/estado-atual-vm-2026-05-06.md).
 
 ### Servicos principais
 
-| Servico | Caminho | Runtime oficial na VM | Service |
-|---|---|---|---|
-| Portal | `servicos/portal` | `/var/www/red-portal` | nginx |
-| Dashboard | `servicos/dashboard` | `/opt/redvm-dashboard` | `red-dashboard.service` |
-| Proxy IA | `servicos/proxy` | `/opt/redvm-proxy` | `red-ollama-proxy.service` |
-| RED I.A | `servicos/redia` | `/opt/redia` | `redia.service` |
-| RED Trader | `servicos/redtrader` | `/opt/redtrader` | `redtrader.service` |
-| OpenClaw | `servicos/openclaw` | `/opt/red-openclaw` | `red-openclaw.service` |
-| Proxy Lab | `servicos/proxy-lab` | `/opt/red-proxy-lab` | `red-proxy-lab.service` |
-| Rapidleech | `servicos/rapidleech` | `/opt/rapidleech` | `rapidleech.service` |
-| RED SEB Monitor | `servicos/redseb-monitor` | `/opt/red-seb-monitor` | `red-seb-monitor.service` |
-| REDSEBIA | `servicos/redsebia` | `/opt/redsebia` | `red-sebia.service` |
-| IQ Bridge | `servicos/extensao-iq-demo/bridge` | `/opt/red-iq-vision-bridge` | `red-iq-vision-bridge.service` |
-| Deploy Agent | `servicos/deploy-agent` | legado | `red-webhook.service` |
+| Servico | Caminho | Runtime oficial na VM | Service | Estado atual |
+|---|---|---|---|---|
+| Portal | `servicos/portal` | `/var/www/red-portal` | nginx | ativo |
+| Dashboard | `servicos/dashboard` | `/opt/redvm-dashboard` | `red-dashboard.service` | ativo |
+| Proxy IA | `servicos/proxy` | `/opt/redvm-proxy` | `red-ollama-proxy.service` | ativo |
+| RED Proxy Pro | `servicos/redproxypro` | `/opt/redproxypro` | `redproxypro.service` | ativo |
+| RED Search | `servicos/searxng` | `/opt/red-searxng` | `red-searxng.service` | ativo |
+| MS RED PDF | `servicos/msredpdf` | `/opt/msredpdf` | `msredpdf.service` | ativo |
+| RED I.A | `servicos/redia` | `/opt/redia` | `redia.service` | ativo |
+| REDSEBIA | `servicos/redsebia` | `/opt/redsebia` | `red-sebia.service` | ativo |
+| Proxy Lab | `servicos/proxy-lab` | `/opt/red-proxy-lab` | `red-proxy-lab.service` | ativo |
+| Rapidleech | `servicos/rapidleech` | `/opt/rapidleech` | `rapidleech.service` | ativo |
+| RED SEB Monitor | `servicos/redseb-monitor` | `/opt/red-seb-monitor` | `red-seb-monitor.service` | ativo |
+| RED Trader | `servicos/redtrader` | `/opt/redtrader` | `redtrader.service` | inativo nesta VM |
+| OpenClaw | `servicos/openclaw` | `/opt/red-openclaw` | `red-openclaw.service` | inativo nesta VM |
+| IQ Bridge | `servicos/extensao-iq-demo/bridge` | `/opt/red-iq-vision-bridge` | `red-iq-vision-bridge.service` | inativo nesta VM |
+| Deploy Agent | `servicos/deploy-agent` | legado | `red-webhook.service` | legado |
 
 ---
 
@@ -55,6 +67,9 @@ servicos/
   portal/                Home publica
   dashboard/             Painel principal da VM unica
   proxy/                 Proxy IA oficial
+  redproxypro/           Proxy Vercel AI Gateway com rotacao de keys
+  searxng/               Busca web gratuita para OpenClaude
+  msredpdf/              Analise juridica de PDFs/DOCX com IA
   proxy-lab/             Laboratorio pago e experimental
   redia/                 Runtime da RED I.A
   redtrader/             Trader demo e paper
@@ -74,11 +89,14 @@ infraestrutura/
 
 ferramentas/
   vm/                    Paramiko, execucao remota e migracao
+  claude-desktop/        Configuracao Claude Desktop + RED Proxy Pro
+  claude-code-vscode/    Configuracao Claude Code VS Code + RED Proxy Pro
   iq_vision_benchmark/   Benchmarks visuais da IQ
   red_model_studio/      App desktop para testar modelos
   redclaudecode/         Launcher do Claude Code
 
 documentacao/
+  estado-atual-vm-2026-05-06.md
   arquitetura.md
   implantacao-servicos.md
   inventario-vm-antiga-2026-04-19.md
@@ -120,6 +138,9 @@ Cada servico agora tem um guia proprio de instalacao em qualquer VM:
 - [servicos/portal/README.md](servicos/portal/README.md)
 - [servicos/dashboard/README.md](servicos/dashboard/README.md)
 - [servicos/proxy/README.md](servicos/proxy/README.md)
+- [servicos/redproxypro/README.md](servicos/redproxypro/README.md)
+- [servicos/msredpdf/README.md](servicos/msredpdf/README.md)
+- [servicos/searxng/README.md](servicos/searxng/README.md)
 - [servicos/proxy-lab/README.md](servicos/proxy-lab/README.md)
 - [servicos/redia/README.md](servicos/redia/README.md)
 - [servicos/redtrader/README.md](servicos/redtrader/README.md)
@@ -161,6 +182,9 @@ Script-base de apoio:
 
 - dashboard: `/opt/redvm-dashboard`
 - proxy: `/opt/redvm-proxy`
+- red proxy pro: `/opt/redproxypro`
+- red search: `/opt/red-searxng`
+- msredpdf: `/opt/msredpdf`
 - redia: `/opt/redia`
 - redtrader: `/opt/redtrader`
 - openclaw: `/opt/red-openclaw`
@@ -175,6 +199,8 @@ Script-base de apoio:
 
 - dashboard: `/opt/redvm-dashboard/data`
 - proxy: `/var/lib/redvm-proxy`
+- red proxy pro: `/var/lib/redproxypro`
+- msredpdf: `/var/lib/msredpdf`
 - redia: `/opt/redia/data`
 - redtrader: `/opt/redtrader/data`
 - proxy-lab: `/opt/red-proxy-lab/data`
@@ -187,14 +213,19 @@ Script-base de apoio:
 
 ## Nginx
 
-O arquivo central do include publico e `infraestrutura/nginx/red-friendly-paths.nginx.conf`.
+O arquivo central versionado do include publico e `infraestrutura/nginx/red-friendly-paths.nginx.conf`. Na VM atual, o include ativo do nginx fica em `/etc/nginx/snippets/red-friendly-paths.nginx.conf`.
 
 Ele concentra as rotas amigaveis:
 
 - `/`
 - `/dashboard/`
 - `/proxy/`
+- `/redproxypro/`
 - `/ollama/`
+- `/search/`
+- `/msredpdf/`
+- `/modelo1/`
+- `/modelo2/`
 - `/redia/`
 - `/trader/`
 - `/proxy-lab/`
@@ -202,6 +233,8 @@ Ele concentra as rotas amigaveis:
 - `/openclaw/`
 - `/rapidleech/`
 - `/redsebia/`
+- `/redseb/`
+- `/download/`
 
 Sempre que mexer em nginx:
 
@@ -252,13 +285,13 @@ Ela depende de:
 
 ## RED Trader
 
-O RED Trader hoje e demo e paper e deve ser tratado assim.
+O RED Trader hoje e demo/paper e deve ser tratado assim. Em 2026-05-06 ele continua versionado, mas esta inativo na VM principal.
 
 Estado atual importante:
 
 - feed da IQ via extensao e bridge
 - sem depender da API comunitaria antiga como caminho principal
-- painel em `/trader/`
+- painel versionado em `/trader/` quando o servico for reativado
 
 ---
 
@@ -269,6 +302,8 @@ O bloco IQ e composto por:
 - extensao principal `servicos/extensao-iq-demo`
 - bridge `servicos/extensao-iq-demo/bridge`
 - extensao de laboratorio `servicos/extensao-iq-motor-lab`
+
+Em 2026-05-06 a bridge IQ esta versionada, mas inativa na VM principal.
 
 Uso recomendado:
 
@@ -289,7 +324,7 @@ Nao confiar so em OCR ou DOM superficial.
 
 ## OpenClaw
 
-OpenClaw roda como assistente operacional privado da RED.
+OpenClaw e o assistente operacional privado da RED. Em 2026-05-06 ele continua versionado, mas esta inativo na VM principal.
 
 Papel esperado:
 

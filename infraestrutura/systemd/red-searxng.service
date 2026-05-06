@@ -1,0 +1,18 @@
+[Unit]
+Description=RED Search SearXNG
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/red-searxng
+EnvironmentFile=-/opt/red-searxng/.env
+ExecStart=/usr/bin/docker compose up
+ExecStop=/usr/bin/docker compose down
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

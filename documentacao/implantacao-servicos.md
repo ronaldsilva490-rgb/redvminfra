@@ -7,16 +7,20 @@ Este guia descreve como implantar cada servico em qualquer VM Linux. Ele evita v
 Exemplo de layout remoto:
 
 ```text
-/opt/redsystems/
-  proxy/
-  dashboard/
-  redia/
-  redtrader/
-  redseb-monitor/
-  deploy-agent/
+/opt/redvm-proxy
+/opt/redvm-dashboard
+/opt/redproxypro
+/opt/red-searxng
+/opt/msredpdf
+/opt/rapidleech
+/opt/redia
+/opt/redsebia
+/opt/red-seb-monitor
 /etc/systemd/system/
-/etc/nginx/conf.d/
-/var/lib/redsystems/
+/etc/nginx/snippets/
+/var/lib/redvm-proxy
+/var/lib/redproxypro
+/var/lib/msredpdf
 ```
 
 Variaveis usadas nos exemplos:
@@ -26,6 +30,8 @@ export RED_ROOT=/opt/redsystems
 export RED_DATA=/var/lib/redsystems
 export RED_PUBLIC_HOST=example.com
 ```
+
+Na VM principal atual, a stack usa caminhos explicitos por servico, documentados em [estado-atual-vm-2026-05-06.md](estado-atual-vm-2026-05-06.md). Use `RED_ROOT` apenas como abstracao em VM nova.
 
 ## Base Da VM
 
@@ -168,6 +174,136 @@ Health check:
 ```bash
 curl -I http://127.0.0.1:9001/
 curl -I http://127.0.0.1/
+```
+
+## 2A. RED Proxy Pro
+
+Servico: `servicos/redproxypro`
+
+Responsabilidade:
+
+- expor `/v1/models`, `/v1/chat/completions`, `/v1/responses` e `/v1/messages`;
+- adaptar Claude Desktop/Claude Code para o Vercel AI Gateway;
+- rotacionar keys Vercel AI;
+- registrar requests, tokens, custos e modelos por key;
+- converter tool calls Anthropic/OpenAI sem despejar JSON no texto.
+
+Instalacao:
+
+```bash
+mkdir -p /opt/redproxypro /var/lib/redproxypro
+rsync -av servicos/redproxypro/ /opt/redproxypro/
+cd /opt/redproxypro
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
+```
+
+Ambiente em `/etc/redproxypro.env`:
+
+```env
+REDPROXYPRO_HOST=127.0.0.1
+REDPROXYPRO_PORT=8095
+REDPROXYPRO_VERCEL_BASE_URL=https://ai-gateway.vercel.sh/v1
+REDPROXYPRO_REQUIRE_AUTH=1
+REDPROXYPRO_AUTH_TOKENS=red
+REDPROXYPRO_DATA_DIR=/var/lib/redproxypro
+REDPROXYPRO_KEYS_FILE=/etc/redproxypro.keys
+```
+
+Systemd:
+
+```bash
+cp infraestrutura/systemd/redproxypro.service /etc/systemd/system/redproxypro.service
+systemctl daemon-reload
+systemctl enable --now redproxypro
+systemctl status redproxypro --no-pager
+```
+
+Health check:
+
+```bash
+curl -sS http://127.0.0.1:8095/healthz
+curl -sS http://127.0.0.1:8095/v1/models -H 'Authorization: Bearer red'
+```
+
+## 2B. RED Search / SearXNG
+
+Servico: `servicos/searxng`
+
+Responsabilidade:
+
+- fornecer busca web gratuita para OpenClaude/RED Code;
+- publicar UI/API em `/search/`;
+- evitar dependencia de API key de web search.
+
+Instalacao:
+
+```bash
+mkdir -p /opt/red-searxng
+rsync -av servicos/searxng/ /opt/red-searxng/
+cd /opt/red-searxng
+cp -n .env.example .env
+docker compose pull
+docker compose up -d
+```
+
+Systemd:
+
+```bash
+cp infraestrutura/systemd/red-searxng.service /etc/systemd/system/red-searxng.service
+systemctl daemon-reload
+systemctl enable --now red-searxng
+systemctl status red-searxng --no-pager
+```
+
+Health check:
+
+```bash
+curl -sS "http://127.0.0.1:8088/search?q=redsystems&format=json" | jq '.results[0]'
+```
+
+## 2C. MS RED PDF
+
+Servico: `servicos/msredpdf`
+
+Responsabilidade:
+
+- receber PDF/DOCX juridico;
+- extrair texto por pagina/bloco;
+- aplicar OCR em PDF escaneado;
+- streamar progresso e Markdown da analise em tempo real;
+- salvar historico local da analise.
+
+Dependencias de sistema:
+
+```bash
+apt install -y tesseract-ocr tesseract-ocr-por tesseract-ocr-eng
+```
+
+Instalacao:
+
+```bash
+mkdir -p /opt/msredpdf /var/lib/msredpdf
+rsync -av servicos/msredpdf/ /opt/msredpdf/
+cd /opt/msredpdf
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
+cp servicos/msredpdf/.env.example /etc/msredpdf.env
+```
+
+Systemd:
+
+```bash
+cp infraestrutura/systemd/msredpdf.service /etc/systemd/system/msredpdf.service
+systemctl daemon-reload
+systemctl enable --now msredpdf
+systemctl status msredpdf --no-pager
+```
+
+Health check:
+
+```bash
+curl -sS http://127.0.0.1:3142/healthz
 ```
 
 ## 3. REDIA WhatsApp AI
@@ -432,12 +568,17 @@ systemctl status red-webhook --no-pager
 
 ```text
 1. proxy
-2. dashboard
-3. redia
-4. redtrader
-5. rapidleech, se o hub legado ainda for usado
-6. redseb-monitor, se o ecossistema SEB estiver ativo
-7. deploy-agent, se ainda for usado
+2. redproxypro
+3. searxng
+4. dashboard
+5. msredpdf
+6. redia
+7. redsebia
+8. rapidleech
+9. redseb-monitor
+10. proxy-lab
+11. redtrader/openclaw/iq-bridge apenas se forem explicitamente reativados
+12. deploy-agent, se ainda for usado
 ```
 
 ## Checklist Pos-Deploy
@@ -446,7 +587,10 @@ systemctl status red-webhook --no-pager
 systemctl --failed
 systemctl status red-ollama-proxy --no-pager
 systemctl status red-dashboard --no-pager
+systemctl status redproxypro --no-pager
+systemctl status msredpdf --no-pager
 curl -s http://127.0.0.1:8080/api/tags
+curl -s http://127.0.0.1:8095/v1/models -H 'Authorization: Bearer red'
 nginx -t
 ```
 

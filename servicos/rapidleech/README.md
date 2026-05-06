@@ -51,6 +51,9 @@ O PHP app em si quase nao usa variavel de ambiente, mas a unit oficial usa:
 
 - `RAPIDLEECH_HOST`
 - `RAPIDLEECH_PORT`
+- `RAPIDLEECH_MAX_MBPS`: limite de download por tarefa, em MB/s. A VM publica `25` por padrao para downloads grandes nao travarem o Rapidleech nem disputarem I/O com o resto da stack.
+
+A unit tambem publica `PHP_CLI_SERVER_WORKERS=4`, para o servidor PHP de desenvolvimento atender a pagina do Rapidleech enquanto uma transferencia longa continua em outro worker.
 
 Exemplo base em:
 

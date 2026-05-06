@@ -9,6 +9,8 @@ User=root
 WorkingDirectory=/opt/rapidleech
 Environment=RAPIDLEECH_HOST=127.0.0.1
 Environment=RAPIDLEECH_PORT=2581
+Environment=RAPIDLEECH_MAX_MBPS=25
+Environment=PHP_CLI_SERVER_WORKERS=4
 EnvironmentFile=-/etc/red-rapidleech.env
 ExecStart=/bin/sh -lc 'exec /usr/bin/php -S "${RAPIDLEECH_HOST}:${RAPIDLEECH_PORT}" -t .'
 Restart=always

@@ -1465,6 +1465,34 @@ button {
     grid-template-columns: minmax(20rem, 0.8fr) minmax(0, 1.2fr);
 }
 
+.proxypro-kpis {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.proxypro-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.12fr) minmax(22rem, 0.88fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.proxypro-key-list,
+.proxypro-model-list {
+    max-height: 38rem;
+    overflow: auto;
+}
+
+.proxypro-key-card,
+.proxypro-model-card {
+    border-color: rgba(238, 77, 49, 0.16);
+}
+
+.proxypro-error {
+    color: var(--danger);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+}
+
 .chat-shell {
     min-height: 24rem;
     max-height: 48rem;
@@ -2193,6 +2221,8 @@ button {
     .proxy-image-layout,
     .proxy-status-layout,
     .proxy-keys-layout,
+    .proxypro-layout,
+    .proxypro-kpis,
     .project-kpis,
     .project-summary-cards,
     .project-components-grid,

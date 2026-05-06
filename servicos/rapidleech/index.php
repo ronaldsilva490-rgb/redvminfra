@@ -115,7 +115,7 @@ if (empty($_GET['filename']) || empty($_GET['host']) || empty($_GET['path'])) {
 				require_once(HOST_DIR . "download/$file");
 				$class = substr($file, 0, -4);
 				$firstchar = substr($file, 0, 1);
-				if ($firstchar > 0) $class = "d$class";
+				if (ctype_digit($firstchar)) $class = "d$class";
 				if (class_exists($class)) {
 					$hostClass = new $class();
 					$hostClass->Download($LINK);
@@ -255,7 +255,7 @@ if (empty($_GET['filename']) || empty($_GET['host']) || empty($_GET['path'])) {
 
 		if (!empty($_GET['audl'])) echo $nn . '<script type="text/javascript">parent.nextlink();</script>';
 	} else {
-		unlink($pathWithName);
+		if (is_file($pathWithName)) @unlink($pathWithName);
 		print lang(14) . '<br /><a href="javascript:location.reload();">' . lang(15) . '</a>';
 		if (!empty($_GET['audl'])) {
 			echo $nn . '<script type="text/javascript">parent.nextlink();</script>';

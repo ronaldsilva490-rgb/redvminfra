@@ -56,7 +56,7 @@ npm run check
 Python para dashboard/proxy/redtrader:
 
 ```powershell
-python -m py_compile servicos/proxy/proxy.py servicos/dashboard/app.py
+python -m py_compile servicos/proxy/proxy.py servicos/dashboard/app.py servicos/redproxypro/app.py servicos/msredpdf/app.py
 python -m py_compile servicos/redtrader/src/redtrader/app.py
 ```
 
@@ -192,6 +192,63 @@ Payload:
 }
 ```
 
+## 8A. RED Proxy Pro
+
+Papel:
+
+- gateway OpenAI/Anthropic-compatible para Vercel AI Gateway;
+- Claude Desktop e Claude Code via `/redproxypro`;
+- rotacao de keys;
+- estatisticas de custo/requests por key;
+- adaptacao de tool calls e streaming.
+
+Validacoes:
+
+```bash
+systemctl status redproxypro --no-pager
+curl -sS http://127.0.0.1:8095/healthz
+curl -sS http://127.0.0.1:8095/v1/models -H 'Authorization: Bearer red'
+```
+
+Teste local:
+
+```powershell
+cd servicos/redproxypro
+python -m unittest discover -s tests -v
+```
+
+## 8B. RED Search / SearXNG
+
+Papel:
+
+- busca web gratuita;
+- backend `custom` para OpenClaude/RED Code;
+- publicado em `/search/`.
+
+Validacoes:
+
+```bash
+systemctl status red-searxng --no-pager
+docker ps --filter name=red-searxng
+curl -sS "http://127.0.0.1:8088/search?q=redsystems&format=json" | jq '.results[0]'
+```
+
+## 8C. MS RED PDF
+
+Papel:
+
+- analise juridica profunda de PDF/DOCX;
+- OCR para PDF escaneado;
+- streaming SSE do progresso e do Markdown;
+- historico local em `/var/lib/msredpdf`.
+
+Validacoes:
+
+```bash
+systemctl status msredpdf --no-pager
+curl -sS http://127.0.0.1:3142/healthz
+```
+
 ## 9. REDIA
 
 Papel:
@@ -221,6 +278,8 @@ Papel:
 - dados reais de mercado;
 - relatorio de trades;
 - comite IA via proxy.
+
+Estado atual: versionado, mas inativo na VM principal em 2026-05-06. Reative apenas se o escopo de trading voltar para a VM.
 
 Comandos locais:
 
@@ -282,6 +341,8 @@ Runtime oficial:
 /opt/rapidleech
 /opt/rapidleech/files
 ```
+
+Estado atual: ativo na VM principal e publicado em `/rapidleech/`.
 
 ## 11. Deploy Seguro
 

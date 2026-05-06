@@ -6,6 +6,7 @@ const state = {
     processes: [],
     firewall: { enabled: false, raw: [] },
     proxy: null,
+    redproxypro: null,
     redia: null,
     sebMonitor: null,
     whatsapp: null,
@@ -102,6 +103,7 @@ const DASHBOARD_VIEW_CONFIG = {
     docker: { label: "Docker", path: "docker", aliases: [] },
     portal: { label: "Portal", path: "portal", aliases: [] },
     proxy: { label: "Proxy IA", path: "proxyia", aliases: ["proxy"] },
+    redproxypro: { label: "RED Proxy Pro", path: "redproxypro", aliases: ["proxy-pro", "proxypro"] },
     redia: { label: "RED I.A", path: "redia", aliases: [] },
     redtrader: { label: "RED Trader", path: "trader", aliases: [] },
     proxy_lab: { label: "Proxy Lab", path: "proxy-lab", aliases: ["proxylab"] },
@@ -133,12 +135,14 @@ const IMPORTANT_SERVICES = [
     "red-openclaw.service",
     "red-seb-monitor.service",
     "red-proxy-lab.service",
+    "redproxypro.service",
     "red-iq-vision-bridge.service",
     "rapidleech.service",
 ];
 const STACK_SERVICE_SHORTCUT_VIEW_MAP = {
     portal: "portal",
     "red-ollama-proxy": "proxy",
+    redproxypro: "redproxypro",
     redia: "redia",
     redtrader: "redtrader",
     "red-proxy-lab": "proxy_lab",
@@ -178,6 +182,19 @@ function formatBytes(bytes) {
     const units = ["B", "KB", "MB", "GB", "TB"];
     const power = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
     return `${(value / (1024 ** power)).toFixed(power === 0 ? 0 : 1)} ${units[power]}`;
+}
+
+function formatNumber(value) {
+    return new Intl.NumberFormat("pt-BR").format(Number(value || 0));
+}
+
+function formatUsd(value) {
+    return new Intl.NumberFormat("pt-BR", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 4,
+        maximumFractionDigits: 6,
+    }).format(Number(value || 0));
 }
 
 function formatDate(value) {
@@ -2330,6 +2347,100 @@ function setProxyTab(tab) {
     });
 }
 
+function renderRedProxyPro() {
+    const view = qs("#view-redproxypro");
+    if (!view || !state.redproxypro) return;
+
+    const proxy = state.redproxypro || {};
+    const summary = proxy.summary || {};
+    const service = proxy.service || {};
+    const keys = Array.isArray(proxy.keys) ? [...proxy.keys] : [];
+    const models = Array.isArray(proxy.models) ? [...proxy.models] : [];
+    keys.sort((a, b) => (Number(b.total_cost || 0) - Number(a.total_cost || 0)) || (Number(b.total_requests || 0) - Number(a.total_requests || 0)));
+    models.sort((a, b) => (Number(b.total_cost || 0) - Number(a.total_cost || 0)) || (Number(b.total_requests || 0) - Number(a.total_requests || 0)));
+
+    qs("#redProxyProMetricStatus").textContent = translateServiceState(service.active || "unknown");
+    qs("#redProxyProMetricService").textContent = `${service.service || "redproxypro.service"} / PID ${service.main_pid || 0}`;
+    qs("#redProxyProMetricKeys").textContent = `${formatNumber(summary.healthy || 0)}/${formatNumber(summary.total || 0)}`;
+    qs("#redProxyProMetricKeysMeta").textContent = `${formatNumber(summary.active || 0)} ativas / ${formatNumber(summary.cooldown || 0)} em cooldown`;
+    qs("#redProxyProMetricRequests").textContent = formatNumber(summary.total_requests || 0);
+    qs("#redProxyProMetricRequestsMeta").textContent = `${formatNumber(summary.successes || 0)} sucessos / ${formatNumber(summary.failures || 0)} falhas`;
+    qs("#redProxyProMetricCost").textContent = formatUsd(summary.total_cost || 0);
+    qs("#redProxyProMetricCostMeta").textContent = `market ${formatUsd(summary.market_cost || 0)}`;
+    qs("#redProxyProMetricTokens").textContent = formatNumber(summary.total_tokens || 0);
+    qs("#redProxyProMetricTokensMeta").textContent = `${formatNumber(summary.prompt_tokens || 0)} in / ${formatNumber(summary.completion_tokens || 0)} out`;
+
+    const summaryHost = qs("#redProxyProSummary");
+    if (summaryHost) {
+        summaryHost.innerHTML = `
+            <div class="kv-item"><span>Endpoint local</span><strong>${escapeHtml(proxy.proxy_url || "n/d")}</strong></div>
+            <div class="kv-item"><span>Upstream</span><strong>${escapeHtml(proxy.upstream || "n/d")}</strong></div>
+            <div class="kv-item"><span>Health</span><strong>HTTP ${Number(proxy.health_status || 0)}</strong></div>
+            <div class="kv-item"><span>Stats</span><strong>HTTP ${Number(proxy.stats_status || 0)}</strong></div>
+            <div class="kv-item"><span>Arquivo de uso</span><strong>${escapeHtml(proxy.usage_file || "n/d")}</strong></div>
+            <div class="kv-item"><span>Auth interna</span><strong>${proxy.auth_required ? "ligada" : "desligada"}</strong></div>
+            <div class="kv-item"><span>Retry HTTP</span><strong>${escapeHtml((proxy.retry_statuses || []).join(", ") || "n/d")}</strong></div>
+            <div class="kv-item"><span>Unit file</span><strong>${escapeHtml(translateServiceState(service.unit_file_state || "unknown"))}</strong></div>
+        `;
+    }
+
+    const keysHost = qs("#redProxyProKeysList");
+    if (keysHost) {
+        keysHost.innerHTML = keys.length ? keys.map((key) => {
+            const topModels = Array.isArray(key.top_models) ? key.top_models.slice(0, 3) : [];
+            return `
+                <article class="stack-card proxypro-key-card">
+                    <div class="stack-head">
+                        <div>
+                            <strong>${escapeHtml(key.name || "key")}</strong>
+                            <small>${formatNumber(key.total_requests || 0)} req | ${formatUsd(key.total_cost || 0)} | ${formatNumber(key.total_tokens || 0)} tokens</small>
+                        </div>
+                        <span class="pill ${key.active && Number(key.cooldown || 0) <= 0 ? "active" : "failed"}">${key.active ? (Number(key.cooldown || 0) > 0 ? "cooldown" : "ativa") : "inativa"}</span>
+                    </div>
+                    <div class="stack-meta">
+                        <span>${formatNumber(key.successes || 0)} ok / ${formatNumber(key.failures || 0)} falhas</span>
+                        <span>HTTP ${escapeHtml(key.last_status || "n/d")}</span>
+                        <span>${key.avg_latency ? `${Number(key.avg_latency).toFixed(2)}s médio` : "sem latência"}</span>
+                    </div>
+                    <div class="component-pills">
+                        ${topModels.length ? topModels.map((model) => `<span>${escapeHtml(model.model || "modelo")} · ${formatUsd(model.total_cost || 0)}</span>`).join("") : `<span>sem custo por modelo ainda</span>`}
+                    </div>
+                    ${key.last_error ? `<div class="stack-copy proxypro-error">${escapeHtml(key.last_error)}</div>` : ""}
+                </article>
+            `;
+        }).join("") : `<div class="empty">Nenhuma chave carregada no RED Proxy Pro.</div>`;
+    }
+
+    const modelsHost = qs("#redProxyProModelsList");
+    if (modelsHost) {
+        modelsHost.innerHTML = models.length ? models.slice(0, 24).map((model) => `
+            <article class="stack-card proxypro-model-card">
+                <div class="stack-head">
+                    <div>
+                        <strong>${escapeHtml(model.model || "modelo")}</strong>
+                        <small>${formatNumber(model.total_requests || 0)} req em ${formatNumber(model.key_count || 0)} key(s)</small>
+                    </div>
+                    <span class="pill active">${formatUsd(model.total_cost || 0)}</span>
+                </div>
+                <div class="stack-meta">
+                    <span>${formatNumber(model.total_tokens || 0)} tokens</span>
+                    <span>${formatNumber(model.prompt_tokens || 0)} entrada</span>
+                    <span>${formatNumber(model.completion_tokens || 0)} saída</span>
+                </div>
+                <div class="stack-copy">Keys: ${escapeHtml((model.keys || []).join(", ") || "n/d")}</div>
+            </article>
+        `).join("") : `<div class="empty">Os modelos aparecem aqui conforme forem usados pelo proxy.</div>`;
+    }
+
+    const status = qs("#redProxyProStatus");
+    if (status) {
+        status.textContent = proxy.reachable
+            ? `Online. Última leitura: ${new Date().toLocaleTimeString("pt-BR")}.`
+            : `Sem resposta completa do RED Proxy Pro. Health ${proxy.health_status || 0}, stats ${proxy.stats_status || 0}.`;
+        status.classList.toggle("active", Boolean(proxy.reachable));
+    }
+}
+
 function renderProxy() {
     if (!state.proxy) return;
 
@@ -3723,6 +3834,7 @@ function renderAll() {
     renderProcesses();
     renderFirewall();
     renderProxy();
+    renderRedProxyPro();
     renderRedia();
     renderSebMonitor();
     renderStackServiceViews();
@@ -3799,13 +3911,15 @@ async function sendSebMonitorAlert() {
 }
 
 function wireShellNavigation() {
-    qsa(".nav-item").forEach((item) => {
-        if (item.dataset.navBound === "true") return;
-        item.dataset.navBound = "true";
-        item.addEventListener("click", () => {
-            setView(item.dataset.view);
+    if (!window.__redvmNavClickBound) {
+        window.__redvmNavClickBound = true;
+        document.addEventListener("click", (event) => {
+            const target = event.target instanceof HTMLElement ? event.target.closest(".nav-item[data-view]") : null;
+            if (!target) return;
+            event.preventDefault();
+            setView(target.dataset.view);
         });
-    });
+    }
 
     if (!window.__redvmPopstateBound) {
         window.__redvmPopstateBound = true;
@@ -3923,6 +4037,7 @@ function connectSocket() {
             state.processes = payload.processes || state.processes;
             state.firewall = payload.firewall || state.firewall;
             state.proxy = payload.proxy || state.proxy;
+            state.redproxypro = payload.redproxypro || state.redproxypro;
             state.redia = payload.redia || state.redia;
             state.sebMonitor = payload.seb_monitor ? normalizeSebMonitorPayload(payload.seb_monitor) : state.sebMonitor;
             state.whatsapp = payload.whatsapp || state.whatsapp;
@@ -4130,6 +4245,7 @@ async function loadBootstrap() {
     state.processes = payload.processes;
     state.firewall = payload.firewall;
     state.proxy = payload.proxy;
+    state.redproxypro = payload.redproxypro || null;
     state.redia = payload.redia || null;
     state.sebMonitor = normalizeSebMonitorPayload(payload.seb_monitor || {});
     state.whatsapp = payload.whatsapp || null;
@@ -4151,6 +4267,15 @@ async function refreshProxyPanel(showMessage = true) {
     renderProxy();
     if (showMessage) {
         showToast("Painel do proxy atualizado", "success");
+    }
+}
+
+async function refreshRedProxyProPanel(showMessage = true) {
+    const payload = await api("/api/redproxypro");
+    state.redproxypro = payload;
+    renderRedProxyPro();
+    if (showMessage) {
+        showToast("RED Proxy Pro atualizado", "success");
     }
 }
 
@@ -4869,6 +4994,8 @@ function wireAuthenticatedUi() {
     });
     qs("#proxyRefreshButton").addEventListener("click", () => refreshProxyPanel(true));
     qs("#proxyRestartButton").addEventListener("click", () => serviceAction("red-ollama-proxy.service", "restart"));
+    qs("#redProxyProRefreshButton")?.addEventListener("click", () => refreshRedProxyProPanel(true));
+    qs("#redProxyProRestartButton")?.addEventListener("click", () => serviceAction("redproxypro.service", "restart"));
     qs("#proxySaveKeyButton").addEventListener("click", saveProxyKey);
     qs("#proxyResetKeyFormButton").addEventListener("click", resetProxyKeyForm);
     qs("#clearProxyLogButton").addEventListener("click", () => {
@@ -5012,6 +5139,10 @@ function wireAuthenticatedUi() {
         refreshRedia(false).catch(() => {});
     }, 8000);
     setInterval(() => {
+        if (state.currentView !== "redproxypro") return;
+        refreshRedProxyProPanel(false).catch(() => {});
+    }, 7000);
+    setInterval(() => {
         if (state.currentView !== "redseb_monitor") return;
         refreshSebMonitor(false).catch(() => {});
     }, 2500);
@@ -5042,6 +5173,9 @@ setView = function(view, options = {}) {
     if (title) title.textContent = config.label || DASHBOARD_VIEW_CONFIG.overview.label;
     if (nextView === "redseb_monitor") {
         refreshSebMonitor(false).catch(() => {});
+    }
+    if (nextView === "redproxypro") {
+        refreshRedProxyProPanel(false).catch(() => {});
     }
     if (options.syncHistory === false) return;
     const targetPath = dashboardViewUrl(nextView);

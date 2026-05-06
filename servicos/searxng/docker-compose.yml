@@ -1,0 +1,42 @@
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: red-searxng
+    restart: unless-stopped
+    depends_on:
+      - valkey
+    ports:
+      - "127.0.0.1:8088:8080"
+    volumes:
+      - ./settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      SEARXNG_BASE_URL: "http://redsystems.ddns.net/search/"
+      SEARXNG_SECRET: "${SEARXNG_SECRET:-change-me-before-production}"
+      SEARXNG_LIMITER: "false"
+      SEARXNG_REDIS_URL: "redis://valkey:6379/0"
+    networks:
+      - red-searxng
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: red-searxng-valkey
+    restart: unless-stopped
+    command: valkey-server --save "" --appendonly no --loglevel warning
+    networks:
+      - red-searxng
+    tmpfs:
+      - /data
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+networks:
+  red-searxng:
+    name: red-searxng

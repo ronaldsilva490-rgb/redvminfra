@@ -1,0 +1,21 @@
+[Unit]
+Description=MS RED PDF legal document AI analyzer
+After=network-online.target red-ollama-proxy.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/msredpdf
+Environment=MSREDPDF_HOST=127.0.0.1
+Environment=MSREDPDF_PORT=3142
+EnvironmentFile=-/etc/msredpdf.env
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/opt/msredpdf/.venv/bin/uvicorn app:app --host ${MSREDPDF_HOST} --port ${MSREDPDF_PORT}
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/msredpdf.log
+StandardError=append:/var/log/msredpdf.log
+
+[Install]
+WantedBy=multi-user.target

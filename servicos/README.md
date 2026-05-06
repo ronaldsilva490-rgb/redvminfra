@@ -8,13 +8,16 @@ Codigo dos servicos vivos, experimentais ou legados ainda uteis da RED Systems.
 portal/                 Home publica da stack
 dashboard/              Painel principal da VM unica
 proxy/                  Proxy IA oficial
+redproxypro/            Proxy Vercel AI Gateway com rotacao de keys
+msredpdf/               Analise juridica de PDFs com IA
+searxng/                Busca web gratuita para OpenClaude
 proxy-lab/              Laboratorio de benchmark pago
 redia/                  Runtime da RED I.A
 redtrader/              Trader demo/paper
 openclaw/               Assistente operacional privado
 rapidleech/             Transfer hub legado oficializado
 redseb-monitor/         Painel remoto do ecossistema SEB
-redsebia/              Novo portal, wallet e runtime do produto REDSEBIA
+redsebia/               Novo portal, wallet e runtime do produto REDSEBIA
 extensao-iq-demo/       Extensao Chrome e IQ Bridge
 extensao-iq-motor-lab/  Motor secundario de experimentacao remota na IQ
 deploy-agent/           Legado
@@ -25,6 +28,9 @@ deploy-agent/           Legado
 - [portal/README.md](portal/README.md)
 - [dashboard/README.md](dashboard/README.md)
 - [proxy/README.md](proxy/README.md)
+- [redproxypro/README.md](redproxypro/README.md)
+- [msredpdf/README.md](msredpdf/README.md)
+- [searxng/README.md](searxng/README.md)
 - [proxy-lab/README.md](proxy-lab/README.md)
 - [redia/README.md](redia/README.md)
 - [redtrader/README.md](redtrader/README.md)
@@ -41,12 +47,32 @@ deploy-agent/           Legado
 - `dashboard/` e o centro operacional da VM unica.
 - `redia/` continua existindo como runtime proprio, mas o caminho principal de operacao e `/dashboard/redia`.
 - `proxy-lab/` e laboratorio; nao trate como producao.
-- `openclaw/` e assistente operacional privado da stack, exposto por `/openclaw/`.
+- `redproxypro/` e o proxy dedicado ao Vercel AI Gateway; keys reais vivem em `/etc/redproxypro.env`, nunca no repo.
+- `msredpdf/` e o backend de analise juridica de PDF, publicado em `/msredpdf/` e integrado ao proxy IA oficial.
+- `searxng/` e o backend de busca web gratuita usado pelo OpenClaude via provedor custom.
 - `rapidleech/` virou parte oficial da stack e deve ser tratado como runtime publicado por `/rapidleech/`, nao como pasta solta fora do repo.
 - `redseb-monitor/` e o painel remoto oficial do ecossistema RED SEB / Safe Exam Browser, hoje exposto em `:2580`.
 - `redsebia/` e o backend independente do novo produto REDSEBIA, com portal do cliente, admin, wallet, PIX e runtime API.
+- `openclaw/`, `redtrader/` e `extensao-iq-demo/bridge` continuam versionados, mas estao inativos na VM principal em 2026-05-06.
 - `extensao-iq-motor-lab/` existe para iteracao rapida por JSON remoto antes de tocar a extensao principal.
 - `deploy-agent/` e legado; so mexa se houver motivo real.
+
+## Estado da VM principal em 2026-05-06
+
+Ativos:
+
+```text
+dashboard, proxy, redproxypro, searxng, msredpdf, rapidleech,
+redia, redsebia, red-seb-monitor, proxy-lab
+```
+
+Inativos por decisao operacional:
+
+```text
+openclaw, redtrader, iq-bridge
+```
+
+Snapshot completo: [../documentacao/estado-atual-vm-2026-05-06.md](../documentacao/estado-atual-vm-2026-05-06.md)
 
 ## Padrao esperado para cada servico
 

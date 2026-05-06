@@ -1,0 +1,21 @@
+[Unit]
+Description=RED Proxy Pro Vercel AI Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/redproxypro
+Environment=REDPROXYPRO_HOST=127.0.0.1
+Environment=REDPROXYPRO_PORT=8095
+EnvironmentFile=-/etc/redproxypro.env
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/opt/redproxypro/.venv/bin/python /opt/redproxypro/app.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/redproxypro.log
+StandardError=append:/var/log/redproxypro.log
+
+[Install]
+WantedBy=multi-user.target

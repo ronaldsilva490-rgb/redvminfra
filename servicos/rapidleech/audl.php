@@ -107,7 +107,7 @@ function resetProgress() {
 							require_once(HOST_DIR . 'download/' . $file);
 							$class = substr($file, 0, -4);
 							$firstchar = substr($file, 0, 1);
-							if ($firstchar > 0) $class = "d$class";
+							if (ctype_digit($firstchar)) $class = "d$class";
 							if (class_exists($class)) {
 								$hostClass = new $class(false);
 								$hostClass->Download($LINK);
@@ -133,7 +133,7 @@ function resetProgress() {
 				}
 				echo "<script type='text/javascript'>updateStatus($i, '".lang(25)."');</script>$nn";
 
-				$_GET['saveto'] = ($options['download_dir_is_changeable'] ? urldecode(trim($_GET['saveto'])) : (substr($options['download_dir'], 0, 6) != 'ftp://') ? realpath(DOWNLOAD_DIR) : $options['download_dir']);
+				$_GET['saveto'] = $options['download_dir_is_changeable'] ? urldecode(trim($_GET['saveto'])) : ((substr($options['download_dir'], 0, 6) != 'ftp://') ? realpath(DOWNLOAD_DIR) : $options['download_dir']);
 				$_GET['proxy'] = !empty($_GET['proxy']) ? trim(urldecode($_GET['proxy'])) : '';
 				$pauth = (empty($_GET['proxy']) || empty($_GET['pauth'])) ? '' : urldecode(trim($_GET['pauth']));
 				do {

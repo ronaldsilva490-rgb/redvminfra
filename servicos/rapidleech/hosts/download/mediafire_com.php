@@ -41,10 +41,24 @@ class mediafire_com extends DownloadClass {
 			echo "Enter your password here:<br />\n<input type='text' name='mfpassword' value='' placeholder='Enter file password here' autofocus='autofocus' required='required' />\n<input type='submit' />\n</form>";
 			return html_error('File requires password');
 		}
-		if (preg_match('@Location: (http:\/\/[^\r\n]+)@i', $this->page, $dl) || preg_match('@\w+\s*=\s*\"(https?://[^\"]+)\"\s*;@i', $this->page, $dl)) {
-			$dlink = trim($dl[1]);
-			$this->RedirectDownload($dlink, 'Mediafire.com');
+		if ($dlink = $this->FindDownloadLink()) {
+			$fileName = basename(rawurldecode(parse_url($dlink, PHP_URL_PATH)));
+			if (empty($fileName)) $fileName = 'Mediafire.com';
+			$this->RedirectDownload($dlink, $fileName, 0, 0, $this->link);
 		} else html_error("Error: Download link [FREE] not found!");
+	}
+
+	private function FindDownloadLink() {
+		if (preg_match('@\nLocation:\s*((?:https?:)?//download\d+\.mediafire\.com/[^\r\n]+)@i', $this->page, $dl)) return $this->NormalizeDownloadLink($dl[1]);
+		if (preg_match('@href\s*=\s*[\'"]((?:https?:)?//download\d+\.mediafire\.com/[^\'"]+)[\'"]@i', $this->page, $dl)) return $this->NormalizeDownloadLink($dl[1]);
+		if (preg_match('@\w+\s*=\s*[\'"]((?:https?:)?//download\d+\.mediafire\.com/[^\'"]+)[\'"]\s*;@i', $this->page, $dl)) return $this->NormalizeDownloadLink($dl[1]);
+		return false;
+	}
+
+	private function NormalizeDownloadLink($link) {
+		$link = html_entity_decode(trim($link), ENT_QUOTES, 'UTF-8');
+		if (strpos($link, '//') === 0) $link = 'https:' . $link;
+		return $link;
 	}
 
 	private function MF_Captcha() {

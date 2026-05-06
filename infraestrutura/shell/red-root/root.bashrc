@@ -103,5 +103,6 @@ export LANG=pt_BR.UTF-8
 export LANGUAGE=pt_BR:pt
 alias painel='/usr/local/bin/redpainel'
 alias motd='run-parts /etc/update-motd.d'
+alias sv='systemctl --no-pager --plain status nginx red-dashboard red-ollama-proxy rapidleech redia red-searxng red-sebia'
 PS1='\[\033[38;2;255;0;0m\]ronald@\h:\w# \[\033[0m\]'
 # <<< RED SYSTEMS PT-BR <<<

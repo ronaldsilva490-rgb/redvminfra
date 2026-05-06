@@ -7,6 +7,7 @@ import time
 import uuid
 import base64
 import hmac
+import re
 from threading import Lock, Thread
 from copy import deepcopy
 from pathlib import Path
@@ -25,6 +26,9 @@ NVIDIA_CHAT_BASE = os.getenv("RED_PROXY_NVIDIA_CHAT_BASE", "https://integrate.ap
 NVIDIA_GENAI_BASE = os.getenv("RED_PROXY_NVIDIA_GENAI_BASE", "https://ai.api.nvidia.com/v1/genai").rstrip("/")
 NVIDIA_PREFIX = "NIM - "
 NVIDIA_LEGACY_SUFFIX = " (NVIDIA)"
+MISTRAL_API_KEY = os.getenv("RED_PROXY_MISTRAL_API_KEY") or os.getenv("MISTRAL_API_KEY", "")
+MISTRAL_CHAT_BASE = os.getenv("RED_PROXY_MISTRAL_CHAT_BASE", "https://api.mistral.ai/v1").rstrip("/")
+MISTRAL_PREFIX = "Mistral - "
 DEFAULT_CHAT_MODEL = (os.getenv("RED_PROXY_DEFAULT_CHAT_MODEL") or "").strip()
 DEFAULT_VISION_MODEL = (os.getenv("RED_PROXY_DEFAULT_VISION_MODEL") or "").strip()
 DEFAULT_IMAGE_MODEL = (os.getenv("RED_PROXY_DEFAULT_IMAGE_MODEL") or "").strip()
@@ -47,8 +51,20 @@ NVIDIA_MODEL_REFRESH_ENABLED = (
     not in ("0", "false", "no", "off")
 )
 NVIDIA_MODEL_REFRESH_TTL_SECONDS = max(60, env_int("RED_PROXY_NVIDIA_MODEL_REFRESH_TTL_SECONDS", 3600))
+NVIDIA_CHAT_TIMEOUT_SECONDS = max(30, env_int("RED_PROXY_NVIDIA_CHAT_TIMEOUT_SECONDS", 360))
+NVIDIA_CHAT_STREAM_TIMEOUT_SECONDS = max(30, env_int("RED_PROXY_NVIDIA_CHAT_STREAM_TIMEOUT_SECONDS", NVIDIA_CHAT_TIMEOUT_SECONDS))
+MISTRAL_MODEL_REFRESH_ENABLED = (
+    os.getenv("RED_PROXY_MISTRAL_MODEL_REFRESH_ENABLED", "1").strip().lower()
+    not in ("0", "false", "no", "off")
+)
+MISTRAL_MODEL_REFRESH_TTL_SECONDS = max(60, env_int("RED_PROXY_MISTRAL_MODEL_REFRESH_TTL_SECONDS", 3600))
+MISTRAL_CHAT_TIMEOUT_SECONDS = max(30, env_int("RED_PROXY_MISTRAL_CHAT_TIMEOUT_SECONDS", 120))
+RESPONSES_MIN_OUTPUT_TOKENS = max(0, env_int("RED_PROXY_RESPONSES_MIN_OUTPUT_TOKENS", 2048))
 NVIDIA_MODEL_CACHE_FILE = Path(
     os.getenv("RED_PROXY_NVIDIA_MODEL_CACHE_FILE", str(Path(DATA_DIR) / "nvidia_models_cache.json"))
+)
+MISTRAL_MODEL_CACHE_FILE = Path(
+    os.getenv("RED_PROXY_MISTRAL_MODEL_CACHE_FILE", str(Path(DATA_DIR) / "mistral_models_cache.json"))
 )
 
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -367,6 +383,497 @@ def nvidia_catalog_status():
         "total_models": len(NVIDIA_MODELS),
     }
 
+
+MISTRAL_MODEL_NOTES = {
+    "mistral-medium-3.5": "Frontier multimodal agent/coding model, 256k context.",
+    "mistral-medium-2604": "Versioned alias for Mistral Medium 3.5.",
+    "mistral-large-latest": "General flagship candidate; stronger but slower than medium/small.",
+    "devstral-latest": "Code-agent model focused on exploring codebases and multi-file edits.",
+    "devstral-medium-latest": "Code-agent medium line; good cost/performance target.",
+    "mistral-small-latest": "Fast hybrid instruct/reasoning/coding model.",
+    "codestral-latest": "Code completion/generation specialist; less reliable for agent tools.",
+    "mistral-vibe-cli-latest": "Mistral's CLI-oriented agent model candidate.",
+}
+
+
+MISTRAL_BUNDLED_CHAT_MODELS = [
+    {
+        "id": "mistral-medium-3.5",
+        "kind": "vision",
+        "family": "mistral-medium",
+        "capabilities": ["chat", "vision"],
+        "created": 1775520000,
+        "owned_by": "mistralai",
+        "max_context_length": 262144,
+        "function_calling": True,
+        "source": "bundled",
+    },
+    {
+        "id": "devstral-latest",
+        "kind": "chat",
+        "family": "mistral-devstral",
+        "capabilities": ["chat"],
+        "created": 1775520000,
+        "owned_by": "mistralai",
+        "max_context_length": 262144,
+        "function_calling": True,
+        "source": "bundled",
+    },
+    {
+        "id": "devstral-medium-latest",
+        "kind": "chat",
+        "family": "mistral-devstral",
+        "capabilities": ["chat"],
+        "created": 1775520000,
+        "owned_by": "mistralai",
+        "max_context_length": 262144,
+        "function_calling": True,
+        "source": "bundled",
+    },
+    {
+        "id": "mistral-large-latest",
+        "kind": "vision",
+        "family": "mistral-large",
+        "capabilities": ["chat", "vision"],
+        "created": 1775520000,
+        "owned_by": "mistralai",
+        "max_context_length": 262144,
+        "function_calling": True,
+        "source": "bundled",
+    },
+    {
+        "id": "mistral-small-latest",
+        "kind": "vision",
+        "family": "mistral-small",
+        "capabilities": ["chat", "vision"],
+        "created": 1775520000,
+        "owned_by": "mistralai",
+        "max_context_length": 262144,
+        "function_calling": True,
+        "source": "bundled",
+    },
+    {
+        "id": "codestral-latest",
+        "kind": "chat",
+        "family": "mistral-codestral",
+        "capabilities": ["chat"],
+        "created": 1775520000,
+        "owned_by": "mistralai",
+        "max_context_length": 256000,
+        "function_calling": True,
+        "source": "bundled",
+    },
+    {
+        "id": "mistral-vibe-cli-latest",
+        "kind": "vision",
+        "family": "mistral-vibe",
+        "capabilities": ["chat", "vision"],
+        "created": 1775520000,
+        "owned_by": "mistralai",
+        "max_context_length": 262144,
+        "function_calling": True,
+        "source": "bundled",
+    },
+]
+
+MISTRAL_MODELS = list(MISTRAL_BUNDLED_CHAT_MODELS)
+MISTRAL_MODEL_MAP = {model["id"].lower(): model for model in MISTRAL_MODELS}
+_mistral_catalog_lock = Lock()
+_mistral_catalog_loaded_at = 0
+_mistral_catalog_source = "bundled"
+_mistral_catalog_error = ""
+
+
+CLAUDE_GATEWAY_MODEL_ALIASES = [
+    {
+        "id": "claude-red-mistral-medium",
+        "target": "mistral-medium-3.5",
+        "display_name": "RED MIS Medium 3.5",
+        "note": "Claude Desktop gateway alias para Mistral Medium 3.5, aprovado em tool calling.",
+    },
+    {
+        "id": "claude-red-devstral",
+        "target": "devstral-latest",
+        "display_name": "RED MIS Devstral",
+        "note": "Claude Desktop gateway alias para Devstral, aprovado em tool calling.",
+    },
+    {
+        "id": "claude-red-devstral-medium",
+        "target": "devstral-medium-latest",
+        "display_name": "RED MIS Devstral Medium",
+        "note": "Claude Desktop gateway alias para o melhor modelo Mistral de codigo/agente.",
+    },
+    {
+        "id": "claude-red-mistral-large",
+        "target": "mistral-large-latest",
+        "display_name": "RED MIS Large",
+        "note": "Claude Desktop gateway alias para Mistral Large, aprovado em tool calling.",
+    },
+    {
+        "id": "claude-red-mistral-small",
+        "target": "mistral-small-latest",
+        "display_name": "RED MIS Small",
+        "note": "Claude Desktop gateway alias rapido para tarefas curtas e conversa.",
+    },
+    {
+        "id": "claude-red-mistral-vibe",
+        "target": "mistral-vibe-cli-latest",
+        "display_name": "RED MIS Vibe",
+        "note": "Claude Desktop gateway alias para Mistral Vibe CLI, aprovado em tool calling.",
+    },
+    {
+        "id": "claude-red-codestral",
+        "target": "codestral-latest",
+        "display_name": "RED MIS Codestral",
+        "note": "Claude Desktop gateway alias para Codestral, aprovado em tool calling.",
+    },
+    {
+        "id": "claude-red-ollama-gemma4-31b",
+        "target": "gemma4:31b",
+        "display_name": "RED OLL Gemma 4 31B",
+        "note": "Ollama recente com tool calling aprovado; multimodal na vitrine oficial.",
+        "kind": "vision",
+        "capabilities": ["chat", "vision"],
+    },
+    {
+        "id": "claude-red-ollama-nemotron3-super",
+        "target": "nemotron-3-super",
+        "display_name": "RED OLL Nemotron 3 Super",
+        "note": "Ollama recente com tool calling aprovado.",
+    },
+    {
+        "id": "claude-red-ollama-minimax-m25",
+        "target": "minimax-m2.5",
+        "display_name": "RED OLL MiniMax M2.5",
+        "note": "Ollama Cloud recomendado para agentes; passou tool calling na chave atual.",
+    },
+    {
+        "id": "claude-red-ollama-qwen3-vl-235b",
+        "target": "qwen3-vl:235b-instruct",
+        "display_name": "RED OLL Qwen3 VL 235B",
+        "note": "Modelo vision Ollama com tool calling aprovado.",
+        "kind": "vision",
+        "capabilities": ["chat", "vision"],
+    },
+    {
+        "id": "claude-red-ollama-gpt-oss-120b",
+        "target": "gpt-oss:120b",
+        "display_name": "RED OLL GPT-OSS 120B",
+        "note": "Ollama GPT-OSS 120B com tool calling aprovado.",
+    },
+    {
+        "id": "claude-red-ollama-qwen3-coder-480b",
+        "target": "qwen3-coder:480b",
+        "display_name": "RED OLL Qwen3 Coder 480B",
+        "note": "Ollama coder grande; passou tool calling e e melhor fallback de codificacao.",
+    },
+    {
+        "id": "claude-red-nim-nemotron3-super",
+        "target": "nvidia/nemotron-3-super-120b-a12b",
+        "display_name": "RED NIM Nemotron 3 Super",
+        "note": "NVIDIA NIM recente, rapido no smoke e aprovado em tool calling.",
+    },
+    {
+        "id": "claude-red-nim-glm51",
+        "target": "z-ai/glm-5.1",
+        "display_name": "RED NIM GLM 5.1",
+        "note": "NVIDIA NIM GLM 5.1 com tool calling aprovado.",
+    },
+    {
+        "id": "claude-red-nim-gemma4-31b",
+        "target": "google/gemma-4-31b-it",
+        "display_name": "RED NIM Gemma 4 31B",
+        "note": "NVIDIA NIM Gemma 4 31B com tool calling aprovado.",
+    },
+    {
+        "id": "claude-red-nim-qwen35-397b",
+        "target": "qwen/qwen3.5-397b-a17b",
+        "display_name": "RED NIM Qwen 3.5 397B",
+        "note": "NVIDIA NIM Qwen 3.5 397B com tool calling aprovado.",
+    },
+    {
+        "id": "claude-red-nim-mistral-small4",
+        "target": "mistralai/mistral-small-4-119b-2603",
+        "display_name": "RED NIM Mistral Small 4",
+        "note": "NVIDIA NIM Mistral Small 4 119B com tool calling aprovado.",
+    },
+    {
+        "id": "claude-red-nim-kimi-k26",
+        "target": "moonshotai/kimi-k2.6",
+        "display_name": "RED NIM Kimi K2.6",
+        "note": "NVIDIA NIM Kimi K2.6; modelo forte, pode entrar em fila no NIM.",
+    },
+    {
+        "id": "claude-red-nim-kimi-thinking",
+        "target": "moonshotai/kimi-k2-thinking",
+        "display_name": "RED NIM Kimi K2 Thinking",
+        "note": "NVIDIA NIM Kimi K2 Thinking; bom para raciocinio, pode ser mais lento.",
+    },
+    {
+        "id": "claude-red-qwen-next",
+        "target": "qwen/qwen3-next-80b-a3b-instruct",
+        "display_name": "RED NIM Qwen Next 80B",
+        "note": "Claude Desktop gateway alias para Qwen Next via NVIDIA NIM.",
+    },
+    {
+        "id": "claude-red-qwen-35-122b",
+        "target": "qwen/qwen3.5-122b-a10b",
+        "display_name": "RED NIM Qwen 3.5 122B",
+        "note": "Claude Desktop gateway alias para raciocinio geral forte via NVIDIA NIM.",
+    },
+    {
+        "id": "claude-red-glm51",
+        "target": "z-ai/glm-5.1",
+        "display_name": "RED NIM GLM 5.1 Legacy",
+        "note": "Alias legado para sessoes antigas; use claude-red-nim-glm51 na lista nova.",
+        "listed": False,
+    },
+    {
+        "id": "claude-red-qwen3-coder-next",
+        "target": "qwen3-coder-next",
+        "display_name": "RED OLL Qwen3 Coder Next",
+        "note": "Claude Desktop gateway alias para o coder do upstream Ollama/proxy.",
+    },
+]
+CLAUDE_GATEWAY_ALIAS_MAP = {item["id"].lower(): item for item in CLAUDE_GATEWAY_MODEL_ALIASES}
+
+
+def mistral_kind_for_item(model_id, capabilities=None):
+    lower = str(model_id or "").strip().lower()
+    capabilities = capabilities or {}
+    if capabilities.get("vision"):
+        return "vision"
+    if "embed" in lower:
+        return "embedding"
+    if "ocr" in lower:
+        return "ocr"
+    if "voxtral" in lower:
+        return "audio"
+    return "chat"
+
+
+def mistral_capabilities_from_item(capabilities, kind):
+    capabilities = capabilities or {}
+    out = []
+    if capabilities.get("completion_chat", True) and kind not in ("embedding", "ocr", "audio"):
+        out.append("chat")
+    if capabilities.get("vision") and "vision" not in out:
+        out.append("vision")
+    if capabilities.get("completion_fim"):
+        out.append("fim")
+    if capabilities.get("embeddings"):
+        out.append("embeddings")
+    return out or (["chat"] if kind in ("chat", "vision") else [])
+
+
+def mistral_family_for_model(model_id):
+    lower = str(model_id or "").lower()
+    if "devstral" in lower:
+        return "mistral-devstral"
+    if "codestral" in lower:
+        return "mistral-codestral"
+    if "large" in lower:
+        return "mistral-large"
+    if "medium" in lower:
+        return "mistral-medium"
+    if "small" in lower:
+        return "mistral-small"
+    if "ministral" in lower:
+        return "mistral-ministral"
+    if "vibe" in lower:
+        return "mistral-vibe"
+    return "mistral"
+
+
+def mistral_model_info(model_id, item=None, source="bundled"):
+    item = item or {}
+    raw_capabilities = item.get("capabilities")
+    capabilities = raw_capabilities if isinstance(raw_capabilities, dict) else {}
+    capability_list = raw_capabilities if isinstance(raw_capabilities, list) else None
+    kind = item.get("kind") or mistral_kind_for_item(model_id, capabilities)
+    try:
+        created = int(item.get("created") or 1775520000)
+    except Exception:
+        created = 1775520000
+    return {
+        "id": str(model_id or "").strip(),
+        "kind": kind,
+        "family": item.get("family") or mistral_family_for_model(model_id),
+        "capabilities": ordered_unique(capability_list or item.get("capabilities_list") or item.get("capability_list") or mistral_capabilities_from_item(capabilities, kind)),
+        "note": item.get("note") or MISTRAL_MODEL_NOTES.get(str(model_id or "").strip(), ""),
+        "created": created,
+        "owned_by": item.get("owned_by") or "mistralai",
+        "source": source,
+        "max_context_length": item.get("max_context_length"),
+        "function_calling": bool(capabilities.get("function_calling", item.get("function_calling", True))),
+    }
+
+
+def dedupe_mistral_model_infos(models):
+    out = []
+    seen = set()
+    for model in models or []:
+        if not isinstance(model, dict):
+            continue
+        model_id = str(model.get("id") or "").strip()
+        if not model_id:
+            continue
+        key = model_id.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized = dict(model)
+        normalized["id"] = model_id
+        normalized.setdefault("kind", mistral_kind_for_item(model_id))
+        normalized.setdefault("family", mistral_family_for_model(model_id))
+        normalized.setdefault("capabilities", ["chat"])
+        normalized.setdefault("note", MISTRAL_MODEL_NOTES.get(model_id, ""))
+        normalized.setdefault("created", 1775520000)
+        normalized.setdefault("owned_by", "mistralai")
+        normalized.setdefault("source", "bundled")
+        normalized.setdefault("function_calling", True)
+        out.append(normalized)
+    return out
+
+
+def set_mistral_models(models, source):
+    global MISTRAL_MODELS, MISTRAL_MODEL_MAP, _mistral_catalog_source
+    MISTRAL_MODELS = dedupe_mistral_model_infos(models)
+    MISTRAL_MODEL_MAP = {model["id"].lower(): model for model in MISTRAL_MODELS}
+    _mistral_catalog_source = source
+    invalidate_model_catalog_cache()
+
+
+def normalize_mistral_catalog_payload(data, source):
+    entries = data.get("data") if isinstance(data, dict) else data
+    models = []
+    for item in entries or []:
+        if not isinstance(item, dict):
+            continue
+        model_id = str(item.get("id") or item.get("name") or "").strip()
+        if not model_id:
+            continue
+        raw_capabilities = item.get("capabilities")
+        capabilities = raw_capabilities if isinstance(raw_capabilities, dict) else {}
+        cached_capabilities = raw_capabilities if isinstance(raw_capabilities, list) else []
+        if not capabilities.get("completion_chat", False) and "chat" not in cached_capabilities:
+            continue
+        info = mistral_model_info(model_id, item, source=source)
+        if "chat" not in info.get("capabilities", []):
+            continue
+        models.append(info)
+    return dedupe_mistral_model_infos(models)
+
+
+def mistral_headers():
+    return {
+        "Authorization": "Bearer " + MISTRAL_API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+
+def fetch_mistral_catalog_from_api():
+    if not MISTRAL_API_KEY:
+        raise RuntimeError("RED_PROXY_MISTRAL_API_KEY not configured")
+    url = MISTRAL_CHAT_BASE + "/models"
+    resp = http_session.get(url, headers=mistral_headers(), timeout=30)
+    if resp.status_code >= 400:
+        raise RuntimeError("Mistral model catalog HTTP " + str(resp.status_code) + ": " + resp.text[:160])
+    return normalize_mistral_catalog_payload(resp.json(), source="live")
+
+
+def read_mistral_catalog_cache():
+    try:
+        data = json.loads(MISTRAL_MODEL_CACHE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return [], 0
+    models = normalize_mistral_catalog_payload(data.get("models") or [], source="cache")
+    try:
+        cached_at = int(data.get("cached_at") or 0)
+    except Exception:
+        cached_at = 0
+    return models, cached_at
+
+
+def write_mistral_catalog_cache(models):
+    try:
+        MISTRAL_MODEL_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "cached_at": int(time.time()),
+            "source": MISTRAL_CHAT_BASE + "/models",
+            "models": models,
+        }
+        MISTRAL_MODEL_CACHE_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        try:
+            log_message("WARN", "Falha ao gravar cache Mistral: " + str(e)[:120])
+        except NameError:
+            pass
+
+
+def ensure_mistral_catalog(force=False):
+    global _mistral_catalog_loaded_at, _mistral_catalog_error
+    now = time.time()
+    if not force and _mistral_catalog_loaded_at and (now - _mistral_catalog_loaded_at) < MISTRAL_MODEL_REFRESH_TTL_SECONDS:
+        return
+    with _mistral_catalog_lock:
+        now = time.time()
+        if not force and _mistral_catalog_loaded_at and (now - _mistral_catalog_loaded_at) < MISTRAL_MODEL_REFRESH_TTL_SECONDS:
+            return
+
+        if MISTRAL_MODEL_REFRESH_ENABLED and MISTRAL_API_KEY:
+            try:
+                live_models = fetch_mistral_catalog_from_api()
+                if live_models:
+                    set_mistral_models(live_models, "live")
+                    write_mistral_catalog_cache(live_models)
+                    _mistral_catalog_loaded_at = now
+                    _mistral_catalog_error = ""
+                    return
+                _mistral_catalog_error = "catalogo Mistral remoto veio vazio"
+            except Exception as e:
+                _mistral_catalog_error = str(e)[:300]
+                try:
+                    log_message("WARN", "Falha ao atualizar catalogo Mistral: " + _mistral_catalog_error)
+                except NameError:
+                    pass
+
+        cached_models, _cached_at = read_mistral_catalog_cache()
+        if cached_models:
+            set_mistral_models(cached_models, "cache")
+            _mistral_catalog_loaded_at = now
+            return
+
+        set_mistral_models(MISTRAL_BUNDLED_CHAT_MODELS, "bundled")
+        _mistral_catalog_loaded_at = now
+
+
+def normalize_mistral_model(model_name):
+    ensure_mistral_catalog()
+    if not isinstance(model_name, str):
+        return None, None
+    raw = model_name.strip()
+    if raw.lower().startswith(MISTRAL_PREFIX.lower()):
+        raw = raw[len(MISTRAL_PREFIX) :].strip()
+    info = MISTRAL_MODEL_MAP.get(raw.lower())
+    if info:
+        return info["id"], info
+    return None, None
+
+
+def mistral_catalog_status():
+    ensure_mistral_catalog()
+    return {
+        "refresh_enabled": MISTRAL_MODEL_REFRESH_ENABLED,
+        "refresh_ttl_seconds": MISTRAL_MODEL_REFRESH_TTL_SECONDS,
+        "cache_file": str(MISTRAL_MODEL_CACHE_FILE),
+        "source": _mistral_catalog_source,
+        "last_refresh_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(_mistral_catalog_loaded_at)) if _mistral_catalog_loaded_at else None,
+        "last_error": _mistral_catalog_error,
+        "models": len(MISTRAL_MODELS),
+    }
+
 # ============ CACHE PARA ENDPOINTS READ-ONLY ============
 _cache = {}
 _cache_lock = Lock()
@@ -443,6 +950,12 @@ def normalize_nvidia_model(model_name):
     return None, None
 
 
+def claude_gateway_alias(model_name):
+    if not isinstance(model_name, str):
+        return None
+    return CLAUDE_GATEWAY_ALIAS_MAP.get(model_name.strip().lower())
+
+
 def is_nvidia_request_body(raw_body):
     try:
         body = json.loads(raw_body.decode("utf-8") if isinstance(raw_body, (bytes, bytearray)) else raw_body)
@@ -469,6 +982,20 @@ def ordered_unique(values):
     return out
 
 
+def sse_json(payload):
+    # Keep SSE bytes ASCII-only so clients with sloppy stream decoding do not
+    # turn UTF-8 Portuguese into mojibake like "vocÃª".
+    return json.dumps(payload, ensure_ascii=True)
+
+
+def iter_utf8_lines(response):
+    for line in response.iter_lines(decode_unicode=False):
+        if isinstance(line, (bytes, bytearray)):
+            yield line.decode("utf-8", "replace")
+        else:
+            yield str(line)
+
+
 def nvidia_capabilities(model_info):
     kind = model_info.get("kind")
     if kind == "image":
@@ -487,7 +1014,7 @@ def infer_upstream_kind_and_capabilities(model_name, item=None):
     embed_markers = ("embed", "embedding", "nomic-embed", "mxbai", "bge", "gte-", "e5")
     image_markers = ("flux", "stable-diffusion", "sdxl", "sd3", "imagen", "playground", "kolors")
     audio_markers = ("whisper", "tts", "speech", "audio")
-    vision_markers = ("vision", "-vl", ":vl", "qwen3-vl", "llava", "moondream", "bakllava", "minicpm-v", "vila")
+    vision_markers = ("vision", "-vl", ":vl", "qwen3-vl", "qwen3.6", "kimi-k2.6", "gemma4", "llava", "moondream", "bakllava", "minicpm-v", "vila")
 
     if any(marker in lower for marker in embed_markers):
         return "embedding", ["embeddings"]
@@ -505,6 +1032,27 @@ def infer_upstream_kind_and_capabilities(model_name, item=None):
 
 
 def model_descriptor(model_name, item=None):
+    alias = claude_gateway_alias(model_name)
+    if alias:
+        target = model_descriptor(alias["target"])
+        capabilities = ordered_unique(alias.get("capabilities") or target.get("capabilities") or ["chat"])
+        return {
+            "id": alias["id"],
+            "route_model": target.get("route_model") or alias["target"],
+            "provider": target.get("provider") or "claude_gateway",
+            "kind": alias.get("kind") or target.get("kind") or "chat",
+            "family": target.get("family") or "claude-gateway",
+            "capabilities": capabilities,
+            "note": alias.get("note") or target.get("note") or "",
+            "owned_by": "redsystems",
+            "created": alias.get("created") or target.get("created") or 1775520000,
+            "display_name": alias.get("display_name") or alias["id"],
+            "gateway_alias": True,
+            "target_model": alias["target"],
+            "max_context_length": alias.get("max_context_length") or target.get("max_context_length"),
+            "function_calling": bool(alias.get("function_calling", target.get("function_calling", True))),
+        }
+
     model_id, model_info = normalize_nvidia_model(model_name)
     if model_info:
         return {
@@ -517,6 +1065,22 @@ def model_descriptor(model_name, item=None):
             "note": model_info.get("note", ""),
             "owned_by": model_info.get("owned_by") or "nvidia",
             "created": model_info.get("created") or 1775520000,
+        }
+
+    model_id, model_info = normalize_mistral_model(model_name)
+    if model_info:
+        return {
+            "id": model_id,
+            "route_model": model_id,
+            "provider": "mistral",
+            "kind": model_info.get("kind") or "chat",
+            "family": model_info.get("family") or "mistral",
+            "capabilities": ordered_unique(model_info.get("capabilities") or ["chat"]),
+            "note": model_info.get("note", ""),
+            "owned_by": model_info.get("owned_by") or "mistralai",
+            "created": model_info.get("created") or 1775520000,
+            "max_context_length": model_info.get("max_context_length"),
+            "function_calling": bool(model_info.get("function_calling", True)),
         }
 
     item = item or {}
@@ -569,7 +1133,7 @@ def required_capability_for_request(endpoint_name, body):
         return "embeddings"
     if endpoint_name == "/api/images/generate":
         return "image_generation"
-    if endpoint_name in ("/v1/chat/completions", "/v1/messages", "/v1/responses", "/api/chat"):
+    if endpoint_name in ("/v1/chat/completions", "/v1/messages", "/v1/messages/count_tokens", "/v1/responses", "/api/chat"):
         return "vision" if text_payload_needs_vision((body or {}).get("messages") or (body or {}).get("input")) else "chat"
     if endpoint_name == "/api/generate":
         model_name = str(extract_model_name(body) or "").strip()
@@ -696,6 +1260,7 @@ def normalize_openai_payload_for_upstream(payload, source_ip, endpoint_name):
 
 def augment_tags_body(raw_body):
     ensure_nvidia_catalog()
+    ensure_mistral_catalog()
     try:
         data = json.loads(raw_body.decode("utf-8") if isinstance(raw_body, (bytes, bytearray)) else raw_body)
         models = data.get("models")
@@ -724,9 +1289,30 @@ def augment_tags_body(raw_body):
                     },
                 }
             )
+        for model in MISTRAL_MODELS:
+            name = model["id"]
+            if name.lower() in existing:
+                continue
+            models.append(
+                {
+                    "name": name,
+                    "model": name,
+                    "modified_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(model.get("created") or 1775520000)),
+                    "size": 0,
+                    "digest": "mistral-" + uuid.uuid5(uuid.NAMESPACE_URL, name).hex,
+                    "details": {
+                        "parent_model": "",
+                        "format": "mistral",
+                        "family": model.get("family") or "mistral",
+                        "families": ["mistral", model.get("kind") or "chat"],
+                        "parameter_size": "",
+                        "quantization_level": "",
+                    },
+                }
+            )
         return json.dumps(data, ensure_ascii=False).encode("utf-8")
     except Exception as e:
-        log_message("WARN", "Falha ao anexar modelos NVIDIA: " + str(e)[:120])
+        log_message("WARN", "Falha ao anexar modelos extras em /api/tags: " + str(e)[:120])
         return raw_body
 
 
@@ -764,6 +1350,44 @@ def nvidia_model_details(model_id, model_info):
 def nvidia_show_request(model_id, model_info, source_ip):
     log_message("INFO", "NVIDIA show " + model_id, "nvidia", source_ip, "/api/show", 0, 200)
     return jsonify(nvidia_model_details(model_id, model_info))
+
+
+def mistral_model_details(model_id, model_info):
+    descriptor = model_descriptor(model_id, {"id": model_id, "owned_by": "mistralai"})
+    family = model_info.get("family") or "mistral"
+    kind = model_info.get("kind") or "chat"
+    return {
+        "license": "Mistral AI routed by RED Systems proxy.",
+        "modelfile": "FROM " + model_id + "\nPARAMETER provider mistral\n",
+        "parameters": "",
+        "template": "{{ .Prompt }}",
+        "details": {
+            "parent_model": "",
+            "format": "mistral",
+            "family": family,
+            "families": ["mistral", kind],
+            "parameter_size": "",
+            "quantization_level": "",
+        },
+        "model_info": {
+            "red.provider": "mistral",
+            "red.model": model_id,
+            "red.kind": kind,
+            "red.family": family,
+            "red.route_model": descriptor["route_model"],
+            "red.capabilities": descriptor["capabilities"],
+            "red.note": model_info.get("note", ""),
+            "red.function_calling": bool(model_info.get("function_calling", True)),
+            "red.max_context_length": model_info.get("max_context_length"),
+        },
+        "capabilities": descriptor["capabilities"],
+        "modified_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(model_info.get("created") or 1775520000)),
+    }
+
+
+def mistral_show_request(model_id, model_info, source_ip):
+    log_message("INFO", "Mistral show " + model_id, "mistral", source_ip, "/api/show", 0, 200)
+    return jsonify(mistral_model_details(model_id, model_info))
 
 
 def ollama_to_nvidia_messages(messages):
@@ -815,7 +1439,7 @@ def nvidia_chat_payload(body, model_id, base_path):
     return payload
 
 
-def compact_chat_debug(body, payload, model_id, base_path):
+def compact_chat_debug(body, payload, model_id, base_path, provider="nvidia"):
     raw_messages = body.get("messages") or []
     last_content = ""
     last_type = "none"
@@ -831,7 +1455,7 @@ def compact_chat_debug(body, payload, model_id, base_path):
             last_len = 0
     options = body.get("options") or {}
     return {
-        "provider": "nvidia",
+        "provider": provider,
         "model": model_id,
         "endpoint": base_path,
         "stream": bool(payload.get("stream")),
@@ -855,6 +1479,18 @@ def nvidia_headers(content_type="application/json"):
 
 def proxy_error_response(message, status=500, error_type="red_proxy_error"):
     return jsonify({"error": {"message": message, "type": error_type}}), status
+
+
+def request_json_object():
+    body = request.get_json(silent=True)
+    if body is None:
+        raw = request.get_data(cache=True) or b""
+        if raw.strip():
+            return None, proxy_error_response("corpo JSON invalido ou mal escapado", 400, "invalid_request_error")
+        return {}, None
+    if not isinstance(body, dict):
+        return None, proxy_error_response("corpo JSON precisa ser um objeto", 400, "invalid_request_error")
+    return body, None
 
 
 def first_forwarded_ip():
@@ -943,6 +1579,16 @@ def response_headers_subset(headers):
         if h in headers:
             selected[h] = headers[h]
     return selected
+
+
+def sse_no_buffer_headers(extra=None):
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    }
+    if extra:
+        headers.update(extra)
+    return headers
 
 
 def proxy_response_from_upstream(resp):
@@ -1045,6 +1691,7 @@ def upstream_json_request(method, path, source_ip, *, body=None, timeout=180):
 
 def upstream_model_entries(source_ip):
     ensure_nvidia_catalog()
+    ensure_mistral_catalog()
     cached_body, _cached_ct, _cached_status = cache_get(MODEL_CATALOG_CACHE_KEY)
     if cached_body is not None:
         try:
@@ -1107,13 +1754,36 @@ def upstream_model_entries(source_ip):
             }
         )
 
+    for model in MISTRAL_MODELS:
+        model_name = model["id"]
+        if model_name.lower() in seen:
+            continue
+        seen.add(model_name.lower())
+        merged.append(
+            {
+                "id": model_name,
+                "object": "model",
+                "created": model.get("created") or 1775520000,
+                "owned_by": model.get("owned_by") or "mistralai",
+            }
+        )
+
     payload = {"object": "list", "data": merged}
     cache_set(MODEL_CATALOG_CACHE_KEY, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json", 200, 300)
     return merged
 
 
 def model_descriptors(source_ip):
-    return [model_descriptor(item.get("id") or item.get("name"), item) for item in upstream_model_entries(source_ip)]
+    descriptors = [model_descriptor(item.get("id") or item.get("name"), item) for item in upstream_model_entries(source_ip)]
+    seen = {descriptor["id"].lower() for descriptor in descriptors}
+    for alias in CLAUDE_GATEWAY_MODEL_ALIASES:
+        if not alias.get("listed", True):
+            continue
+        if alias["id"].lower() in seen:
+            continue
+        descriptors.append(model_descriptor(alias["id"]))
+        seen.add(alias["id"].lower())
+    return descriptors
 
 
 def find_model_descriptor(model_name, source_ip):
@@ -1128,6 +1798,9 @@ def find_model_descriptor(model_name, source_ip):
     model_id, model_info = normalize_nvidia_model(model_name)
     if model_info:
         return model_descriptor(model_id, {"id": nvidia_display_name(model_id), "owned_by": "nvidia"})
+    model_id, model_info = normalize_mistral_model(model_name)
+    if model_info:
+        return model_descriptor(model_id, {"id": model_id, "owned_by": "mistralai"})
     return None
 
 
@@ -1182,10 +1855,12 @@ def resolve_model_for_capability(model_name, capability, source_ip):
 def routing_meta(requested, resolved, capability):
     requested_id = requested["id"] if requested else ""
     resolved_id = resolved["id"] if resolved else ""
+    route_model = resolved.get("route_model") if resolved else ""
     return {
         "capability": capability,
         "requested_model": requested_id,
         "resolved_model": resolved_id,
+        "route_model": route_model,
         "fallback_used": bool(requested_id and resolved_id and requested_id.lower() != resolved_id.lower()),
         "requested_provider": requested.get("provider") if requested else "",
         "resolved_provider": resolved.get("provider") if resolved else "",
@@ -1197,14 +1872,22 @@ def route_json_body(body, endpoint_name, source_ip):
     resolved, requested, error_response = resolve_model_for_capability(extract_model_name(body), capability, source_ip)
     if error_response is not None:
         return None, None, error_response
-    return clone_body_with_model(body, resolved["id"]), routing_meta(requested, resolved, capability), None
+    return clone_body_with_model(body, resolved.get("route_model") or resolved["id"]), routing_meta(requested, resolved, capability), None
 
 
 def public_model_entry(descriptor):
+    created = descriptor.get("created") or 1775520000
+    try:
+        created_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(int(created)))
+    except Exception:
+        created_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(1775520000))
     return {
         "id": descriptor["id"],
         "object": "model",
-        "created": descriptor.get("created") or 1775520000,
+        "type": "model",
+        "created": created,
+        "created_at": created_at,
+        "display_name": descriptor.get("display_name") or descriptor["id"],
         "owned_by": descriptor.get("owned_by") or descriptor.get("provider") or "upstream",
         "red": {
             "provider": descriptor.get("provider"),
@@ -1212,6 +1895,10 @@ def public_model_entry(descriptor):
             "family": descriptor.get("family"),
             "capabilities": descriptor.get("capabilities") or [],
             "route_model": descriptor.get("route_model"),
+            "target_model": descriptor.get("target_model") or "",
+            "gateway_alias": bool(descriptor.get("gateway_alias")),
+            "max_context_length": descriptor.get("max_context_length"),
+            "function_calling": bool(descriptor.get("function_calling", True)),
             "note": descriptor.get("note") or "",
         },
     }
@@ -1301,7 +1988,7 @@ def openai_completion_sse_from_chat(data, model_name):
     created = completion["created"]
     model = completion["model"]
     text = completion["choices"][0]["text"]
-    yield "data: " + json.dumps(
+    yield "data: " + sse_json(
         {
             "id": chunk_id,
             "object": "text_completion",
@@ -1309,9 +1996,8 @@ def openai_completion_sse_from_chat(data, model_name):
             "model": model,
             "choices": [{"text": text, "index": 0, "logprobs": None, "finish_reason": None}],
         },
-        ensure_ascii=False,
     ) + "\n\n"
-    yield "data: " + json.dumps(
+    yield "data: " + sse_json(
         {
             "id": chunk_id,
             "object": "text_completion",
@@ -1319,39 +2005,255 @@ def openai_completion_sse_from_chat(data, model_name):
             "model": model,
             "choices": [{"text": "", "index": 0, "logprobs": None, "finish_reason": completion["choices"][0]["finish_reason"]}],
         },
-        ensure_ascii=False,
     ) + "\n\n"
     yield "data: [DONE]\n\n"
 
 
-def response_input_item_to_openai_message(item):
-    if isinstance(item, str):
-        return {"role": "user", "content": item}
-    if not isinstance(item, dict):
-        return {"role": "user", "content": "" if item is None else str(item)}
+def stringify_tool_output(value):
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except Exception:
+        return str(value)
 
-    role = item.get("role") or item.get("type") or "user"
-    content = item.get("content")
+
+def response_content_to_openai_content(content):
     if isinstance(content, str):
-        return {"role": role, "content": content}
-    if isinstance(content, list):
-        parts = []
-        for block in content:
-            if not isinstance(block, dict):
-                continue
-            block_type = block.get("type")
-            if block_type in ("input_text", "text", "output_text"):
-                parts.append({"type": "text", "text": str(block.get("text") or "")})
-            elif block_type in ("input_image", "image_url"):
-                image_url = block.get("image_url") or block.get("url")
-                if isinstance(image_url, dict):
-                    image_url = image_url.get("url")
-                if image_url:
-                    parts.append({"type": "image_url", "image_url": {"url": str(image_url)}})
-        return {"role": role, "content": parts or ""}
+        return content
+    if not isinstance(content, list):
+        return "" if content is None else str(content)
+
+    parts = []
+    has_non_text = False
+    for block in content:
+        if isinstance(block, str):
+            parts.append({"type": "text", "text": block})
+            continue
+        if not isinstance(block, dict):
+            continue
+        block_type = str(block.get("type") or "").lower()
+        if block_type in ("input_text", "text", "output_text"):
+            parts.append({"type": "text", "text": str(block.get("text") or "")})
+        elif block_type in ("input_image", "image_url"):
+            image_url = block.get("image_url") or block.get("url")
+            if isinstance(image_url, dict):
+                image_url = image_url.get("url")
+            if image_url:
+                has_non_text = True
+                parts.append({"type": "image_url", "image_url": {"url": str(image_url)}})
+
+    if not has_non_text:
+        return "\n".join(str(part.get("text") or "") for part in parts if part.get("text"))
+    return parts or ""
+
+
+def responses_function_call_to_chat_tool_call(item):
+    call_id = item.get("call_id") or item.get("id") or ("call_" + uuid.uuid4().hex)
+    arguments = item.get("arguments")
+    if arguments is None:
+        arguments = item.get("input")
+    if not isinstance(arguments, str):
+        arguments = stringify_tool_output(arguments if arguments is not None else {})
+    return {
+        "id": call_id,
+        "type": "function",
+        "function": {
+            "name": item.get("name") or "tool",
+            "arguments": arguments,
+        },
+    }
+
+
+def response_role_to_openai_chat_role(role, item_type=""):
+    normalized = str(role or "").lower()
+    if normalized in ("system", "user", "assistant", "tool"):
+        return normalized
+    if normalized in ("developer", "instruction", "instructions"):
+        return "system"
+    return "assistant" if item_type == "message" else "user"
+
+
+def normalize_chat_message_order(messages):
+    system_parts = []
+    rest = []
+    for message in messages or []:
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") == "system":
+            content = message.get("content")
+            system_parts.append(content if isinstance(content, str) else stringify_tool_output(content))
+        else:
+            rest.append(message)
+    if not system_parts:
+        return rest
+    return [{"role": "system", "content": "\n\n".join(part for part in system_parts if part)}] + rest
+
+
+def response_input_item_to_openai_messages(item):
+    if isinstance(item, str):
+        return [{"role": "user", "content": item}]
+    if not isinstance(item, dict):
+        return [{"role": "user", "content": "" if item is None else str(item)}]
+
+    item_type = str(item.get("type") or "").lower()
+    if item_type == "function_call":
+        return [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [responses_function_call_to_chat_tool_call(item)],
+            }
+        ]
+    if item_type == "function_call_output":
+        return [
+            {
+                "role": "tool",
+                "tool_call_id": item.get("call_id") or item.get("id") or ("call_" + uuid.uuid4().hex),
+                "content": stringify_tool_output(item.get("output")),
+            }
+        ]
+    if item_type in ("reasoning", "item_reference"):
+        return []
+
+    role = response_role_to_openai_chat_role(item.get("role"), item_type)
+    content = item.get("content")
     if item.get("input_text"):
-        return {"role": role, "content": str(item.get("input_text"))}
-    return {"role": role, "content": "" if content is None else str(content)}
+        content = str(item.get("input_text"))
+    return [{"role": role, "content": response_content_to_openai_content(content)}]
+
+
+def responses_tool_to_chat_tool(tool):
+    if not isinstance(tool, dict):
+        return None
+    tool_type = str(tool.get("type") or "").lower()
+    if tool_type == "function":
+        if isinstance(tool.get("function"), dict):
+            function = deepcopy(tool["function"])
+        else:
+            function = {
+                "name": tool.get("name") or "tool",
+                "description": tool.get("description") or "",
+                "parameters": tool.get("parameters") or {"type": "object", "properties": {}},
+            }
+            if tool.get("strict") is not None:
+                function["strict"] = bool(tool.get("strict"))
+        return {"type": "function", "function": function}
+    if tool_type == "web_search":
+        return {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Search the web for current information.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+    if tool_type == "image_generation":
+        return {
+            "type": "function",
+            "function": {
+                "name": "image_generation",
+                "description": "Generate or edit an image from a prompt.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"prompt": {"type": "string"}},
+                    "required": ["prompt"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+    return None
+
+
+def responses_tools_to_chat_tools(tools):
+    converted = []
+    seen = set()
+    for tool in tools or []:
+        chat_tool = responses_tool_to_chat_tool(tool)
+        if not chat_tool:
+            continue
+        name = ((chat_tool.get("function") or {}).get("name") or "").lower()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        converted.append(chat_tool)
+    return converted
+
+
+def responses_tool_choice_to_chat_tool_choice(tool_choice):
+    if isinstance(tool_choice, str):
+        return tool_choice if tool_choice in ("auto", "none", "required") else "auto"
+    if not isinstance(tool_choice, dict):
+        return None
+    if tool_choice.get("type") == "function" and tool_choice.get("name"):
+        return {"type": "function", "function": {"name": tool_choice["name"]}}
+    if tool_choice.get("type") == "function" and isinstance(tool_choice.get("function"), dict):
+        return {"type": "function", "function": {"name": tool_choice["function"].get("name")}}
+    return "auto"
+
+
+def responses_text_format_to_chat_response_format(text_value):
+    if not isinstance(text_value, dict):
+        return None
+    fmt = text_value.get("format")
+    if not isinstance(fmt, dict):
+        return None
+    fmt_type = fmt.get("type")
+    if fmt_type == "json_object":
+        return {"type": "json_object"}
+    if fmt_type == "json_schema":
+        return {"type": "json_schema", "json_schema": fmt.get("json_schema") or fmt}
+    return None
+
+
+def responses_requested_json_output(original_body):
+    text_value = (original_body or {}).get("text")
+    if not isinstance(text_value, dict):
+        return False
+    fmt = text_value.get("format")
+    return isinstance(fmt, dict) and fmt.get("type") in ("json_object", "json_schema")
+
+
+def normalize_json_output_text(text):
+    if not isinstance(text, str) or not text.strip():
+        return text
+    candidates = [text.strip()]
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        candidates.insert(0, "\n".join(lines).strip())
+
+    decoder = json.JSONDecoder()
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            parsed = json.loads(candidate)
+            return json.dumps(parsed, ensure_ascii=False)
+        except Exception:
+            pass
+        for index, char in enumerate(candidate):
+            if char not in "{[":
+                continue
+            try:
+                parsed, end = decoder.raw_decode(candidate[index:])
+            except Exception:
+                continue
+            if candidate[index + end :].strip():
+                continue
+            return json.dumps(parsed, ensure_ascii=False)
+    return text
 
 
 def responses_to_chat_payload(body):
@@ -1363,74 +2265,420 @@ def responses_to_chat_payload(body):
     input_value = body.get("input")
     if isinstance(input_value, list):
         for item in input_value:
-            messages.append(response_input_item_to_openai_message(item))
+            messages.extend(response_input_item_to_openai_messages(item))
     elif input_value is not None:
-        messages.append(response_input_item_to_openai_message(input_value))
+        messages.extend(response_input_item_to_openai_messages(input_value))
+
+    requested_max_tokens = coerce_int(body.get("max_output_tokens") or body.get("max_tokens") or 512, 512)
+    if RESPONSES_MIN_OUTPUT_TOKENS:
+        requested_max_tokens = max(requested_max_tokens, RESPONSES_MIN_OUTPUT_TOKENS)
 
     payload = {
         "model": extract_model_name(body),
-        "messages": messages or [{"role": "user", "content": ""}],
+        "messages": normalize_chat_message_order(messages) or [{"role": "user", "content": ""}],
         "stream": False,
-        "max_tokens": coerce_int(body.get("max_output_tokens") or body.get("max_tokens") or 512, 512),
+        "max_tokens": requested_max_tokens,
     }
-    for key in ("temperature", "top_p", "tools", "tool_choice"):
+    for key in ("temperature", "top_p", "presence_penalty", "frequency_penalty", "stop", "seed", "parallel_tool_calls"):
         if body.get(key) is not None:
             payload[key] = body.get(key)
+    tools = responses_tools_to_chat_tools(body.get("tools"))
+    if tools:
+        payload["tools"] = tools
+        tool_choice = responses_tool_choice_to_chat_tool_choice(body.get("tool_choice"))
+        if tool_choice is not None:
+            payload["tool_choice"] = tool_choice
+    response_format = responses_text_format_to_chat_response_format(body.get("text"))
+    if response_format:
+        payload["response_format"] = response_format
     return payload
 
 
-def responses_from_chat(data, model_name):
-    choice = (data.get("choices") or [{}])[0]
-    message = choice.get("message") or {}
-    text = extract_message_text(message)
-    item_id = "msg_" + uuid.uuid4().hex
-    created = data.get("created") or int(time.time())
-    usage = data.get("usage") or {}
-    output_content = []
-    if text:
-        output_content.append({"type": "output_text", "text": text, "annotations": []})
+def response_usage_from_chat(usage):
+    usage = usage or {}
+    input_tokens = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
+    output_tokens = usage.get("completion_tokens") or usage.get("output_tokens") or 0
+    total_tokens = usage.get("total_tokens") or (input_tokens + output_tokens)
     return {
-        "id": "resp_" + uuid.uuid4().hex,
-        "object": "response",
-        "created_at": created,
-        "status": "completed",
-        "model": model_name or data.get("model"),
-        "output": [
-            {
-                "id": item_id,
-                "type": "message",
-                "status": "completed",
-                "role": "assistant",
-                "content": output_content,
-            }
-        ],
-        "output_text": text,
-        "error": None,
-        "incomplete_details": None,
-        "parallel_tool_calls": False,
-        "usage": {
-            "input_tokens": usage.get("prompt_tokens") or 0,
-            "output_tokens": usage.get("completion_tokens") or 0,
-            "total_tokens": usage.get("total_tokens") or ((usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0)),
-        },
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "output_tokens_details": {"reasoning_tokens": usage.get("reasoning_tokens") or 0},
+        "total_tokens": total_tokens,
     }
 
 
-def responses_sse_from_chat(data, model_name):
-    response_obj = responses_from_chat(data, model_name)
+def responses_message_item_from_text(text):
+    return {
+        "id": "msg_" + uuid.uuid4().hex,
+        "type": "message",
+        "status": "completed",
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": text, "annotations": []}] if text else [],
+    }
+
+
+def split_windows_shell_command(command):
+    command = str(command or "").strip()
+    if not command:
+        return []
+    lowered = command.lower()
+    for executable in ("powershell.exe", "powershell", "pwsh.exe", "pwsh"):
+        prefix = executable + " -command "
+        if lowered.startswith(prefix):
+            rest = command[len(prefix) :].strip()
+            if (rest.startswith("'") and rest.endswith("'")) or (rest.startswith('"') and rest.endswith('"')):
+                rest = rest[1:-1]
+            return [executable, "-Command", rest]
+    for executable in ("cmd.exe", "cmd"):
+        prefix = executable + " /c "
+        if lowered.startswith(prefix):
+            rest = command[len(prefix) :].strip()
+            if (rest.startswith("'") and rest.endswith("'")) or (rest.startswith('"') and rest.endswith('"')):
+                rest = rest[1:-1]
+            return [executable, "/c", rest]
+    return ["powershell.exe", "-Command", command]
+
+
+def normalize_codex_tool_arguments(name, arguments):
+    if not isinstance(arguments, str):
+        arguments = stringify_tool_output(arguments)
+    if str(name or "").lower() != "shell":
+        return arguments
+    try:
+        payload = json.loads(arguments or "{}")
+    except Exception:
+        return arguments
+    if not isinstance(payload, dict):
+        return arguments
+    command = payload.get("command")
+    if isinstance(command, str):
+        payload["command"] = split_windows_shell_command(command)
+        return json.dumps(payload, ensure_ascii=False)
+    return arguments
+
+
+TEXTUAL_TOOL_CALL_RE = re.compile(r"<tool_call\b(?P<attrs>[^>]*)>(?P<body>.*?)</tool_call>", re.IGNORECASE | re.DOTALL)
+TEXTUAL_TOOL_ARG_RE = re.compile(
+    r"<arg_key>(?P<key>.*?)</arg_key>\s*<arg_value>(?P<value>.*?)</arg_value>",
+    re.IGNORECASE | re.DOTALL,
+)
+TEXTUAL_TOOL_NAME_ATTR_RE = re.compile(r"\b(?:name|tool_name)\s*=\s*['\"](?P<name>[^'\"]+)['\"]", re.IGNORECASE)
+TEXTUAL_TOOL_NAME_TAG_RE = re.compile(r"<(?:name|tool_name)>(?P<name>.*?)</(?:name|tool_name)>", re.IGNORECASE | re.DOTALL)
+
+
+def responses_allowed_tool_names(original_body):
+    names = set()
+    for tool in (original_body or {}).get("tools") or []:
+        if not isinstance(tool, dict):
+            continue
+        name = tool.get("name")
+        if not name and isinstance(tool.get("function"), dict):
+            name = tool["function"].get("name")
+        if name:
+            names.add(str(name).strip().lower())
+    return names
+
+
+def parse_textual_tool_value(value):
+    value = str(value or "").strip()
+    if not value:
+        return ""
+    for candidate in (value, value.replace("\\r\\n", "\n")):
+        try:
+            return json.loads(candidate)
+        except Exception:
+            pass
+    return value
+
+
+def textual_tool_call_name(match):
+    attrs = match.group("attrs") or ""
+    body = match.group("body") or ""
+    attr_match = TEXTUAL_TOOL_NAME_ATTR_RE.search(attrs)
+    if attr_match:
+        return attr_match.group("name").strip()
+    tag_match = TEXTUAL_TOOL_NAME_TAG_RE.search(body)
+    if tag_match:
+        return tag_match.group("name").strip()
+    leading = re.split(r"<arg_key>|<name>|<tool_name>", body, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+    if not leading:
+        return ""
+    return leading.split()[0].strip(":,;")
+
+
+def textual_tool_calls_from_text(text, original_body):
+    if not isinstance(text, str) or "<tool_call" not in text.lower():
+        return text, []
+
+    allowed_tool_names = responses_allowed_tool_names(original_body)
+    if not allowed_tool_names:
+        return text, []
+
+    calls = []
+    removed_spans = []
+    for match in TEXTUAL_TOOL_CALL_RE.finditer(text):
+        name = textual_tool_call_name(match)
+        if not name or name.lower() not in allowed_tool_names:
+            continue
+
+        arguments = {}
+        for arg_match in TEXTUAL_TOOL_ARG_RE.finditer(match.group("body") or ""):
+            key = re.sub(r"<.*?>", "", arg_match.group("key") or "", flags=re.DOTALL).strip()
+            if not key:
+                continue
+            arguments[key] = parse_textual_tool_value(arg_match.group("value"))
+        if not arguments:
+            continue
+
+        calls.append(
+            {
+                "id": "call_" + uuid.uuid4().hex,
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                },
+            }
+        )
+        removed_spans.append(match.span())
+
+    if not calls:
+        return text, []
+
+    cleaned_parts = []
+    cursor = 0
+    for start, end in removed_spans:
+        cleaned_parts.append(text[cursor:start])
+        cursor = end
+    cleaned_parts.append(text[cursor:])
+    cleaned = "\n".join(part.strip() for part in cleaned_parts if part.strip()).strip()
+    return cleaned, calls
+
+
+def responses_function_call_item_from_chat_tool_call(tool_call):
+    fn = tool_call.get("function") or {}
+    call_id = tool_call.get("id") or ("call_" + uuid.uuid4().hex)
+    arguments = fn.get("arguments")
+    if arguments is None:
+        arguments = "{}"
+    if not isinstance(arguments, str):
+        arguments = stringify_tool_output(arguments)
+    name = fn.get("name") or tool_call.get("name") or "tool"
+    arguments = normalize_codex_tool_arguments(name, arguments)
+    return {
+        "type": "function_call",
+        "id": "fc_" + uuid.uuid4().hex,
+        "call_id": call_id,
+        "name": name,
+        "arguments": arguments,
+        "status": "completed",
+    }
+
+
+def responses_from_chat(data, model_name, original_body=None):
+    original_body = original_body or {}
+    choice = (data.get("choices") or [{}])[0]
+    message = choice.get("message") or {}
+    text = extract_message_text(message)
+    textual_tool_calls = []
+    if not responses_requested_json_output(original_body):
+        text, textual_tool_calls = textual_tool_calls_from_text(text, original_body)
+    if responses_requested_json_output(original_body):
+        text = normalize_json_output_text(text)
+    created = data.get("created") or int(time.time())
+    usage = data.get("usage") or {}
+    output = []
+    if text:
+        output.append(responses_message_item_from_text(text))
+    for tool_call in (message.get("tool_calls") or []) + textual_tool_calls:
+        if isinstance(tool_call, dict):
+            output.append(responses_function_call_item_from_chat_tool_call(tool_call))
+    if not output:
+        output.append(responses_message_item_from_text(""))
+    response_id = data.get("id")
+    if not response_id or not str(response_id).startswith("resp_"):
+        response_id = "resp_" + uuid.uuid4().hex
+    return {
+        "id": response_id,
+        "object": "response",
+        "created_at": created,
+        "completed_at": int(time.time()),
+        "status": "completed",
+        "model": model_name or data.get("model"),
+        "output": output,
+        "output_text": text,
+        "error": None,
+        "incomplete_details": None,
+        "instructions": original_body.get("instructions"),
+        "max_output_tokens": original_body.get("max_output_tokens"),
+        "parallel_tool_calls": bool(original_body.get("parallel_tool_calls", True)),
+        "previous_response_id": original_body.get("previous_response_id"),
+        "reasoning": original_body.get("reasoning") or {"effort": None, "summary": None},
+        "store": bool(original_body.get("store", False)),
+        "temperature": original_body.get("temperature"),
+        "text": original_body.get("text") or {"format": {"type": "text"}},
+        "tool_choice": original_body.get("tool_choice") or "auto",
+        "tools": original_body.get("tools") or [],
+        "top_p": original_body.get("top_p"),
+        "truncation": original_body.get("truncation") or "disabled",
+        "usage": response_usage_from_chat(usage),
+        "user": original_body.get("user"),
+        "metadata": original_body.get("metadata") or {},
+    }
+
+
+def responses_sse_event(event_type, payload):
+    yield "event: " + event_type + "\n"
+    yield "data: " + sse_json(payload) + "\n\n"
+
+
+def responses_sse_from_chat(data, model_name, original_body=None):
+    response_obj = responses_from_chat(data, model_name, original_body)
     base = dict(response_obj)
     base["output"] = []
     base["output_text"] = ""
-    text = response_obj.get("output_text") or ""
-    item = (response_obj.get("output") or [{}])[0]
-    item_id = item.get("id") or ("msg_" + uuid.uuid4().hex)
-    yield "event: response.created\n"
-    yield "data: " + json.dumps({"type": "response.created", "response": base}, ensure_ascii=False) + "\n\n"
-    if text:
-        yield "event: response.output_text.delta\n"
-        yield "data: " + json.dumps({"type": "response.output_text.delta", "delta": text, "item_id": item_id, "output_index": 0, "content_index": 0}, ensure_ascii=False) + "\n\n"
-    yield "event: response.completed\n"
-    yield "data: " + json.dumps({"type": "response.completed", "response": response_obj}, ensure_ascii=False) + "\n\n"
+    base["status"] = "in_progress"
+    base["completed_at"] = None
+    for chunk in responses_sse_event("response.created", {"type": "response.created", "response": base}):
+        yield chunk
+    in_progress = dict(base)
+    for chunk in responses_sse_event("response.in_progress", {"type": "response.in_progress", "response": in_progress}):
+        yield chunk
+
+    for output_index, item in enumerate(response_obj.get("output") or []):
+        added_item = dict(item)
+        if item.get("type") == "message":
+            added_item["content"] = []
+        elif item.get("type") == "function_call":
+            added_item["arguments"] = ""
+        for chunk in responses_sse_event(
+            "response.output_item.added",
+            {"type": "response.output_item.added", "output_index": output_index, "item": added_item},
+        ):
+            yield chunk
+
+        if item.get("type") == "message":
+            for content_index, part in enumerate(item.get("content") or []):
+                for chunk in responses_sse_event(
+                    "response.content_part.added",
+                    {
+                        "type": "response.content_part.added",
+                        "item_id": item.get("id"),
+                        "output_index": output_index,
+                        "content_index": content_index,
+                        "part": part,
+                    },
+                ):
+                    yield chunk
+                if part.get("type") == "output_text":
+                    text = part.get("text") or ""
+                    if text:
+                        for chunk in responses_sse_event(
+                            "response.output_text.delta",
+                            {
+                                "type": "response.output_text.delta",
+                                "item_id": item.get("id"),
+                                "output_index": output_index,
+                                "content_index": content_index,
+                                "delta": text,
+                            },
+                        ):
+                            yield chunk
+                    for chunk in responses_sse_event(
+                        "response.output_text.done",
+                        {
+                            "type": "response.output_text.done",
+                            "item_id": item.get("id"),
+                            "output_index": output_index,
+                            "content_index": content_index,
+                            "text": text,
+                        },
+                    ):
+                        yield chunk
+                for chunk in responses_sse_event(
+                    "response.content_part.done",
+                    {
+                        "type": "response.content_part.done",
+                        "item_id": item.get("id"),
+                        "output_index": output_index,
+                        "content_index": content_index,
+                        "part": part,
+                    },
+                ):
+                    yield chunk
+        elif item.get("type") == "function_call":
+            arguments = item.get("arguments") or ""
+            if arguments:
+                for chunk in responses_sse_event(
+                    "response.function_call_arguments.delta",
+                    {
+                        "type": "response.function_call_arguments.delta",
+                        "item_id": item.get("id"),
+                        "output_index": output_index,
+                        "delta": arguments,
+                    },
+                ):
+                    yield chunk
+            for chunk in responses_sse_event(
+                "response.function_call_arguments.done",
+                {
+                    "type": "response.function_call_arguments.done",
+                    "item_id": item.get("id"),
+                    "output_index": output_index,
+                    "arguments": arguments,
+                },
+            ):
+                yield chunk
+
+        for chunk in responses_sse_event(
+            "response.output_item.done",
+            {"type": "response.output_item.done", "output_index": output_index, "item": item},
+        ):
+            yield chunk
+
+    for chunk in responses_sse_event("response.completed", {"type": "response.completed", "response": response_obj}):
+        yield chunk
+
+
+def payload_has_tool_role_messages(payload):
+    return any((message or {}).get("role") == "tool" for message in payload.get("messages") or [])
+
+
+def textual_tool_history_payload(payload):
+    rewritten = deepcopy(payload)
+    messages = []
+    for message in rewritten.get("messages") or []:
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role")
+        if role == "tool":
+            tool_id = message.get("tool_call_id") or "tool"
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "Resultado da ferramenta " + str(tool_id) + ":\n" + stringify_tool_output(message.get("content")),
+                }
+            )
+            continue
+        item = deepcopy(message)
+        tool_calls = item.pop("tool_calls", None)
+        if tool_calls:
+            summary = []
+            for tool_call in tool_calls:
+                if not isinstance(tool_call, dict):
+                    continue
+                function = tool_call.get("function") or {}
+                summary.append(
+                    {
+                        "call_id": tool_call.get("id"),
+                        "name": function.get("name") or tool_call.get("name"),
+                        "arguments": function.get("arguments") or "{}",
+                    }
+                )
+            item["content"] = (item.get("content") or "") + "\nChamadas de ferramenta solicitadas: " + stringify_tool_output(summary)
+        messages.append(item)
+    rewritten["messages"] = messages
+    return rewritten
 
 
 def nvidia_openai_chat_json(model_id, model_info, body, source_ip, endpoint_name):
@@ -1445,9 +2693,27 @@ def nvidia_openai_chat_json(model_id, model_info, body, source_ip, endpoint_name
     started = time.time()
     url = NVIDIA_CHAT_BASE + "/chat/completions"
     try:
-        upstream = http_session.post(url, headers=nvidia_headers(), json=payload, timeout=180)
+        upstream = http_session.post(url, headers=nvidia_headers(), json=payload, timeout=NVIDIA_CHAT_TIMEOUT_SECONDS)
         latency = time.time() - started
         log_message("INFO", "NVIDIA sync " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, endpoint_name, latency, upstream.status_code)
+        if upstream.status_code == 400 and payload_has_tool_role_messages(payload):
+            body_text = upstream.text
+            if "Unexpected message role" in body_text or "role" in body_text.lower():
+                retry_payload = textual_tool_history_payload(payload)
+                retry_started = time.time()
+                retry_upstream = http_session.post(url, headers=nvidia_headers(), json=retry_payload, timeout=NVIDIA_CHAT_TIMEOUT_SECONDS)
+                retry_latency = time.time() - retry_started
+                log_message(
+                    "INFO",
+                    "NVIDIA sync textual tool retry " + model_id + " -> HTTP " + str(retry_upstream.status_code),
+                    "nvidia",
+                    source_ip,
+                    endpoint_name + ".tool_text_retry",
+                    retry_latency,
+                    retry_upstream.status_code,
+                )
+                upstream = retry_upstream
+                latency += retry_latency
         if upstream.status_code >= 400:
             return None, Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
         return upstream.json(), None
@@ -1457,12 +2723,133 @@ def nvidia_openai_chat_json(model_id, model_info, body, source_ip, endpoint_name
         return None, proxy_error_response(str(e), 500)
 
 
+def mistral_openai_chat_json(model_id, model_info, body, source_ip, endpoint_name):
+    if not MISTRAL_API_KEY:
+        return None, proxy_error_response("RED_PROXY_MISTRAL_API_KEY not configured", 503)
+    if "chat" not in (model_info.get("capabilities") or []):
+        return None, proxy_error_response("modelo Mistral nao suporta chat", 400, "invalid_request_error")
+
+    payload = deepcopy(body)
+    payload["model"] = model_id
+    payload["stream"] = False
+    started = time.time()
+    url = MISTRAL_CHAT_BASE + "/chat/completions"
+    try:
+        upstream = http_session.post(url, headers=mistral_headers(), json=payload, timeout=MISTRAL_CHAT_TIMEOUT_SECONDS)
+        latency = time.time() - started
+        log_message("INFO", "Mistral sync " + model_id + " -> HTTP " + str(upstream.status_code), "mistral", source_ip, endpoint_name, latency, upstream.status_code)
+        if upstream.status_code == 400 and payload_has_tool_role_messages(payload):
+            body_text = upstream.text
+            if "role" in body_text.lower() or "tool" in body_text.lower():
+                retry_payload = textual_tool_history_payload(payload)
+                retry_started = time.time()
+                retry_upstream = http_session.post(url, headers=mistral_headers(), json=retry_payload, timeout=MISTRAL_CHAT_TIMEOUT_SECONDS)
+                retry_latency = time.time() - retry_started
+                log_message(
+                    "INFO",
+                    "Mistral sync textual tool retry " + model_id + " -> HTTP " + str(retry_upstream.status_code),
+                    "mistral",
+                    source_ip,
+                    endpoint_name + ".tool_text_retry",
+                    retry_latency,
+                    retry_upstream.status_code,
+                )
+                upstream = retry_upstream
+        if upstream.status_code >= 400:
+            return None, Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+        return upstream.json(), None
+    except Exception as e:
+        latency = time.time() - started
+        log_message("ERROR", "Mistral sync " + model_id + " -> " + str(e)[:100], "mistral", source_ip, endpoint_name, latency, 500)
+        return None, proxy_error_response(str(e), 500)
+
+
+def mistral_openai_chat_request(model_id, model_info, body, source_ip):
+    if not MISTRAL_API_KEY:
+        return jsonify({"error": {"message": "RED_PROXY_MISTRAL_API_KEY not configured", "type": "red_proxy_error"}}), 503
+    if "chat" not in (model_info.get("capabilities") or []):
+        return jsonify({"error": {"message": "modelo Mistral nao suporta chat", "type": "invalid_request_error"}}), 400
+
+    payload = normalize_openai_payload_for_upstream(body, source_ip, "/v1/chat/completions")
+    payload["model"] = model_id
+    stream = bool(payload.get("stream", False))
+    if not stream:
+        data, error_response = mistral_openai_chat_json(model_id, model_info, payload, source_ip, "/v1/chat/completions")
+        if error_response is not None:
+            return error_response
+        return jsonify(data)
+
+    payload["stream"] = True
+    headers = mistral_headers()
+    headers["Accept"] = "text/event-stream"
+    started = time.time()
+    try:
+        upstream = http_session.post(
+            MISTRAL_CHAT_BASE + "/chat/completions",
+            headers=headers,
+            json=payload,
+            stream=True,
+            timeout=MISTRAL_CHAT_TIMEOUT_SECONDS,
+        )
+        latency = time.time() - started
+        log_message("INFO", "Mistral openai stream " + model_id + " -> HTTP " + str(upstream.status_code), "mistral", source_ip, "/v1/chat/completions", latency, upstream.status_code)
+
+        if upstream.status_code == 400 and payload_has_tool_role_messages(payload):
+            body_text = upstream.text
+            if "role" in body_text.lower() or "tool" in body_text.lower():
+                retry_payload = textual_tool_history_payload(payload)
+                retry_payload["stream"] = True
+                upstream = http_session.post(
+                    MISTRAL_CHAT_BASE + "/chat/completions",
+                    headers=headers,
+                    json=retry_payload,
+                    stream=True,
+                    timeout=MISTRAL_CHAT_TIMEOUT_SECONDS,
+                )
+                retry_latency = time.time() - started
+                log_message("INFO", "Mistral openai stream textual tool retry " + model_id + " -> HTTP " + str(upstream.status_code), "mistral", source_ip, "/v1/chat/completions.tool_text_retry", retry_latency, upstream.status_code)
+
+        if upstream.status_code >= 400:
+            return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+
+        def generate_openai_stream():
+            chunk_count = 0
+            for line in upstream.iter_lines(chunk_size=1, decode_unicode=False):
+                if line is None:
+                    continue
+                if isinstance(line, (bytes, bytearray)):
+                    text = line.decode("utf-8", "replace")
+                else:
+                    text = str(line)
+                if not text:
+                    yield "\n"
+                    continue
+                chunk_count += 1
+                yield text + "\n"
+            log_message("INFO", "Mistral openai stream response " + model_id + " chunks=" + str(chunk_count), "mistral", source_ip, "/v1/chat/completions", latency, upstream.status_code)
+
+        response_headers = sse_no_buffer_headers()
+        for h in ("X-Request-Id",):
+            if h in upstream.headers:
+                response_headers[h] = upstream.headers[h]
+        return Response(generate_openai_stream(), status=200, headers=response_headers, content_type="text/event-stream; charset=utf-8")
+    except Exception as e:
+        latency = time.time() - started
+        log_message("ERROR", "Mistral openai stream " + model_id + " -> " + str(e)[:100], "mistral", source_ip, "/v1/chat/completions", latency, 500)
+        return jsonify({"error": {"message": str(e), "type": "red_proxy_error"}}), 500
+
+
 def universal_openai_chat_json(body, source_ip, endpoint_name):
     model_id, model_info = normalize_nvidia_model(extract_model_name(body))
     if model_info:
         data, error_response = nvidia_openai_chat_json(model_id, model_info, normalize_openai_payload_for_upstream(body, source_ip, endpoint_name), source_ip, endpoint_name)
         model_name = nvidia_display_name(model_id) if data is not None else None
         return model_name, data, error_response
+
+    model_id, model_info = normalize_mistral_model(extract_model_name(body))
+    if model_info:
+        data, error_response = mistral_openai_chat_json(model_id, model_info, normalize_openai_payload_for_upstream(body, source_ip, endpoint_name), source_ip, endpoint_name)
+        return (model_id if data is not None else None), data, error_response
 
     normalized_body = normalize_openai_payload_for_upstream(body, source_ip, endpoint_name)
     data, error_response = upstream_json_request("POST", "/v1/chat/completions", source_ip, body=normalized_body)
@@ -1609,7 +2996,7 @@ def nvidia_openai_chat_request(model_id, model_info, body, source_ip):
             headers=nvidia_headers(),
             json=payload,
             stream=bool(payload.get("stream", False)),
-            timeout=180,
+            timeout=NVIDIA_CHAT_TIMEOUT_SECONDS,
         )
         latency = time.time() - started
         log_message("INFO", "NVIDIA openai " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, "/v1/chat/completions", latency, upstream.status_code)
@@ -1623,7 +3010,9 @@ def nvidia_openai_chat_request(model_id, model_info, body, source_ip):
                         yield chunk
 
             response_headers = {}
-            content_type = upstream.headers.get("Content-Type", "text/event-stream")
+            content_type = upstream.headers.get("Content-Type", "text/event-stream; charset=utf-8")
+            if "text/event-stream" in content_type.lower() and "charset" not in content_type.lower():
+                content_type = "text/event-stream; charset=utf-8"
             for h in ("Cache-Control", "X-Request-Id"):
                 if h in upstream.headers:
                     response_headers[h] = upstream.headers[h]
@@ -1760,7 +3149,7 @@ def anthropic_to_openai_payload(body, model_id):
     payload = {
         "model": model_id,
         "messages": messages,
-        "stream": False,
+        "stream": bool(body.get("stream", False)),
         "max_tokens": int(body.get("max_tokens") or 1024),
     }
     if body.get("temperature") is not None:
@@ -1776,6 +3165,59 @@ def anthropic_to_openai_payload(body, model_id):
         if tool_choice is not None:
             payload["tool_choice"] = tool_choice
     return payload
+
+
+def anthropic_countable_text(value):
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, list):
+        return "\n".join(anthropic_countable_text(item) for item in value)
+    if not isinstance(value, dict):
+        return str(value)
+
+    block_type = str(value.get("type") or "").strip()
+    if block_type == "text":
+        return str(value.get("text") or "")
+    if block_type == "tool_result":
+        return anthropic_countable_text(value.get("content"))
+    if block_type == "tool_use":
+        return json.dumps(
+            {"name": value.get("name") or "tool", "input": value.get("input") or {}},
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    if block_type in ("image", "document"):
+        source = value.get("source") or {}
+        media_type = source.get("media_type") or block_type
+        data = source.get("data") or source.get("url") or ""
+        return "[" + block_type + ":" + media_type + ":bytes~" + str(len(str(data))) + "]"
+
+    preferred_keys = ("role", "content", "text", "name", "description", "input", "input_schema")
+    parts = [anthropic_countable_text(value.get(key)) for key in preferred_keys if key in value]
+    if parts:
+        return "\n".join(part for part in parts if part)
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def estimate_anthropic_input_tokens(body):
+    parts = []
+    if not isinstance(body, dict):
+        return 1
+    parts.append(anthropic_countable_text(body.get("system")))
+    for message in body.get("messages") or []:
+        parts.append(anthropic_countable_text(message))
+    if body.get("tools"):
+        parts.append(json.dumps(body.get("tools"), ensure_ascii=False, sort_keys=True))
+    if body.get("tool_choice"):
+        parts.append(json.dumps(body.get("tool_choice"), ensure_ascii=False, sort_keys=True))
+    text = "\n".join(part for part in parts if part)
+    char_estimate = max(1, (len(text) + 3) // 4)
+    structural_overhead = max(0, len(body.get("messages") or []) * 4 + len(body.get("tools") or []) * 12)
+    return char_estimate + structural_overhead
 
 
 def anthropic_response_from_openai(data, model_name):
@@ -1802,13 +3244,14 @@ def anthropic_response_from_openai(data, model_name):
         )
     finish_reason = choice.get("finish_reason")
     usage = data.get("usage") or {}
+    has_tool_use = any(block.get("type") == "tool_use" for block in content_blocks)
     return {
         "id": data.get("id") or ("msg_" + uuid.uuid4().hex),
         "type": "message",
         "role": "assistant",
         "model": model_name,
         "content": content_blocks,
-        "stop_reason": "tool_use" if finish_reason == "tool_calls" else "end_turn",
+        "stop_reason": "tool_use" if has_tool_use or finish_reason == "tool_calls" else "end_turn",
         "stop_sequence": None,
         "usage": {
             "input_tokens": usage.get("prompt_tokens") or 0,
@@ -1821,7 +3264,7 @@ def anthropic_sse_from_message(message):
     yield "event: message_start\n"
     start_message = dict(message)
     start_message["content"] = []
-    yield "data: " + json.dumps({"type": "message_start", "message": start_message}, ensure_ascii=False) + "\n\n"
+    yield "data: " + sse_json({"type": "message_start", "message": start_message}) + "\n\n"
 
     for index, block in enumerate(message.get("content") or []):
         yield "event: content_block_start\n"
@@ -1833,31 +3276,307 @@ def anthropic_sse_from_message(message):
         else:
             text = ""
             tool_input = {}
-        yield "data: " + json.dumps({"type": "content_block_start", "index": index, "content_block": empty_block}, ensure_ascii=False) + "\n\n"
+        yield "data: " + sse_json({"type": "content_block_start", "index": index, "content_block": empty_block}) + "\n\n"
 
         if block.get("type") == "text":
             yield "event: content_block_delta\n"
-            yield "data: " + json.dumps({"type": "content_block_delta", "index": index, "delta": {"type": "text_delta", "text": text}}, ensure_ascii=False) + "\n\n"
+            yield "data: " + sse_json({"type": "content_block_delta", "index": index, "delta": {"type": "text_delta", "text": text}}) + "\n\n"
         elif block.get("type") == "tool_use":
             yield "event: content_block_delta\n"
-            yield "data: " + json.dumps({"type": "content_block_delta", "index": index, "delta": {"type": "input_json_delta", "partial_json": json.dumps(tool_input, ensure_ascii=False)}}, ensure_ascii=False) + "\n\n"
+            yield "data: " + sse_json({"type": "content_block_delta", "index": index, "delta": {"type": "input_json_delta", "partial_json": sse_json(tool_input)}}) + "\n\n"
 
         yield "event: content_block_stop\n"
-        yield "data: " + json.dumps({"type": "content_block_stop", "index": index}, ensure_ascii=False) + "\n\n"
+        yield "data: " + sse_json({"type": "content_block_stop", "index": index}) + "\n\n"
 
     yield "event: message_delta\n"
-    yield "data: " + json.dumps({"type": "message_delta", "delta": {"stop_reason": message.get("stop_reason"), "stop_sequence": None}, "usage": message.get("usage") or {}}, ensure_ascii=False) + "\n\n"
+    yield "data: " + sse_json({"type": "message_delta", "delta": {"stop_reason": message.get("stop_reason"), "stop_sequence": None}, "usage": message.get("usage") or {}}) + "\n\n"
     yield "event: message_stop\n"
-    yield "data: " + json.dumps({"type": "message_stop"}, ensure_ascii=False) + "\n\n"
+    yield "data: " + sse_json({"type": "message_stop"}) + "\n\n"
 
 
-def nvidia_anthropic_messages_request(model_id, model_info, body, source_ip):
+def anthropic_sse_event(event_type, payload):
+    yield "event: " + event_type + "\n"
+    yield "data: " + sse_json(payload) + "\n\n"
+
+
+def iter_openai_sse_json(upstream):
+    for line in iter_utf8_lines(upstream):
+        if not line:
+            continue
+        line = line.strip()
+        if not line or line.startswith(":"):
+            continue
+        if line.startswith("data:"):
+            line = line[5:].strip()
+        elif line.startswith("event:"):
+            continue
+        if not line or line == "[DONE]":
+            break
+        try:
+            yield json.loads(line)
+        except Exception:
+            continue
+
+
+def openai_finish_to_anthropic_stop_reason(finish_reason, used_tool):
+    if used_tool or finish_reason == "tool_calls":
+        return "tool_use"
+    if finish_reason == "length":
+        return "max_tokens"
+    return "end_turn"
+
+
+def anthropic_sse_from_openai_stream(upstream, model_name):
+    message_id = "msg_" + uuid.uuid4().hex
+    start_message = {
+        "id": message_id,
+        "type": "message",
+        "role": "assistant",
+        "model": model_name,
+        "content": [],
+        "stop_reason": None,
+        "stop_sequence": None,
+        "usage": {"input_tokens": 0, "output_tokens": 0},
+    }
+    yield from anthropic_sse_event("message_start", {"type": "message_start", "message": start_message})
+
+    next_content_index = 0
+    text_index = None
+    text_open = False
+    text_len = 0
+    finish_reason = None
+    input_tokens = 0
+    output_tokens = 0
+    tool_states = {}
+    used_tool = False
+
+    def close_text_block():
+        nonlocal text_index, text_open
+        if text_open and text_index is not None:
+            index = text_index
+            text_open = False
+            text_index = None
+            yield from anthropic_sse_event("content_block_stop", {"type": "content_block_stop", "index": index})
+
+    def ensure_text_block():
+        nonlocal next_content_index, text_index, text_open
+        if text_index is None:
+            text_index = next_content_index
+            next_content_index += 1
+            text_open = True
+            yield from anthropic_sse_event(
+                "content_block_start",
+                {"type": "content_block_start", "index": text_index, "content_block": {"type": "text", "text": ""}},
+            )
+        elif not text_open:
+            text_open = True
+            yield from anthropic_sse_event(
+                "content_block_start",
+                {"type": "content_block_start", "index": text_index, "content_block": {"type": "text", "text": ""}},
+            )
+
+    def ensure_tool_block(openai_index):
+        nonlocal next_content_index, used_tool
+        state = tool_states.setdefault(
+            openai_index,
+            {
+                "id": "toolu_" + uuid.uuid4().hex,
+                "name": None,
+                "args_pending": "",
+                "content_index": None,
+                "open": False,
+            },
+        )
+        if state["open"]:
+            return
+        name = state.get("name")
+        if not name:
+            return
+        yield from close_text_block()
+        state["content_index"] = next_content_index
+        next_content_index += 1
+        state["open"] = True
+        used_tool = True
+        yield from anthropic_sse_event(
+            "content_block_start",
+            {
+                "type": "content_block_start",
+                "index": state["content_index"],
+                "content_block": {"type": "tool_use", "id": state["id"], "name": name, "input": {}},
+            },
+        )
+        if state["args_pending"]:
+            pending = state["args_pending"]
+            state["args_pending"] = ""
+            yield from anthropic_sse_event(
+                "content_block_delta",
+                {
+                    "type": "content_block_delta",
+                    "index": state["content_index"],
+                    "delta": {"type": "input_json_delta", "partial_json": pending},
+                },
+            )
+
+    for item in iter_openai_sse_json(upstream):
+        if item.get("id") and message_id.startswith("msg_"):
+            message_id = str(item.get("id") or message_id)
+        usage = item.get("usage") or {}
+        input_tokens = usage.get("prompt_tokens") or input_tokens
+        output_tokens = usage.get("completion_tokens") or output_tokens
+        for choice in item.get("choices") or []:
+            finish_reason = choice.get("finish_reason") or finish_reason
+            delta = choice.get("delta") or {}
+            content = delta.get("content")
+            if content:
+                yield from ensure_text_block()
+                text_len += len(content)
+                yield from anthropic_sse_event(
+                    "content_block_delta",
+                    {"type": "content_block_delta", "index": text_index, "delta": {"type": "text_delta", "text": content}},
+                )
+            for tool_call in delta.get("tool_calls") or []:
+                openai_index = int(tool_call.get("index") or 0)
+                state = tool_states.setdefault(
+                    openai_index,
+                    {
+                        "id": "toolu_" + uuid.uuid4().hex,
+                        "name": None,
+                        "args_pending": "",
+                        "content_index": None,
+                        "open": False,
+                    },
+                )
+                if tool_call.get("id"):
+                    state["id"] = tool_call.get("id")
+                function = tool_call.get("function") or {}
+                if function.get("name"):
+                    state["name"] = function.get("name")
+                    yield from ensure_tool_block(openai_index)
+                arguments = function.get("arguments") or ""
+                if arguments:
+                    if not state["open"]:
+                        state["args_pending"] += arguments
+                        yield from ensure_tool_block(openai_index)
+                    else:
+                        yield from anthropic_sse_event(
+                            "content_block_delta",
+                            {
+                                "type": "content_block_delta",
+                                "index": state["content_index"],
+                                "delta": {"type": "input_json_delta", "partial_json": arguments},
+                            },
+                        )
+
+    yield from close_text_block()
+    for _openai_index, state in sorted(tool_states.items(), key=lambda item: item[1].get("content_index") or 10**9):
+        if not state["open"]:
+            state["name"] = state.get("name") or "tool"
+            yield from ensure_tool_block(_openai_index)
+        if state["open"]:
+            yield from anthropic_sse_event("content_block_stop", {"type": "content_block_stop", "index": state["content_index"]})
+
+    if not output_tokens and text_len:
+        output_tokens = max(1, (text_len + 3) // 4)
+    stop_reason = openai_finish_to_anthropic_stop_reason(finish_reason, used_tool)
+    yield from anthropic_sse_event(
+        "message_delta",
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": stop_reason, "stop_sequence": None},
+            "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
+        },
+    )
+    yield from anthropic_sse_event("message_stop", {"type": "message_stop"})
+
+
+def openai_chat_stream_to_anthropic_response(body, source_ip, endpoint_name, response_model_name):
+    payload = deepcopy(body)
+    payload["stream"] = True
+    model_id, model_info = normalize_nvidia_model(extract_model_name(payload))
+    if model_info:
+        if not NVIDIA_API_KEY:
+            return proxy_error_response("RED_PROXY_NVIDIA_API_KEY not configured", 503)
+        if model_info.get("kind") == "image":
+            return proxy_error_response("modelo NIM de imagem nao suporta " + endpoint_name, 400, "invalid_request_error")
+        payload = normalize_openai_payload_for_upstream(payload, source_ip, endpoint_name)
+        payload["model"] = model_id
+        started = time.time()
+        upstream = http_session.post(
+            NVIDIA_CHAT_BASE + "/chat/completions",
+            headers=nvidia_headers(),
+            json=payload,
+            stream=True,
+            timeout=NVIDIA_CHAT_STREAM_TIMEOUT_SECONDS,
+        )
+        latency = time.time() - started
+        log_message("INFO", "NVIDIA anthropic stream " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, endpoint_name, latency, upstream.status_code)
+        if upstream.status_code >= 400:
+            return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+        return Response(
+            anthropic_sse_from_openai_stream(upstream, response_model_name or nvidia_display_name(model_id)),
+            status=200,
+            headers=sse_no_buffer_headers(),
+            content_type="text/event-stream; charset=utf-8",
+        )
+
+    model_id, model_info = normalize_mistral_model(extract_model_name(payload))
+    if model_info:
+        if not MISTRAL_API_KEY:
+            return proxy_error_response("RED_PROXY_MISTRAL_API_KEY not configured", 503)
+        payload = normalize_openai_payload_for_upstream(payload, source_ip, endpoint_name)
+        payload["model"] = model_id
+        payload["stream"] = True
+        started = time.time()
+        upstream = http_session.post(
+            MISTRAL_CHAT_BASE + "/chat/completions",
+            headers=mistral_headers(),
+            json=payload,
+            stream=True,
+            timeout=MISTRAL_CHAT_TIMEOUT_SECONDS,
+        )
+        latency = time.time() - started
+        log_message("INFO", "Mistral anthropic stream " + model_id + " -> HTTP " + str(upstream.status_code), "mistral", source_ip, endpoint_name, latency, upstream.status_code)
+        if upstream.status_code >= 400:
+            return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+        return Response(
+            anthropic_sse_from_openai_stream(upstream, response_model_name or model_id),
+            status=200,
+            headers=sse_no_buffer_headers(),
+            content_type="text/event-stream; charset=utf-8",
+        )
+
+    payload = normalize_openai_payload_for_upstream(payload, source_ip, endpoint_name)
+    payload["stream"] = True
+    upstream, error_response = upstream_request(
+        "POST",
+        "/v1/chat/completions",
+        source_ip,
+        json_body=payload,
+        timeout=180,
+        stream=True,
+        extra_headers={"Accept": "text/event-stream"},
+    )
+    if error_response is not None:
+        return error_response
+    if upstream.status_code >= 400:
+        return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+    return Response(
+        anthropic_sse_from_openai_stream(upstream, response_model_name or extract_model_name(payload)),
+        status=200,
+        headers=sse_no_buffer_headers(),
+        content_type="text/event-stream; charset=utf-8",
+    )
+
+
+def nvidia_anthropic_messages_request(model_id, model_info, body, source_ip, response_model_name=None):
     if not NVIDIA_API_KEY:
         return jsonify({"error": {"message": "RED_PROXY_NVIDIA_API_KEY not configured", "type": "red_proxy_error"}}), 503
     if model_info.get("kind") == "image":
         return jsonify({"error": {"message": "modelo NIM de imagem nao suporta /v1/messages", "type": "invalid_request_error"}}), 400
 
     payload = anthropic_to_openai_payload(body, model_id)
+    if body.get("stream"):
+        return openai_chat_stream_to_anthropic_response(payload, source_ip, "/v1/messages", response_model_name or nvidia_display_name(model_id))
     started = time.time()
     url = NVIDIA_CHAT_BASE + "/chat/completions"
     debug = {
@@ -1873,15 +3592,15 @@ def nvidia_anthropic_messages_request(model_id, model_info, body, source_ip):
     log_message("INFO", "NVIDIA anthropic request " + json.dumps(debug, ensure_ascii=False), "nvidia", source_ip, "/v1/messages", 0, 0)
 
     try:
-        upstream = http_session.post(url, headers=nvidia_headers(), json=payload, timeout=180)
+        upstream = http_session.post(url, headers=nvidia_headers(), json=payload, timeout=NVIDIA_CHAT_TIMEOUT_SECONDS)
         latency = time.time() - started
         log_message("INFO", "NVIDIA anthropic " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, "/v1/messages", latency, upstream.status_code)
         if upstream.status_code >= 400:
             return Response(upstream.content, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
 
-        message = anthropic_response_from_openai(upstream.json(), nvidia_display_name(model_id))
+        message = anthropic_response_from_openai(upstream.json(), response_model_name or nvidia_display_name(model_id))
         if body.get("stream"):
-            return Response(anthropic_sse_from_message(message), status=200, content_type="text/event-stream")
+            return Response(anthropic_sse_from_message(message), status=200, content_type="text/event-stream; charset=utf-8")
         return jsonify(message)
     except Exception as e:
         latency = time.time() - started
@@ -1900,7 +3619,7 @@ def nvidia_chat_request(model_id, body, base_path, source_ip):
 
     try:
         if payload["stream"]:
-            upstream = http_session.post(url, headers=nvidia_headers(), json=payload, stream=True, timeout=120)
+            upstream = http_session.post(url, headers=nvidia_headers(), json=payload, stream=True, timeout=NVIDIA_CHAT_STREAM_TIMEOUT_SECONDS)
             latency = time.time() - started
             log_message("INFO", "NVIDIA stream " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, base_path, latency, upstream.status_code)
             if upstream.status_code >= 400:
@@ -1910,7 +3629,7 @@ def nvidia_chat_request(model_id, body, base_path, source_ip):
                 chunk_count = 0
                 content_len = 0
                 finish_reason = None
-                for line in upstream.iter_lines(decode_unicode=True):
+                for line in iter_utf8_lines(upstream):
                     if not line:
                         continue
                     if line.startswith("data: "):
@@ -1933,7 +3652,7 @@ def nvidia_chat_request(model_id, body, base_path, source_ip):
                         chunk = {"model": nvidia_display_name(model_id), "created_at": utc_created_at(), "response": content, "done": False}
                     else:
                         chunk = {"model": nvidia_display_name(model_id), "created_at": utc_created_at(), "message": {"role": "assistant", "content": content}, "done": False}
-                    yield json.dumps(chunk, ensure_ascii=False) + "\n"
+                    yield sse_json(chunk) + "\n"
                 stream_debug = {
                     "model": model_id,
                     "finish_reason": finish_reason,
@@ -1942,11 +3661,11 @@ def nvidia_chat_request(model_id, body, base_path, source_ip):
                 }
                 log_message("INFO", "NVIDIA stream response " + json.dumps(stream_debug, ensure_ascii=False), "nvidia", source_ip, base_path, latency, upstream.status_code)
                 final = {"model": nvidia_display_name(model_id), "created_at": utc_created_at(), "done": True}
-                yield json.dumps(final, ensure_ascii=False) + "\n"
+                yield sse_json(final) + "\n"
 
-            return Response(generate_chat_stream(), status=200, content_type="application/x-ndjson")
+            return Response(generate_chat_stream(), status=200, content_type="application/x-ndjson; charset=utf-8")
 
-        upstream = http_session.post(url, headers=nvidia_headers(), json=payload, timeout=120)
+        upstream = http_session.post(url, headers=nvidia_headers(), json=payload, timeout=NVIDIA_CHAT_TIMEOUT_SECONDS)
         latency = time.time() - started
         log_message("INFO", "NVIDIA " + model_id + " -> HTTP " + str(upstream.status_code), "nvidia", source_ip, base_path, latency, upstream.status_code)
         if upstream.status_code >= 400:
@@ -1991,6 +3710,100 @@ def nvidia_chat_request(model_id, body, base_path, source_ip):
     except Exception as e:
         latency = time.time() - started
         log_message("ERROR", "NVIDIA " + model_id + " -> " + str(e)[:100], "nvidia", source_ip, base_path, latency, 500)
+        return jsonify({"error": str(e)}), 500
+
+
+def mistral_chat_request(model_id, body, base_path, source_ip):
+    if not MISTRAL_API_KEY:
+        return jsonify({"error": "RED_PROXY_MISTRAL_API_KEY not configured"}), 503
+
+    payload = nvidia_chat_payload(body, model_id, base_path)
+    log_message("INFO", "Mistral request " + json.dumps(compact_chat_debug(body, payload, model_id, base_path, provider="mistral"), ensure_ascii=False), "mistral", source_ip, base_path, 0, 0)
+    started = time.time()
+    url = MISTRAL_CHAT_BASE + "/chat/completions"
+
+    try:
+        if payload["stream"]:
+            upstream = http_session.post(url, headers=mistral_headers(), json=payload, stream=True, timeout=MISTRAL_CHAT_TIMEOUT_SECONDS)
+            latency = time.time() - started
+            log_message("INFO", "Mistral stream " + model_id + " -> HTTP " + str(upstream.status_code), "mistral", source_ip, base_path, latency, upstream.status_code)
+            if upstream.status_code >= 400:
+                return Response(upstream.text, status=upstream.status_code, content_type=upstream.headers.get("Content-Type", "application/json"))
+
+            def generate_chat_stream():
+                chunk_count = 0
+                content_len = 0
+                finish_reason = None
+                for line in iter_utf8_lines(upstream):
+                    if not line:
+                        continue
+                    if line.startswith("data: "):
+                        line = line[6:]
+                    if line.strip() == "[DONE]":
+                        break
+                    try:
+                        item = json.loads(line)
+                        choice = item.get("choices", [{}])[0]
+                        finish_reason = choice.get("finish_reason") or finish_reason
+                        delta = choice.get("delta", {})
+                        content = delta.get("content") or ""
+                    except Exception:
+                        content = ""
+                    if not content:
+                        continue
+                    chunk_count += 1
+                    content_len += len(content)
+                    if base_path == "/api/generate":
+                        chunk = {"model": model_id, "created_at": utc_created_at(), "response": content, "done": False}
+                    else:
+                        chunk = {"model": model_id, "created_at": utc_created_at(), "message": {"role": "assistant", "content": content}, "done": False}
+                    yield sse_json(chunk) + "\n"
+                stream_debug = {
+                    "model": model_id,
+                    "finish_reason": finish_reason,
+                    "chunks": chunk_count,
+                    "content_len": content_len,
+                }
+                log_message("INFO", "Mistral stream response " + json.dumps(stream_debug, ensure_ascii=False), "mistral", source_ip, base_path, latency, upstream.status_code)
+                yield sse_json({"model": model_id, "created_at": utc_created_at(), "done": True}) + "\n"
+
+            return Response(generate_chat_stream(), status=200, content_type="application/x-ndjson; charset=utf-8")
+
+        data, error_response = mistral_openai_chat_json(model_id, {"capabilities": ["chat"]}, payload, source_ip, base_path)
+        latency = time.time() - started
+        if error_response is not None:
+            return error_response
+        choice = (data.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+        content = message.get("content") or ""
+        usage = data.get("usage") or {}
+        total_duration = int(latency * 1_000_000_000)
+        if base_path == "/api/generate":
+            result = {
+                "model": model_id,
+                "created_at": utc_created_at(),
+                "response": content,
+                "done": True,
+                "done_reason": choice.get("finish_reason") or "stop",
+                "total_duration": total_duration,
+                "prompt_eval_count": usage.get("prompt_tokens"),
+                "eval_count": usage.get("completion_tokens"),
+            }
+        else:
+            result = {
+                "model": model_id,
+                "created_at": utc_created_at(),
+                "message": {"role": "assistant", "content": content},
+                "done": True,
+                "done_reason": choice.get("finish_reason") or "stop",
+                "total_duration": total_duration,
+                "prompt_eval_count": usage.get("prompt_tokens"),
+                "eval_count": usage.get("completion_tokens"),
+            }
+        return jsonify(result)
+    except Exception as e:
+        latency = time.time() - started
+        log_message("ERROR", "Mistral " + model_id + " -> " + str(e)[:100], "mistral", source_ip, base_path, latency, 500)
         return jsonify({"error": str(e)}), 500
 
 
@@ -2345,6 +4158,34 @@ def summarize_keys(keys):
     }
 
 
+def mask_secret(value, keep=4):
+    text = str(value or "")
+    if not text:
+        return ""
+    if len(text) <= keep * 2:
+        return "*" * len(text)
+    return text[:keep] + "..." + text[-keep:]
+
+
+def public_key_stats(keys):
+    now = time.time()
+    out = []
+    for key in keys or []:
+        out.append(
+            {
+                "id": key.get("id"),
+                "name": key.get("name") or "",
+                "active": bool(key.get("active")),
+                "key": mask_secret(key.get("key")),
+                "cooldown": key.get("cooldown_until", 0) > now,
+                "total_requests": int(key.get("total_requests", 0) or 0),
+                "successes": int(key.get("successes", 0) or 0),
+                "failures": int(key.get("failures", 0) or 0),
+            }
+        )
+    return out
+
+
 key_pool = KeyPool()
 
 # ============ PROXY COM RETRY ============
@@ -2368,7 +4209,7 @@ def admin_stats():
             },
             "host": PROXY_HOST,
             "port": PROXY_PORT,
-            "keys": keys,
+            "keys": public_key_stats(keys),
             "summary": summarize_keys(keys),
             "router": {
                 "fallback_enabled": ENABLE_CAPABILITY_FALLBACK,
@@ -2466,20 +4307,58 @@ def nvidia_models_refresh():
     )
 
 
+@app.get("/api/mistral/models")
+def mistral_models():
+    refresh = str(request.args.get("refresh") or "").strip().lower() in ("1", "true", "yes", "on")
+    if refresh:
+        ensure_mistral_catalog(force=True)
+    return jsonify(
+        {
+            "status": "ok",
+            "configured": bool(MISTRAL_API_KEY),
+            "prefix": MISTRAL_PREFIX,
+            "catalog": mistral_catalog_status(),
+            "models": [model_descriptor(model["id"], {"id": model["id"], "owned_by": "mistralai"}) for model in MISTRAL_MODELS],
+        }
+    )
+
+
+@app.post("/api/mistral/models/refresh")
+@app.post("/admin/mistral/models/refresh")
+def mistral_models_refresh():
+    ensure_mistral_catalog(force=True)
+    return jsonify(
+        {
+            "status": "ok" if not _mistral_catalog_error else "warning",
+            "catalog": mistral_catalog_status(),
+        }
+    )
+
+
 @app.get("/v1/models")
 def openai_models():
-    return jsonify({"object": "list", "data": [public_model_entry(descriptor) for descriptor in model_descriptors(request.remote_addr)]})
+    data = [public_model_entry(descriptor) for descriptor in model_descriptors(request.remote_addr)]
+    payload = {"object": "list", "data": data, "has_more": False}
+    if data:
+        payload["first_id"] = data[0]["id"]
+        payload["last_id"] = data[-1]["id"]
+    return jsonify(payload)
 
 
 @app.post("/v1/chat/completions")
 def openai_chat_completions():
-    body = request.get_json(silent=True) or {}
+    body, json_error = request_json_object()
+    if json_error is not None:
+        return json_error
     routed_body, _routing, error_response = route_json_body(body, "/v1/chat/completions", request.remote_addr)
     if error_response is not None:
         return error_response
     model_id, model_info = normalize_nvidia_model(extract_model_name(routed_body))
     if model_info:
         return nvidia_openai_chat_request(model_id, model_info, routed_body, request.remote_addr)
+    model_id, model_info = normalize_mistral_model(extract_model_name(routed_body))
+    if model_info:
+        return mistral_openai_chat_request(model_id, model_info, routed_body, request.remote_addr)
     routed_body = normalize_openai_payload_for_upstream(routed_body, request.remote_addr, "/v1/chat/completions")
     upstream, error_response = upstream_request(
         "POST",
@@ -2496,25 +4375,44 @@ def openai_chat_completions():
 
 @app.post("/v1/messages")
 def anthropic_messages():
-    body = request.get_json(silent=True) or {}
-    routed_body, _routing, error_response = route_json_body(body, "/v1/messages", request.remote_addr)
+    body, json_error = request_json_object()
+    if json_error is not None:
+        return json_error
+    routed_body, routing, error_response = route_json_body(body, "/v1/messages", request.remote_addr)
     if error_response is not None:
         return error_response
+    response_model_name = (routing or {}).get("resolved_model") or extract_model_name(routed_body)
     model_id, model_info = normalize_nvidia_model(extract_model_name(routed_body))
     if model_info:
-        return nvidia_anthropic_messages_request(model_id, model_info, routed_body, request.remote_addr)
-    model_name, data, error_response = universal_openai_chat_json(anthropic_to_openai_payload(routed_body, extract_model_name(routed_body)), request.remote_addr, "/v1/messages")
+        return nvidia_anthropic_messages_request(model_id, model_info, routed_body, request.remote_addr, response_model_name=response_model_name)
+    openai_payload = anthropic_to_openai_payload(routed_body, extract_model_name(routed_body))
+    if routed_body.get("stream"):
+        return openai_chat_stream_to_anthropic_response(openai_payload, request.remote_addr, "/v1/messages", response_model_name)
+    model_name, data, error_response = universal_openai_chat_json(openai_payload, request.remote_addr, "/v1/messages")
     if error_response is not None:
         return error_response
-    message = anthropic_response_from_openai(data, model_name)
+    message = anthropic_response_from_openai(data, response_model_name or model_name)
     if routed_body.get("stream"):
-        return Response(anthropic_sse_from_message(message), status=200, content_type="text/event-stream")
+        return Response(anthropic_sse_from_message(message), status=200, content_type="text/event-stream; charset=utf-8")
     return jsonify(message)
+
+
+@app.post("/v1/messages/count_tokens")
+def anthropic_count_tokens():
+    body, json_error = request_json_object()
+    if json_error is not None:
+        return json_error
+    _routed_body, _routing, error_response = route_json_body(body, "/v1/messages/count_tokens", request.remote_addr)
+    if error_response is not None:
+        return error_response
+    return jsonify({"input_tokens": estimate_anthropic_input_tokens(body)})
 
 
 @app.post("/v1/completions")
 def openai_completions():
-    body = request.get_json(silent=True) or {}
+    body, json_error = request_json_object()
+    if json_error is not None:
+        return json_error
     routed_body, _routing, error_response = route_json_body(body, "/v1/completions", request.remote_addr)
     if error_response is not None:
         return error_response
@@ -2540,13 +4438,15 @@ def openai_completions():
             if retry_completion["choices"][0]["text"]:
                 break
     if routed_body.get("stream"):
-        return Response(openai_completion_sse_from_chat(data, model_name), status=200, content_type="text/event-stream")
+        return Response(openai_completion_sse_from_chat(data, model_name), status=200, content_type="text/event-stream; charset=utf-8")
     return jsonify(completion)
 
 
 @app.post("/v1/responses")
 def openai_responses():
-    body = request.get_json(silent=True) or {}
+    body, json_error = request_json_object()
+    if json_error is not None:
+        return json_error
     routed_body, _routing, error_response = route_json_body(body, "/v1/responses", request.remote_addr)
     if error_response is not None:
         return error_response
@@ -2555,8 +4455,8 @@ def openai_responses():
     if error_response is not None:
         return error_response
     if routed_body.get("stream"):
-        return Response(responses_sse_from_chat(data, model_name), status=200, content_type="text/event-stream")
-    return jsonify(responses_from_chat(data, model_name))
+        return Response(responses_sse_from_chat(data, model_name, routed_body), status=200, content_type="text/event-stream; charset=utf-8")
+    return jsonify(responses_from_chat(data, model_name, routed_body))
 
 
 @app.post("/v1/embeddings")
@@ -2652,6 +4552,9 @@ def catch_all(path):
                 if descriptor and descriptor.get("provider") == "nvidia":
                     model_id, model_info = normalize_nvidia_model(descriptor["id"])
                     return nvidia_show_request(model_id, model_info, source_ip)
+                if descriptor and descriptor.get("provider") == "mistral":
+                    model_id, model_info = normalize_mistral_model(descriptor["id"])
+                    return mistral_show_request(model_id, model_info, source_ip)
                 if descriptor:
                     incoming_body = clone_body_with_model(incoming_body, descriptor["id"])
                     req_data = json.dumps(incoming_body, ensure_ascii=False).encode("utf-8")
@@ -2668,6 +4571,11 @@ def catch_all(path):
                             return nvidia_image_request(model_id, model_info, incoming_body, source_ip, as_ollama_generate=True)
                         return jsonify({"error": "modelo NIM de imagem deve usar /api/generate ou /api/images/generate"}), 400
                     return nvidia_chat_request(model_id, incoming_body, base_path, source_ip)
+                if resolved.get("provider") == "mistral":
+                    model_id, model_info = normalize_mistral_model(resolved["id"])
+                    if model_info and capability not in (model_info.get("capabilities") or []):
+                        return jsonify({"error": "modelo Mistral nao suporta " + capability}), 400
+                    return mistral_chat_request(model_id, incoming_body, base_path, source_ip)
                 if base_path == "/api/chat":
                     incoming_body = normalize_image_urls_for_upstream(incoming_body, source_ip, base_path)
                 req_data = json.dumps(incoming_body, ensure_ascii=False).encode("utf-8")

@@ -87,6 +87,9 @@ PROXY_MODEL_CACHE_TTL = int(os.getenv("RED_PROXY_MODEL_CACHE_TTL", "300") or 300
 PROXY_NIM_PREFIX = "NIM - "
 PROXY_NVIDIA_LEGACY_SUFFIX = " (NVIDIA)"
 PROXY_IMAGE_MODEL_HINTS = ("flux", "stable-diffusion")
+REDPROXYPRO_URL = os.getenv("REDPROXYPRO_URL", "http://127.0.0.1:8095").rstrip("/")
+REDPROXYPRO_SERVICE = os.getenv("REDPROXYPRO_SERVICE", "redproxypro.service")
+REDPROXYPRO_AUTH_TOKEN = os.getenv("REDPROXYPRO_AUTH_TOKEN", "red").strip()
 REDIA_URL = os.getenv("REDIA_URL", "http://127.0.0.1:3099").rstrip("/")
 REDIA_ADMIN_TOKEN = os.getenv("REDIA_ADMIN_TOKEN", "").strip()
 SEB_MONITOR_URL = os.getenv("RED_SEB_MONITOR_URL", "http://127.0.0.1:2580").rstrip("/")
@@ -101,6 +104,7 @@ IMPORTANT_SYSTEMD_UNITS = {
     "red-openclaw.service",
     "red-seb-monitor.service",
     "red-proxy-lab.service",
+    "redproxypro.service",
     "red-iq-vision-bridge.service",
     "rapidleech.service",
 }
@@ -173,6 +177,17 @@ STACK_BLUEPRINT = [
         "local_url": "http://127.0.0.1:8090/healthz",
     },
     {
+        "id": "redproxypro",
+        "name": "RED Proxy Pro",
+        "summary": "Gateway Vercel AI compatível com OpenAI, rotação de keys e custo individual por chave.",
+        "unit": "redproxypro.service",
+        "route": "/redproxypro/v1",
+        "runtime_path": "/opt/redproxypro",
+        "repo_path": "servicos/redproxypro",
+        "data_path": "/var/lib/redproxypro",
+        "local_url": "http://127.0.0.1:8095/healthz",
+    },
+    {
         "id": "openclaw",
         "name": "OpenClaw",
         "summary": "Assistente operacional privado da stack RED, ligado ao proxy local e aos canais internos.",
@@ -221,6 +236,7 @@ STACK_SERVICE_VIEWS = [
     {"view": "portal", "label": "Portal", "stack_id": "portal", "icon": "globe"},
     {"view": "redtrader", "label": "Trader", "stack_id": "redtrader", "icon": "candlestick-chart"},
     {"view": "proxy_lab", "label": "Proxy Lab", "stack_id": "proxy_lab", "icon": "flask-conical"},
+    {"view": "redproxypro", "label": "Proxy Pro", "stack_id": "redproxypro", "icon": "badge-dollar-sign"},
     {"view": "iq_bridge", "label": "IQ Bridge", "stack_id": "iq_bridge", "icon": "waypoints"},
     {"view": "openclaw", "label": "OpenClaw", "stack_id": "openclaw", "icon": "brain-circuit"},
     {"view": "redseb_monitor", "label": "SEB Monitor", "stack_id": "redseb_monitor", "icon": "monitor-play"},
@@ -235,6 +251,7 @@ REPO_BLUEPRINT = [
             {"path": "servicos/dashboard", "summary": "Painel operacional da VM unica."},
             {"path": "servicos/proxy", "summary": "Proxy IA principal e compatibilidade Ollama."},
             {"path": "servicos/proxy-lab", "summary": "Benchmark pago isolado do runtime principal."},
+            {"path": "servicos/redproxypro", "summary": "Gateway Vercel AI com rotação e custos por chave."},
             {"path": "servicos/redia", "summary": "WhatsApp AI principal da stack."},
             {"path": "servicos/redtrader", "summary": "Paper trading e pesquisa operacional."},
             {"path": "servicos/openclaw", "summary": "Assistente operacional privado da stack."},
@@ -266,6 +283,7 @@ DASHBOARD_VIEW_ROUTES = {
     "redia": {"path": "redia", "aliases": []},
     "redtrader": {"path": "trader", "aliases": []},
     "proxy_lab": {"path": "proxy-lab", "aliases": ["proxylab"]},
+    "redproxypro": {"path": "redproxypro", "aliases": ["proxy-pro", "proxypro"]},
     "iq_bridge": {"path": "iq-bridge", "aliases": ["iqbridge"]},
     "openclaw": {"path": "openclaw", "aliases": []},
     "redseb_monitor": {"path": "seb-monitor", "aliases": ["seb"]},
@@ -509,6 +527,31 @@ def proxy_service_snapshot() -> dict[str, Any]:
     }
 
 
+def redproxypro_service_snapshot() -> dict[str, Any]:
+    result = run_command(
+        [
+            "systemctl",
+            "show",
+            REDPROXYPRO_SERVICE,
+            "--property=Id,ActiveState,SubState,UnitFileState,MainPID,ExecMainStartTimestamp,FragmentPath",
+        ],
+        timeout=20,
+        check=False,
+    )
+    props = proxy_parse_service_properties(result.stdout)
+    active_state = props.get("ActiveState", "unknown")
+    return {
+        "service": props.get("Id", REDPROXYPRO_SERVICE),
+        "active": active_state,
+        "sub": props.get("SubState", "unknown"),
+        "unit_file_state": props.get("UnitFileState", "unknown"),
+        "main_pid": int(props.get("MainPID", "0") or 0),
+        "started_at": props.get("ExecMainStartTimestamp", ""),
+        "fragment_path": props.get("FragmentPath", ""),
+        "running": active_state == "active",
+    }
+
+
 def proxy_request_json(path: str, *, method: str = "GET", payload: dict[str, Any] | None = None, timeout: int = 30) -> tuple[int, Any]:
     data = None
     headers = {"Accept": "application/json"}
@@ -516,6 +559,30 @@ def proxy_request_json(path: str, *, method: str = "GET", payload: dict[str, Any
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(f"{PROXY_URL}{path}", data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            body = response.read().decode("utf-8", errors="replace")
+            return response.status, json.loads(body) if body else {}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            parsed = {"raw": body}
+        return exc.code, parsed
+    except urllib.error.URLError as exc:
+        return 0, {"error": str(exc.reason)}
+
+
+def redproxypro_request_json(path: str, *, method: str = "GET", payload: dict[str, Any] | None = None, timeout: int = 30) -> tuple[int, Any]:
+    data = None
+    headers = {"Accept": "application/json"}
+    if REDPROXYPRO_AUTH_TOKEN:
+        headers["Authorization"] = f"Bearer {REDPROXYPRO_AUTH_TOKEN}"
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(f"{REDPROXYPRO_URL}{path}", data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             body = response.read().decode("utf-8", errors="replace")
@@ -805,6 +872,64 @@ def proxy_snapshot_safe() -> dict[str, Any]:
             "keys_file": str(PROXY_KEYS_FILE),
             "log_file": str(PROXY_LOG_FILE),
             "logs": [],
+        }
+
+
+def redproxypro_snapshot() -> dict[str, Any]:
+    service = redproxypro_service_snapshot()
+    health_status, health_data = redproxypro_request_json("/healthz", timeout=10)
+    stats_status, stats_data = redproxypro_request_json("/admin/stats", timeout=10)
+    stats = stats_data if isinstance(stats_data, dict) else {}
+    health = health_data if isinstance(health_data, dict) else {}
+    summary = stats.get("summary", {}) if isinstance(stats.get("summary"), dict) else {}
+    if not summary:
+        keys = stats.get("keys", []) if isinstance(stats.get("keys"), list) else []
+        summary = {
+            "total": len(keys),
+            "active": sum(1 for key in keys if key.get("active")),
+            "healthy": int(health.get("keys_healthy", 0) or 0),
+            "cooldown": sum(1 for key in keys if float(key.get("cooldown", 0) or 0) > 0),
+            "total_requests": sum(int(key.get("total_requests", 0) or 0) for key in keys),
+            "successes": sum(int(key.get("successes", 0) or 0) for key in keys),
+            "failures": sum(int(key.get("failures", 0) or 0) for key in keys),
+            "total_tokens": sum(int(key.get("total_tokens", 0) or 0) for key in keys),
+            "total_cost": sum(float(key.get("total_cost", 0) or 0) for key in keys),
+        }
+    return {
+        "service": service,
+        "proxy_url": REDPROXYPRO_URL,
+        "upstream": stats.get("upstream", health.get("upstream", "")),
+        "reachable": health_status == 200 and stats_status == 200,
+        "health_status": health_status,
+        "stats_status": stats_status,
+        "health": health,
+        "summary": summary,
+        "keys": stats.get("keys", []) if isinstance(stats.get("keys"), list) else [],
+        "models": stats.get("models", []) if isinstance(stats.get("models"), list) else [],
+        "retry_statuses": stats.get("retry_statuses", []) if isinstance(stats.get("retry_statuses"), list) else [],
+        "usage_file": stats.get("usage_file", ""),
+        "auth_required": bool(stats.get("auth_required", True)),
+    }
+
+
+def redproxypro_snapshot_safe() -> dict[str, Any]:
+    try:
+        return redproxypro_snapshot()
+    except Exception as exc:
+        return {
+            "service": {"service": REDPROXYPRO_SERVICE, "active": "unknown", "sub": "error"},
+            "proxy_url": REDPROXYPRO_URL,
+            "upstream": "",
+            "reachable": False,
+            "health_status": 0,
+            "stats_status": 0,
+            "health": {"error": str(exc)},
+            "summary": {"total": 0, "active": 0, "healthy": 0, "cooldown": 0, "total_requests": 0, "successes": 0, "failures": 0, "total_tokens": 0, "total_cost": 0},
+            "keys": [],
+            "models": [],
+            "retry_statuses": [],
+            "usage_file": "",
+            "auth_required": True,
         }
 
 
@@ -4858,6 +4983,7 @@ def vm_assistant_context_snapshot() -> dict[str, Any]:
         "processes": process_snapshot(limit=12),
         "firewall": firewall_snapshot(),
         "proxy": proxy_snapshot(),
+        "redproxypro": redproxypro_snapshot_safe(),
         "journal": list(app.state.journal_lines)[-16:],
         "proxy_logs": list(app.state.proxy_log_lines)[-16:],
     }
@@ -4871,6 +4997,7 @@ def vm_assistant_context_text(snapshot: dict[str, Any]) -> str:
     processes = snapshot.get("processes", [])
     firewall = snapshot.get("firewall", {})
     proxy = snapshot.get("proxy", {})
+    redproxypro = snapshot.get("redproxypro", {})
 
     important_units = IMPORTANT_SYSTEMD_UNITS | {PROXY_SERVICE}
     service_lines = [
@@ -4942,6 +5069,13 @@ def vm_assistant_context_text(snapshot: dict[str, Any]) -> str:
             f"- Keys ativas: {proxy.get('summary', {}).get('active', 0)}",
             f"- Requests totais: {proxy.get('summary', {}).get('total_requests', 0)}",
             f"- Modelos detectados: {len(proxy.get('models', []))}",
+            "",
+            "RED Proxy Pro:",
+            f"- Serviço: {redproxypro.get('service', {}).get('active', 'unknown')}/{redproxypro.get('service', {}).get('sub', 'unknown')}",
+            f"- Reachable: {redproxypro.get('reachable', False)}",
+            f"- Keys saudáveis: {redproxypro.get('summary', {}).get('healthy', 0)}",
+            f"- Requests totais: {redproxypro.get('summary', {}).get('total_requests', 0)}",
+            f"- Custo total USD: {float(redproxypro.get('summary', {}).get('total_cost', 0) or 0):.6f}",
             "",
             "Journal recente:",
             *(journal_lines or ["- Sem linhas recentes."]),
@@ -5227,6 +5361,7 @@ async def emit_snapshot(include_heavy: bool = False) -> None:
         payload["processes"] = await asyncio.to_thread(process_snapshot)
         payload["firewall"] = await asyncio.to_thread(firewall_snapshot)
         payload["proxy"] = await asyncio.to_thread(proxy_snapshot_safe)
+        payload["redproxypro"] = await asyncio.to_thread(redproxypro_snapshot_safe)
         payload["redia"] = await asyncio.to_thread(redia_snapshot)
         payload["projects"] = await asyncio.to_thread(project_present_all, None)
         payload["whatsapp"] = await asyncio.to_thread(whatsapp_snapshot, None)
@@ -5372,6 +5507,7 @@ async def api_bootstrap(request: Request) -> JSONResponse:
         "processes": await asyncio.to_thread(process_snapshot),
         "firewall": await asyncio.to_thread(firewall_snapshot),
         "proxy": await asyncio.to_thread(proxy_snapshot_safe),
+        "redproxypro": await asyncio.to_thread(redproxypro_snapshot_safe),
         "redia": await asyncio.to_thread(redia_snapshot),
         "seb_monitor": await asyncio.to_thread(seb_monitor_snapshot),
         "journal": list(app.state.journal_lines),
@@ -5738,6 +5874,12 @@ async def github_project_webhook(project_id: str, request: Request) -> JSONRespo
 async def api_proxy_snapshot(request: Request) -> JSONResponse:
     ensure_authenticated(request)
     return JSONResponse(await asyncio.to_thread(proxy_snapshot_safe))
+
+
+@app.get("/api/redproxypro")
+async def api_redproxypro_snapshot(request: Request) -> JSONResponse:
+    ensure_authenticated(request)
+    return JSONResponse(await asyncio.to_thread(redproxypro_snapshot_safe))
 
 
 @app.get("/api/proxy/logs")
@@ -6229,6 +6371,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 "processes": await asyncio.to_thread(process_snapshot),
                 "firewall": await asyncio.to_thread(firewall_snapshot),
                 "proxy": await asyncio.to_thread(proxy_snapshot_safe),
+                "redproxypro": await asyncio.to_thread(redproxypro_snapshot_safe),
                 "journal": list(app.state.journal_lines),
                 "proxy_logs": list(app.state.proxy_log_lines),
                 "whatsapp": await asyncio.to_thread(whatsapp_snapshot, None),

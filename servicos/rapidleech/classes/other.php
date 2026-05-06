@@ -50,6 +50,12 @@ function login_check() {
 	}
 }
 
+function rl_stream_flush($pad_bytes = 0) {
+	if ($pad_bytes > 0) echo "\n<!--" . str_repeat(' ', (int)$pad_bytes) . "-->\n";
+	if (function_exists('ob_flush')) @ob_flush();
+	flush();
+}
+
 function is_present($lpage, $mystr, $strerror = '') {
 	if (stripos($lpage, $mystr) !== false) html_error((!empty($strerror) ? $strerror : $mystr));
 }
@@ -175,6 +181,8 @@ function sec2time($time) {
 // Updated function to be able to format up to Yotabytes!
 function bytesToKbOrMbOrGb($bytes) {
 	if (is_numeric($bytes)) {
+		$bytes = (float) $bytes;
+		if ($bytes <= 0) return '0 B';
 		$s = array('B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB');
 		$e = floor(log($bytes) / log(1024));
 		return sprintf('%.2f ' . $s[$e], @($bytes / pow(1024, floor($e))));
@@ -236,12 +244,14 @@ function _create_list() {
 	} else {
 		if (@file_exists(CONFIG_DIR . 'files.lst') && ($glist = file(CONFIG_DIR . 'files.lst')) !== false) {
 			foreach($glist as $key => $record) {
-				foreach(unserialize($record) as $field => $value) {
+				$entry = @unserialize(trim($record));
+				if (!is_array($entry)) continue;
+				foreach($entry as $field => $value) {
 					switch ($field) {
 						case 'date':
 							$date = $value;
 						default:
-					$listReformat[$key][$field] = $value;
+							$listReformat[$key][$field] = $value;
 							break;
 						case 'comment':
 							$listReformat[$key][$field] = htmlspecialchars($value, ENT_QUOTES, 'UTF-8');

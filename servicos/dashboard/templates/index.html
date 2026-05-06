@@ -13,7 +13,7 @@
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
     <link rel="icon" href="static/favicon.ico" sizes="any">
     <link rel="shortcut icon" href="static/favicon.ico">
-    <link rel="stylesheet" href="static/styles.css?v=20260418-accent-fix-4">
+    <link rel="stylesheet" href="static/styles.css?v=20260506-proxypro-claude-1">
 </head>
 <body>
     <script>
@@ -57,6 +57,7 @@
                 <button class="nav-item" data-view="docker"><i data-lucide="container"></i><span>Docker</span></button>
                 <button class="nav-item" data-view="portal"><i data-lucide="globe"></i><span>Portal</span></button>
                 <button class="nav-item" data-view="proxy"><i data-lucide="bot"></i><span>Proxy IA</span></button>
+                <button class="nav-item" data-view="redproxypro"><i data-lucide="badge-dollar-sign"></i><span>Proxy Pro</span></button>
                 <button class="nav-item" data-view="redia"><i data-lucide="sparkles"></i><span>RED I.A</span></button>
                 <button class="nav-item" data-view="redtrader"><i data-lucide="candlestick-chart"></i><span>Trader</span></button>
                 <button class="nav-item" data-view="proxy_lab"><i data-lucide="flask-conical"></i><span>Proxy Lab</span></button>
@@ -144,6 +145,7 @@
                             <button class="action-tile" data-service-shortcut="red-dashboard">Dashboard</button>
                             <button class="action-tile" data-service-shortcut="portal">Portal</button>
                             <button class="action-tile" data-service-shortcut="red-ollama-proxy">Proxy IA</button>
+                            <button class="action-tile" data-service-shortcut="redproxypro">Proxy Pro</button>
                             <button class="action-tile" data-service-shortcut="redia">REDIA</button>
                             <button class="action-tile" data-service-shortcut="redtrader">RED Trader</button>
                             <button class="action-tile" data-service-shortcut="red-openclaw">OpenClaw</button>
@@ -526,6 +528,80 @@
                 </section>
             </section>
 
+            <section class="view" id="view-redproxypro">
+                <section class="panel proxy-overview-panel">
+                    <div class="panel-head proxy-overview-head">
+                        <div>
+                            <div class="eyebrow">CUSTOS E ROTAÇÃO</div>
+                            <h2>RED Proxy Pro</h2>
+                            <div class="panel-subtitle">Uso individual das keys Vercel AI, custo estimado, tokens e saúde do gateway.</div>
+                        </div>
+                        <div class="inline-actions">
+                            <div class="chat-status-pill neutral" id="redProxyProStatus">Aguardando leitura.</div>
+                            <button class="ghost-button" id="redProxyProRefreshButton" type="button">Atualizar</button>
+                            <button class="ghost-button" id="redProxyProRestartButton" type="button">Reiniciar serviço</button>
+                        </div>
+                    </div>
+
+                    <div class="proxy-kpis proxypro-kpis">
+                        <article class="proxy-kpi">
+                            <div class="metric-label">Serviço</div>
+                            <div class="metric-value" id="redProxyProMetricStatus">--</div>
+                            <div class="metric-meta" id="redProxyProMetricService">redproxypro.service</div>
+                        </article>
+                        <article class="proxy-kpi">
+                            <div class="metric-label">Keys saudáveis</div>
+                            <div class="metric-value" id="redProxyProMetricKeys">0/0</div>
+                            <div class="metric-meta" id="redProxyProMetricKeysMeta">0 ativas / 0 em cooldown</div>
+                        </article>
+                        <article class="proxy-kpi">
+                            <div class="metric-label">Requests</div>
+                            <div class="metric-value" id="redProxyProMetricRequests">0</div>
+                            <div class="metric-meta" id="redProxyProMetricRequestsMeta">0 sucessos / 0 falhas</div>
+                        </article>
+                        <article class="proxy-kpi">
+                            <div class="metric-label">Custo</div>
+                            <div class="metric-value" id="redProxyProMetricCost">US$ 0,0000</div>
+                            <div class="metric-meta" id="redProxyProMetricCostMeta">market US$ 0,0000</div>
+                        </article>
+                        <article class="proxy-kpi">
+                            <div class="metric-label">Tokens</div>
+                            <div class="metric-value" id="redProxyProMetricTokens">0</div>
+                            <div class="metric-meta" id="redProxyProMetricTokensMeta">0 in / 0 out</div>
+                        </article>
+                    </div>
+                </section>
+
+                <div class="proxypro-layout">
+                    <section class="panel stretch-panel">
+                        <div class="panel-head">
+                            <div>
+                                <h2>Gastos por key</h2>
+                                <div class="panel-subtitle">Ordenado por custo total. A chave real nunca aparece aqui.</div>
+                            </div>
+                        </div>
+                        <div class="stack-list proxypro-key-list" id="redProxyProKeysList"></div>
+                    </section>
+
+                    <section class="panel stretch-panel">
+                        <div class="panel-head">
+                            <div>
+                                <h2>Modelos usados</h2>
+                                <div class="panel-subtitle">Consolidado por modelo para enxergar quem está gastando mais.</div>
+                            </div>
+                        </div>
+                        <div class="stack-list proxypro-model-list" id="redProxyProModelsList"></div>
+                    </section>
+                </div>
+
+                <section class="panel">
+                    <div class="panel-head">
+                        <h2>Status técnico</h2>
+                    </div>
+                    <div class="kv-grid" id="redProxyProSummary"></div>
+                </section>
+            </section>
+
             <section class="view" id="view-redseb_monitor">
                 <section class="panel seb-monitor-panel">
                     <div class="panel-head">
@@ -591,7 +667,7 @@
                 </section>
             </section>
 
-            {% for service_view in stack_service_views if service_view.view != "redseb_monitor" %}
+            {% for service_view in stack_service_views if service_view.view not in ["redseb_monitor", "redproxypro"] %}
             <section class="view" id="view-{{ service_view.view }}">
                 <div class="stack-service-host" data-stack-service-host="{{ service_view.stack_id }}"></div>
             </section>
@@ -1432,6 +1508,6 @@
     <div id="toastStack" class="toast-stack"></div>
     {% endif %}
 
-    <script src="static/app.js?v=20260418-accent-fix-4"></script>
+    <script src="static/app.js?v=20260506-proxypro-claude-1"></script>
 </body>
 </html>

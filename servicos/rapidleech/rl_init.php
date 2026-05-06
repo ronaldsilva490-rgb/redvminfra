@@ -8,7 +8,10 @@ if (count(get_included_files()) == 1) {
 
 @set_time_limit(0);
 ini_alter('memory_limit', '1024M');
-if (ob_get_level()) ob_end_clean();
+@ini_set('output_buffering', '0');
+@ini_set('zlib.output_compression', '0');
+@ini_set('implicit_flush', '1');
+while (ob_get_level() > 0) @ob_end_flush();
 ob_implicit_flush(true);
 clearstatcache();
 error_reporting(6135);
@@ -17,6 +20,9 @@ $fromaddr = 'RapidLeech';
 $dev_name = 'Development Stage';
 $rev_num = '43';
 $plusrar_v = '4.1';
+if (empty($_SERVER['SERVER_ADDR'])) {
+	$_SERVER['SERVER_ADDR'] = '127.0.0.1';
+}
 if (!empty($_SERVER['HTTP_X_FORWARDED_PREFIX'])) {
 	$forwardedPrefix = trim((string) $_SERVER['HTTP_X_FORWARDED_PREFIX']);
 	$forwardedPrefix = '/' . trim($forwardedPrefix, '/');
@@ -45,10 +51,11 @@ define('DOWNLOAD_DIR', (substr($options['download_dir'], 0, 6) == 'ftp://' ? '' 
 define('TEMPLATE_DIR', 'templates/' . $options['template_used'] . '/');
 define('IMAGE_DIR', TEMPLATE_DIR . 'images/');
 header('X-Frame-Options: SAMEORIGIN');
+header('X-Accel-Buffering: no');
 if ($options['no_cache']) {
 	header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
 	header('Last-Modified: ' . gmdate ("D, d M Y H:i:s") . 'GMT');
-	header('Cache-Control: no-cache, must-revalidate, max-age=0');
+	header('Cache-Control: no-cache, must-revalidate, max-age=0, no-transform');
 	header('Pragma: no-cache');
 }
 require_once(CLASS_DIR . 'other.php');

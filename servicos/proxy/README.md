@@ -18,6 +18,7 @@ Gateway IA oficial da stack. Ele fala Ollama-compatible, expande modelos NIM/NVI
   - `/v1/chat/completions`
   - `/v1/completions`
   - `/v1/messages`
+  - `/v1/messages/count_tokens`
   - `/v1/responses`
   - `/v1/embeddings`
 
@@ -39,6 +40,11 @@ As mais importantes:
 - `RED_PROXY_PORT`
 - `RED_PROXY_UPSTREAM`
 - `RED_PROXY_NVIDIA_API_KEY`
+- `RED_PROXY_MISTRAL_API_KEY`
+- `RED_PROXY_NVIDIA_CHAT_TIMEOUT_SECONDS`
+- `RED_PROXY_NVIDIA_CHAT_STREAM_TIMEOUT_SECONDS`
+- `RED_PROXY_MISTRAL_CHAT_TIMEOUT_SECONDS`
+- `RED_PROXY_RESPONSES_MIN_OUTPUT_TOKENS`
 - `RED_PROXY_DEFAULT_CHAT_MODEL`
 - `RED_PROXY_DEFAULT_VISION_MODEL`
 - `RED_PROXY_DEFAULT_IMAGE_MODEL`
@@ -47,6 +53,9 @@ As mais importantes:
 - `RED_PROXY_NVIDIA_MODEL_REFRESH_ENABLED`
 - `RED_PROXY_NVIDIA_MODEL_REFRESH_TTL_SECONDS`
 - `RED_PROXY_NVIDIA_MODEL_CACHE_FILE`
+- `RED_PROXY_MISTRAL_MODEL_REFRESH_ENABLED`
+- `RED_PROXY_MISTRAL_MODEL_REFRESH_TTL_SECONDS`
+- `RED_PROXY_MISTRAL_MODEL_CACHE_FILE`
 
 ## Autenticação pública
 
@@ -78,6 +87,128 @@ Padrao operacional:
 - cache persistente em `/var/lib/redvm-proxy/nvidia_models_cache.json`;
 - refresh manual por `POST /api/nvidia/models/refresh`;
 - inspecao por `GET /api/nvidia/models` ou `GET /api/nvidia/models?refresh=1`.
+
+Alguns endpoints NIM recentes entram em fila ou demoram bastante em chamadas com tools. Para evitar corte prematuro, o timeout de chat NIM e configuravel por `RED_PROXY_NVIDIA_CHAT_TIMEOUT_SECONDS` e `RED_PROXY_NVIDIA_CHAT_STREAM_TIMEOUT_SECONDS`; o padrao atual do proxy e 360 segundos.
+
+Para clientes baseados em Responses API, como Codex, o proxy aplica um piso em `max_output_tokens` via `RED_PROXY_RESPONSES_MIN_OUTPUT_TOKENS`. O padrao atual e 2048 para evitar respostas de codigo cortadas quando o cliente envia limite baixo demais.
+
+## Catalogo Mistral AI
+
+O proxy tambem pode expor modelos Mistral AI diretamente pelo mesmo `/v1/responses` usado pelo Codex. Como a API da Mistral fala Chat Completions, o proxy converte Responses para Chat e devolve eventos compativeis com Codex.
+
+Padrao operacional:
+
+- configure `RED_PROXY_MISTRAL_API_KEY` ou `MISTRAL_API_KEY`;
+- catalogo remoto em `RED_PROXY_MISTRAL_CHAT_BASE + /models`;
+- TTL padrao de 3600 segundos;
+- cache persistente em `/var/lib/redvm-proxy/mistral_models_cache.json`;
+- refresh manual por `POST /api/mistral/models/refresh`;
+- inspecao por `GET /api/mistral/models` ou `GET /api/mistral/models?refresh=1`.
+
+Use os IDs crus retornados pela Mistral, como `mistral-medium-3.5`, `devstral-latest`, `mistral-small-latest` e `mistral-vibe-cli-latest`. Eles geram menos warnings no Codex do que nomes com espacos.
+
+Clientes em modo Ollama, como Page Assist, buscam modelos por `GET /api/tags` e detalhes por `POST /api/show`. O proxy tambem injeta os modelos Mistral diretos nesses endpoints e roteia `POST /api/chat`/`POST /api/generate` para a API da Mistral quando o modelo selecionado for Mistral.
+
+## Compatibilidade com Codex
+
+O Codex CLI/extensao VS Code usa a OpenAI Responses API em `/v1/responses`. O proxy RED aceita esse formato e converte para `/v1/chat/completions` no upstream, mantendo:
+
+- `instructions` como mensagem `system`;
+- `input` textual, multimodal basico e historico de conversa;
+- function tools do Codex, MCPs e ferramentas internas;
+- `function_call` e `function_call_output` para o loop de ferramentas;
+- `tool_choice`, `parallel_tool_calls`, `response_format`, limites de tokens e streaming SSE;
+- ferramentas built-in `web_search` e `image_generation` em formato de function tool para modelos que so falam Chat Completions.
+- normalizacao de mensagens `developer/system` para backends estritos;
+- fallback textual para NIMs que geram tool calls, mas rejeitam historico com `role: tool`.
+
+Exemplo de provider no Codex:
+
+```toml
+[model_providers.redproxy]
+name = "RED Proxy"
+base_url = "http://redsystems.ddns.net/proxy/v1"
+env_key = "RED_PROXY_PUBLIC_API_KEY"
+wire_api = "responses"
+requires_openai_auth = false
+```
+
+No terminal:
+
+```bash
+export RED_PROXY_PUBLIC_API_KEY=red
+codex -m "qwen3-coder:480b" -c 'model_provider="redproxy"'
+```
+
+Em Windows PowerShell:
+
+```powershell
+$env:RED_PROXY_PUBLIC_API_KEY = "red"
+codex -m "qwen3-coder:480b" -c 'model_provider="redproxy"'
+```
+
+Prefira IDs sem espacos, como `qwen3-coder:480b` ou `qwen3-coder-next`, porque o Codex registra menos warnings de telemetria/model metadata. Os IDs `NIM - ...` tambem funcionam quando expostos pelo catalogo.
+
+Validacao local recomendada para esse adaptador:
+
+```bash
+cd servicos/proxy
+python3 -m py_compile proxy.py tests/test_responses_adapter.py tests/capture_codex_provider.py tests/mock_codex_chat_upstream.py
+python3 tests/test_responses_adapter.py
+```
+
+## Compatibilidade com Claude Desktop
+
+O Claude Desktop/Cowork em modo third-party gateway espera uma API Anthropic-compatible. O proxy RED expõe essa superficie em `/proxy/v1`, incluindo:
+
+- `GET /v1/models`
+- `POST /v1/messages`
+- `POST /v1/messages/count_tokens`
+- streaming SSE de `/v1/messages`
+- conversao de `tools` Anthropic para function tools OpenAI-compatible
+- retorno de tool calls como blocos `tool_use`
+
+Use HTTPS publico:
+
+```txt
+https://redsystems.ddns.net/proxy/v1
+```
+
+Token publico:
+
+```txt
+Authorization: Bearer red
+```
+
+Aliases recomendados para o Claude Desktop:
+
+```txt
+claude-red-mistral-medium
+claude-red-devstral
+claude-red-devstral-medium
+claude-red-mistral-large
+claude-red-mistral-small
+claude-red-mistral-vibe
+claude-red-codestral
+claude-red-ollama-gemma4-31b
+claude-red-ollama-nemotron3-super
+claude-red-ollama-minimax-m25
+claude-red-ollama-qwen3-vl-235b
+claude-red-ollama-gpt-oss-120b
+claude-red-ollama-qwen3-coder-480b
+claude-red-nim-nemotron3-super
+claude-red-nim-glm51
+claude-red-nim-gemma4-31b
+claude-red-nim-qwen35-397b
+claude-red-nim-mistral-small4
+claude-red-nim-kimi-k26
+claude-red-nim-kimi-thinking
+claude-red-qwen-next
+claude-red-qwen-35-122b
+claude-red-qwen3-coder-next
+```
+
+Esses aliases aparecem em `/v1/models` e roteiam internamente para os modelos reais do proxy, mantendo nomes estaveis para clientes Claude.
 
 ## Rodar localmente
 

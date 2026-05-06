@@ -487,11 +487,26 @@ def proxy_to_provider(provider: ProviderSpec, path: str, payload: dict[str, Any]
 def ollama_messages_from_chat_body(body: dict[str, Any]) -> list[dict[str, Any]]:
     messages = body.get("messages")
     if isinstance(messages, list) and messages:
-        return messages
+        return sanitize_openai_messages(messages)
     prompt = body.get("prompt")
     if prompt:
         return [{"role": "user", "content": str(prompt)}]
     return [{"role": "user", "content": ""}]
+
+
+def sanitize_openai_messages(messages: Any) -> Any:
+    """Remove OpenAI-only message fields rejected by stricter providers."""
+    if not isinstance(messages, list):
+        return messages
+    sanitized: list[Any] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            sanitized.append(message)
+            continue
+        item = dict(message)
+        item.pop("name", None)
+        sanitized.append(item)
+    return sanitized
 
 
 def build_openai_payload(model_id: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -759,6 +774,7 @@ def v1_chat_completions():
         return jsonify({"error": "modelo do laboratorio nao reconhecido"}), 404
     payload = dict(body)
     payload["model"] = model_id
+    payload["messages"] = sanitize_openai_messages(payload.get("messages"))
     stream = bool(body.get("stream", False))
     response, _key_id, _api_key, _latency, error_response = proxy_to_provider(provider, "/chat/completions", payload, stream=stream)
     if error_response:

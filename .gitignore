@@ -10,6 +10,10 @@ AGENTS.local.md
 **/data/
 **/auth/
 **/tmp/
+tmp/
+tmp_seb_sessions/
+backups/
+.claude/
 **/*.sqlite
 **/*.sqlite-*
 **/*.db
@@ -34,6 +38,11 @@ artefatos/**
 !artefatos/**/
 !artefatos/**/.gitkeep
 tmp_*
+**/*_smoke_results.json
+**/redproxypro-config-backups/
+**/workspace-state-*/
+**/*.invalid-*
+**/*.bak-*
 
 # External clones should be installed as needed, not vendored by default
 referencias/nvidia-riva-python-clients/

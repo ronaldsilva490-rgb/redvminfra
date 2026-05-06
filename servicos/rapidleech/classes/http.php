@@ -24,7 +24,7 @@ function insert_timer($countd, $caption = '', $timeouttext = '', $hide = false) 
 	if ($hide) echo "else $('#timer_$timerid').css('display', 'none');";
 	elseif (!empty($timeouttext)) echo "else $('#timer_$timerid').html('" . addslashes($timeouttext) . "');";
 	echo "\n\t} timer_$timerid();\n/* ]]> */</script>";
-		flush();
+		rl_stream_flush();
 	sleep($countd);
 	return true;
 }
@@ -192,7 +192,7 @@ function geturl($host, $port, $url, $referer = 0, $cookie = 0, $post = 0, $saveT
 					require_once(HOST_DIR . "download/$file");
 					$class = substr($file, 0, -4);
 					$firstchar = substr($file, 0, 1);
-					if ($firstchar > 0) $class = "d$class";
+					if (ctype_digit($firstchar)) $class = "d$class";
 				if (class_exists($class) && method_exists($class, 'CheckBack')) { // is_callable(array($class , 'CheckBack'))
 					$hostClass = new $class(false);
 					$hostClass->CheckBack($header);
@@ -213,7 +213,8 @@ function geturl($host, $port, $url, $referer = 0, $cookie = 0, $post = 0, $saveT
 			return false;
 		}
 		//$bytesTotal = intval ( trim ( cut_str ( $header, "Content-Length:", "\n" ) ) );
-		$bytesTotal = trim(cut_str($header, "\nContent-Length: ", "\n"));
+		$bytesTotalHeader = trim(cut_str($header, "\nContent-Length: ", "\n"));
+		$bytesTotal = is_numeric($bytesTotalHeader) ? (int)$bytesTotalHeader : 0;
 
 		global $options;
 		if ($options['file_size_limit'] > 0 && ($bytesTotal > ($options['file_size_limit'] * 1024 * 1024))) {
@@ -293,23 +294,37 @@ function geturl($host, $port, $url, $referer = 0, $cookie = 0, $post = 0, $saveT
 			list($temp, $Resume['range']) = explode(' ', trim(cut_str($header, "\nContent-Range: ", "\n")));
 			list($Resume['range'], $fileSize) = explode('/', $Resume['range']);
 			$fileSize = bytesToKbOrMbOrGb($fileSize);
-		} else $fileSize = bytesToKbOrMbOrGb($bytesTotal);
+		} else $fileSize = ($bytesTotal > 0) ? bytesToKbOrMbOrGb($bytesTotal) : 'Unknown';
 		$chunkSize = GetChunkSize($bytesTotal);
+		$maxKbps = 0;
+		$maxKbpsEnv = trim((string)getenv('RAPIDLEECH_MAX_KBPS'));
+		if ($maxKbpsEnv !== '' && is_numeric($maxKbpsEnv)) $maxKbps = max(0, (int)$maxKbpsEnv);
+		if ($maxKbps <= 0) {
+			$maxMbpsEnv = trim((string)getenv('RAPIDLEECH_MAX_MBPS'));
+			if ($maxMbpsEnv !== '' && is_numeric($maxMbpsEnv)) $maxKbps = (int)round(max(0, (float)$maxMbpsEnv) * 1024);
+		}
+		$maxBytesPerSecond = ($maxKbps > 0) ? ($maxKbps * 1024) : 0;
+		if ($maxBytesPerSecond > 0) {
+			$limitedChunkSize = max(4096, (int)min($maxBytesPerSecond / 8, 1024 * 1024));
+			$chunkSize = ($bytesTotal > 0) ? min($chunkSize, $limitedChunkSize) : $limitedChunkSize;
+		}
 		echo(lang(104) . ' <b>' . basename($saveToFile) . '</b>, ' . lang(56) . " <b>$fileSize</b>...<br />");
 
 		//$scriptStarted = false;
 		require_once(TEMPLATE_DIR . '/transloadui.php');
+		rl_stream_flush(8192);
 		if ($Resume['use'] === TRUE) {
 			$received = bytesToKbOrMbOrGb(filesize($saveToFile));
 			$percent = round($Resume['from'] / ($bytesTotal + $Resume['from']) * 100, 2);
 			echo "<script type='text/javascript'>pr('$percent', '$received', '0');</script>";
 			//$scriptStarted = true;
-			flush();
+			rl_stream_flush();
 		}
 	} else $page = '';
 
-	$time = $last = $lastChunkTime = 0;
+	$time = $last = $lastChunkTime = $lastProgressTime = 0;
 	do {
+		if ($saveToFile && $chunkSize <= 0) break;
 		$data = @fread($fp, ($saveToFile ? $chunkSize : 16384)); // 16384 saw this value in Pear HTTP_Request2 package // (fix - szal) using this actually just causes massive cpu usage for large files, too much data is flushed to the browser!)
 		if ($data == '') break;
 		if ($saveToFile) {
@@ -321,19 +336,29 @@ function geturl($host, $port, $url, $referer = 0, $cookie = 0, $post = 0, $saveT
 				// unlink($saveToFile);
 				return false;
 			}
-			if ($bytesReceived >= $bytesTotal) $percent = 100;
-			else $percent = @round(($bytesReceived + $Resume['from']) / ($bytesTotal + $Resume['from']) * 100, 2);
-			if ($bytesReceived > $last + $chunkSize) {
+			if ($bytesTotal > 0 && $bytesReceived >= $bytesTotal) $percent = 100;
+			elseif ($bytesTotal > 0) $percent = @round(($bytesReceived + $Resume['from']) / ($bytesTotal + $Resume['from']) * 100, 2);
+			else $percent = 0;
+			$now = microtime(true);
+			if ($bytesReceived > $last + $chunkSize && (($now - $lastProgressTime) >= 0.5 || ($bytesTotal > 0 && $bytesReceived >= $bytesTotal))) {
 				$received = bytesToKbOrMbOrGb($bytesReceived + $Resume['from']);
-				$time = microtime(true) - $timeStart;
+				$time = $now - $timeStart;
 				$chunkTime = $time - $lastChunkTime;
 				$chunkTime = ($chunkTime > 0) ? $chunkTime : 1;
 				$lastChunkTime = $time;
 				$speed = @round(($bytesReceived - $last) /*$chunkSize*/ / 1024 / $chunkTime, 2);
 				echo "<script type='text/javascript'>pr('$percent', '$received', '$speed');</script>";
+				rl_stream_flush();
 				$last = $bytesReceived;
+				$lastProgressTime = $now;
 			}
 			if (!empty($bytesTotal) && ($bytesReceived + $chunkSize) > $bytesTotal) $chunkSize = $bytesTotal - $bytesReceived;
+			if ($maxBytesPerSecond > 0 && $bytesReceived > 0) {
+				$elapsedForLimit = max(microtime(true) - $timeStart, 0.001);
+				$expectedElapsed = $bytesReceived / $maxBytesPerSecond;
+				if ($expectedElapsed > $elapsedForLimit) usleep((int)min(500000, ($expectedElapsed - $elapsedForLimit) * 1000000));
+			}
+			if (!empty($bytesTotal) && $bytesReceived >= $bytesTotal) break;
 		} else $page .= $data;
 	} while (!feof($fp) && strlen($data) > 0);
 
@@ -350,7 +375,10 @@ function geturl($host, $port, $url, $referer = 0, $cookie = 0, $post = 0, $saveT
 	stream_socket_shutdown($fp, STREAM_SHUT_RDWR);
 	fclose($fp);
 	if ($saveToFile) {
-		return array('time' => sec2time(round($time)), 'speed' => @round($bytesTotal / 1024 / (microtime(true) - $timeStart), 2), 'received' => true, 'size' => $fileSize, 'bytesReceived' => ($bytesReceived + $Resume['from']), 'bytesTotal' => ($bytesTotal + $Resume ['from']), 'file' => $saveToFile);
+		$elapsed = max(microtime(true) - $timeStart, 0.001);
+		$speedSource = ($bytesTotal > 0) ? $bytesTotal : $bytesReceived;
+		$totalForReport = ($bytesTotal > 0) ? $bytesTotal : $bytesReceived;
+		return array('time' => sec2time(round($time)), 'speed' => @round($speedSource / 1024 / $elapsed, 2), 'received' => true, 'size' => $fileSize, 'bytesReceived' => ($bytesReceived + $Resume['from']), 'bytesTotal' => ($totalForReport + $Resume ['from']), 'file' => $saveToFile);
 	} else {
 		if (stripos($header, "\nTransfer-Encoding: chunked") !== false && empty($sFilters['dechunk']) && function_exists('http_chunked_decode')) {
 			$dechunked = http_chunked_decode($page);
