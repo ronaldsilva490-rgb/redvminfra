@@ -929,47 +929,50 @@ function updatePagination() {
   // Only show pagination when category is "all" and there are more than 4 items
   if (currentCategory === 'all' && allCards.length > ITEMS_PER_PAGE) {
     pagination.style.display = 'flex';
+
+    var totalPages = Math.ceil(allCards.length / ITEMS_PER_PAGE);
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    // Hide all cards first
+    allCards.forEach(function(card) {
+      card.style.display = 'none';
+    });
+
+    // Show only cards for current page
+    var start = (currentPage - 1) * ITEMS_PER_PAGE;
+    var end = start + ITEMS_PER_PAGE;
+    for (var i = start; i < end && i < allCards.length; i++) {
+      allCards[i].style.display = '';
+    }
+
+    // Update page number buttons
+    var pageNumbers = document.getElementById('pageNumbers');
+    pageNumbers.innerHTML = '';
+    for (var p = 1; p <= totalPages; p++) {
+      var btn = document.createElement('button');
+      btn.className = 'page-btn' + (p === currentPage ? ' active' : '');
+      btn.textContent = p;
+      btn.onclick = (function(page) {
+        return function() { goToPage(page); };
+      })(p);
+      pageNumbers.appendChild(btn);
+    }
+
+    // Update prev/next buttons
+    document.getElementById('prevBtn').style.visibility = currentPage === 1 ? 'hidden' : 'visible';
+    document.getElementById('nextBtn').style.visibility = currentPage === totalPages ? 'hidden' : 'visible';
   } else {
     pagination.style.display = 'none';
-    // Show all cards when not paginating
+    // Show/hide cards based on category filter
     allCards.forEach(function(card) {
-      card.style.display = '';
+      if (currentCategory === 'all' || card.dataset.category === currentCategory) {
+        card.style.display = '';
+      } else {
+        card.style.display = 'none';
+      }
     });
-    return;
   }
-
-  var totalPages = Math.ceil(allCards.length / ITEMS_PER_PAGE);
-  if (currentPage > totalPages) currentPage = totalPages;
-  if (currentPage < 1) currentPage = 1;
-
-  // Hide all cards first
-  allCards.forEach(function(card) {
-    card.style.display = 'none';
-  });
-
-  // Show only cards for current page
-  var start = (currentPage - 1) * ITEMS_PER_PAGE;
-  var end = start + ITEMS_PER_PAGE;
-  for (var i = start; i < end && i < allCards.length; i++) {
-    allCards[i].style.display = '';
-  }
-
-  // Update page number buttons
-  var pageNumbers = document.getElementById('pageNumbers');
-  pageNumbers.innerHTML = '';
-  for (var p = 1; p <= totalPages; p++) {
-    var btn = document.createElement('button');
-    btn.className = 'page-btn' + (p === currentPage ? ' active' : '');
-    btn.textContent = p;
-    btn.onclick = (function(page) {
-      return function() { goToPage(page); };
-    })(p);
-    pageNumbers.appendChild(btn);
-  }
-
-  // Update prev/next buttons
-  document.getElementById('prevBtn').style.visibility = currentPage === 1 ? 'hidden' : 'visible';
-  document.getElementById('nextBtn').style.visibility = currentPage === totalPages ? 'hidden' : 'visible';
 }
 
 function goToPage(page) {
