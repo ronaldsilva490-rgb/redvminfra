@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>8 Modelos · Total Empresarial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0a0f;
+  --bg-2: #15151f;
+  --paper: #1c1c28;
+  --line: #2a2a38;
+  --line-strong: #3a3a4a;
+  --text: #d4d4dd;
+  --text-dim: #7a7a8a;
+  --text-strong: #ffffff;
+  --accent: #6366f1;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 32px 16px 64px;
+  -webkit-font-smoothing: antialiased;
+  background-image:
+    radial-gradient(circle at 20% 0%, rgba(99,102,241,0.12), transparent 50%),
+    radial-gradient(circle at 80% 100%, rgba(255,77,141,0.08), transparent 50%);
+}
+.wrap { max-width: 1400px; margin: 0 auto; }
+
+header {
+  text-align: center; margin-bottom: 32px;
+  display: flex; flex-direction: column; gap: 12px; align-items: center;
+}
+.kicker {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; color: var(--accent);
+  letter-spacing: 2px; text-transform: uppercase;
+}
+h1 { font-size: clamp(28px, 6vw, 44px); color: var(--text-strong); font-weight: 800;
+  letter-spacing: -1.5px; line-height: 1.1; max-width: 800px; }
+header p { color: var(--text-dim); font-size: 16px; max-width: 600px; }
+
+.tabs {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 12px;
+  padding: 4px; margin: 8px 0 32px;
+}
+.tab {
+  padding: 8px 18px; border-radius: 8px;
+  font-size: 13px; font-weight: 600; color: var(--text-dim);
+  background: transparent; border: 0; cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  transition: 0.2s;
+}
+.tab.active { background: var(--accent); color: #fff; }
+.tab:not(.active):hover { color: var(--text-strong); }
+
+.grid { display: grid; grid-template-columns: 1fr; gap: 24px; }
+
+.card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s;
+}
+.card:hover {
+  transform: translateY(-4px);
+  border-color: var(--accent);
+  box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+}
+
+.preview-mobile, .preview-desktop {
+  position: relative; overflow: hidden;
+  background: #000;
+  display: none;
+}
+body.view-desktop .preview-desktop { display: block; }
+body.view-mobile .preview-mobile { display: flex; align-items: flex-start; justify-content: center; }
+
+.preview-desktop {
+  aspect-ratio: 16 / 10;
+}
+.preview-desktop iframe {
+  width: 1400px; height: 875px;
+  border: 0;
+  transform: scale(0.39);
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.preview-mobile {
+  height: 580px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(99,102,241,0.1), transparent 50%),
+    var(--bg-2);
+  padding: 24px 0;
+}
+.phone {
+  width: 240px; height: 520px;
+  border-radius: 32px;
+  background: #0a0a0f;
+  border: 8px solid #1a1a22;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5), inset 0 0 0 2px #2a2a32;
+  position: relative; overflow: hidden;
+}
+.phone::before {
+  content: ''; position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+  width: 80px; height: 18px; background: #0a0a0f; border-radius: 0 0 12px 12px; z-index: 2;
+}
+.phone iframe {
+  width: 375px; height: 750px;
+  border: 0;
+  transform: scale(0.6);
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.body { padding: 24px; flex: 1; display: flex; flex-direction: column; gap: 14px; }
+.tag-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; font-weight: 500;
+  padding: 4px 10px; border-radius: 99px;
+  background: var(--bg-2); color: var(--text-dim);
+  border: 1px solid var(--line);
+}
+.card h2 { color: var(--text-strong); font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+.card p { color: var(--text-dim); font-size: 14px; line-height: 1.55; }
+
+.swatches { display: flex; gap: 6px; align-items: center; }
+.swatch {
+  width: 22px; height: 22px; border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.label-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.label-tag {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px;
+  padding: 3px 8px; border-radius: 4px;
+  background: var(--bg-2); color: var(--text-dim);
+  border: 1px solid var(--line);
+}
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px 20px; border-radius: 10px;
+  font-weight: 600; font-size: 14px;
+  text-decoration: none; transition: all 0.2s;
+  margin-top: auto;
+}
+.btn-primary {
+  background: var(--accent); color: #fff;
+  box-shadow: 0 4px 16px rgba(99,102,241,0.4);
+}
+.btn-primary:hover { background: #4f46e5; transform: translateY(-1px); }
+
+footer {
+  text-align: center; margin-top: 64px; color: var(--text-dim); font-size: 13px;
+  border-top: 1px solid var(--line); padding-top: 32px;
+}
+footer a { color: var(--accent); text-decoration: none; }
+
+@media (min-width: 760px) { .grid { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 1180px) { .grid { grid-template-columns: 1fr 1fr 1fr 1fr; } }
+</style>
+</head>
+<body class="view-mobile">
+<div class="wrap">
+  <header>
+    <span class="kicker">// 8 modelos · escolha 1 (ou misture)</span>
+    <h1>Total Empresarial · novos conceitos</h1>
+    <p>Cada modelo herda o logo real, menu, contatos, endereço e CNPJ do site. Tudo mobile-first com layout responsivo. Os ícones são placeholders e podem virar SVGs próprios depois.</p>
+    <div class="tabs">
+      <button class="tab active" data-view="mobile">📱 Mobile (375px)</button>
+      <button class="tab" data-view="desktop">🖥 Desktop (1400px)</button>
+    </div>
+  </header>
+
+  <div class="grid">
+
+    <!-- M1 AURORA -->
+    <div class="card">
+      <div class="preview-desktop"><iframe src="modelo-1-aurora.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="modelo-1-aurora.html" scrolling="no"></iframe></div></div>
+      <div class="body">
+        <div class="tag-row">
+          <span class="tag">01 / AURORA</span>
+          <span class="tag">DARK</span>
+        </div>
+        <h2>Aurora — escuro premium</h2>
+        <p>Fundo com mesh gradient animado violeta/rosa/ciano. Cards de serviço com glow suave em hover. Cara de SaaS de alto valor.</p>
+        <div class="swatches">
+          <div class="swatch" style="background:#07070d"></div>
+          <div class="swatch" style="background:#ff4d8d"></div>
+          <div class="swatch" style="background:#6f5fff"></div>
+          <div class="swatch" style="background:#00d4ff"></div>
+          <div class="swatch" style="background:#16e0a4"></div>
+        </div>
+        <div class="label-tags">
+          <span class="label-tag">Sora</span><span class="label-tag">Glassmorphism</span><span class="label-tag">Aurora mesh</span>
+        </div>
+        <a href="modelo-1-aurora.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+      </div>
+    </div>
+
+    <!-- M2 EDITORIAL -->
+    <div class="card">
+      <div class="preview-desktop"><iframe src="modelo-2-editorial.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="modelo-2-editorial.html" scrolling="no"></iframe></div></div>
+      <div class="body">
+        <div class="tag-row">
+          <span class="tag">02 / EDITORIAL</span>
+          <span class="tag">LIGHT</span>
+        </div>
+        <h2>Editorial Bold — magazine</h2>
+        <p>Fonte Fraunces gigante, tom papel/terracotta, hierarquia tipográfica forte. Vibe revista de negócios. Sofisticado e diferente.</p>
+        <div class="swatches">
+          <div class="swatch" style="background:#faf7f2"></div>
+          <div class="swatch" style="background:#14110f"></div>
+          <div class="swatch" style="background:#d64545"></div>
+          <div class="swatch" style="background:#1a3d3d"></div>
+          <div class="swatch" style="background:#d4a843"></div>
+        </div>
+        <div class="label-tags">
+          <span class="label-tag">Fraunces</span><span class="label-tag">DM Sans</span><span class="label-tag">Italic accents</span>
+        </div>
+        <a href="modelo-2-editorial.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+      </div>
+    </div>
+
+    <!-- M3 ESMERALDA -->
+    <div class="card">
+      <div class="preview-desktop"><iframe src="modelo-3-esmeralda.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="modelo-3-esmeralda.html" scrolling="no"></iframe></div></div>
+      <div class="body">
+        <div class="tag-row">
+          <span class="tag">03 / ESMERALDA</span>
+          <span class="tag">LIGHT</span>
+        </div>
+        <h2>Esmeralda — financeiro premium</h2>
+        <p>Verde esmeralda + creme. Mockup de dashboard com gráfico real. Vibe fintech séria, transmite dinheiro e confiança.</p>
+        <div class="swatches">
+          <div class="swatch" style="background:#f5f7f4"></div>
+          <div class="swatch" style="background:#0a1f1a"></div>
+          <div class="swatch" style="background:#047857"></div>
+          <div class="swatch" style="background:#10b981"></div>
+          <div class="swatch" style="background:#b8893a"></div>
+        </div>
+        <div class="label-tags">
+          <span class="label-tag">Plus Jakarta</span><span class="label-tag">Instrument Serif</span><span class="label-tag">Dashboard</span>
+        </div>
+        <a href="modelo-3-esmeralda.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+      </div>
+    </div>
+
+    <!-- M4 BRUTALIST -->
+    <div class="card">
+      <div class="preview-desktop"><iframe src="modelo-4-brutalist.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="modelo-4-brutalist.html" scrolling="no"></iframe></div></div>
+      <div class="body">
+        <div class="tag-row">
+          <span class="tag">04 / BRUTALIST</span>
+          <span class="tag">VIBRANT</span>
+        </div>
+        <h2>Brutalist Pop — vibrante</h2>
+        <p>Bordas duras, sombras chapadas, ticker no topo, cores chocantes. Quebra o padrão de contabilidades sérias. Memorável.</p>
+        <div class="swatches">
+          <div class="swatch" style="background:#f5f0e6"></div>
+          <div class="swatch" style="background:#1a1a1a"></div>
+          <div class="swatch" style="background:#fcd535"></div>
+          <div class="swatch" style="background:#ff5a8a"></div>
+          <div class="swatch" style="background:#2962ff"></div>
+        </div>
+        <div class="label-tags">
+          <span class="label-tag">Archivo Black</span><span class="label-tag">Hard shadows</span><span class="label-tag">Ticker</span>
+        </div>
+        <a href="modelo-4-brutalist.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+      </div>
+    </div>
+
+    <!-- M5 SWISS -->
+    <div class="card">
+      <div class="preview-desktop"><iframe src="modelo-5-swiss.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="modelo-5-swiss.html" scrolling="no"></iframe></div></div>
+      <div class="body">
+        <div class="tag-row">
+          <span class="tag">05 / SWISS</span>
+          <span class="tag">MINIMAL</span>
+        </div>
+        <h2>Swiss Minimal — tipográfico</h2>
+        <p>Grid rigoroso, tipografia Space Grotesk, vermelho como único acento. Estilo suíço clássico: funcional, limpo, atemporal.</p>
+        <div class="swatches">
+          <div class="swatch" style="background:#fafafa"></div>
+          <div class="swatch" style="background:#111"></div>
+          <div class="swatch" style="background:#e63946"></div>
+          <div class="swatch" style="background:#1d3557"></div>
+          <div class="swatch" style="background:#e0e0e0"></div>
+        </div>
+        <div class="label-tags">
+          <span class="label-tag">Space Grotesk</span><span class="label-tag">Inter</span><span class="label-tag">Grid system</span>
+        </div>
+        <a href="modelo-5-swiss.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+      </div>
+    </div>
+
+    <!-- M6 PASTEL -->
+    <div class="card">
+      <div class="preview-desktop"><iframe src="modelo-6-pastel.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="modelo-6-pastel.html" scrolling="no"></iframe></div></div>
+      <div class="body">
+        <div class="tag-row">
+          <span class="tag">06 / PASTEL</span>
+          <span class="tag">NEO-BRUTAL</span>
+        </div>
+        <h2>Pastel Neo-Brutal — colorido</h2>
+        <p>Bordas grossas, sombras sólidas, paleta pastel (lavanda, pêssego, menta). Divertido sem perder credibilidade profissional.</p>
+        <div class="swatches">
+          <div class="swatch" style="background:#fef9f3"></div>
+          <div class="swatch" style="background:#c4b5fd"></div>
+          <div class="swatch" style="background:#fecaca"></div>
+          <div class="swatch" style="background:#a7f3d0"></div>
+          <div class="swatch" style="background:#bae6fd"></div>
+        </div>
+        <div class="label-tags">
+          <span class="label-tag">Syne</span><span class="label-tag">DM Sans</span><span class="label-tag">Pastel blocks</span>
+        </div>
+        <a href="modelo-6-pastel.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+      </div>
+    </div>
+
+    <!-- M7 GLASS -->
+    <div class="card">
+      <div class="preview-desktop"><iframe src="modelo-7-glass.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="modelo-7-glass.html" scrolling="no"></iframe></div></div>
+      <div class="body">
+        <div class="tag-row">
+          <span class="tag">07 / GLASS</span>
+          <span class="tag">DARK PREMIUM</span>
+        </div>
+        <h2>Glassmorphism — dark premium</h2>
+        <p>Fundo escuro com gradientes sutis, cards glass com blur, acentos indigo/ciano. Vibe tech startup de alto valor.</p>
+        <div class="swatches">
+          <div class="swatch" style="background:#0a0e17"></div>
+          <div class="swatch" style="background:#6366f1"></div>
+          <div class="swatch" style="background:#8b5cf6"></div>
+          <div class="swatch" style="background:#06b6d4"></div>
+          <div class="swatch" style="background:rgba(255,255,255,0.06)"></div>
+        </div>
+        <div class="label-tags">
+          <span class="label-tag">Plus Jakarta</span><span class="label-tag">Glassmorphism</span><span class="label-tag">Gradient glow</span>
+        </div>
+        <a href="modelo-7-glass.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+      </div>
+    </div>
+
+    <!-- M8 RETRO -->
+    <div class="card">
+      <div class="preview-desktop"><iframe src="modelo-8-retro.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="modelo-8-retro.html" scrolling="no"></iframe></div></div>
+      <div class="body">
+        <div class="tag-row">
+          <span class="tag">08 / RETRO</span>
+          <span class="tag">CORPORATE 70s</span>
+        </div>
+        <h2>Retro Corporate — anos 70</h2>
+        <p>Playfair Display serif, tons terra (rust, olive, mustard), filtro sépia nas fotos. Elegância clássica com calor vintage.</p>
+        <div class="swatches">
+          <div class="swatch" style="background:#f4ede4"></div>
+          <div class="swatch" style="background:#2c1810"></div>
+          <div class="swatch" style="background:#c25e3e"></div>
+          <div class="swatch" style="background:#5a6b3a"></div>
+          <div class="swatch" style="background:#d4a843"></div>
+        </div>
+        <div class="label-tags">
+          <span class="label-tag">Playfair Display</span><span class="label-tag">Work Sans</span><span class="label-tag">Earth tones</span>
+        </div>
+        <a href="modelo-8-retro.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>
+    <p>Logo, contatos, endereço e CNPJ herdados do site real. · Imagens via Unsplash. · Após a sua escolha, eu replico o estilo nas páginas Elementor.</p>
+  </footer>
+</div>
+
+<script>
+document.querySelectorAll('.tab').forEach(t => {
+  t.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.body.className = 'view-' + t.dataset.view;
+  };
+});
+</script>
+</body>
+</html>

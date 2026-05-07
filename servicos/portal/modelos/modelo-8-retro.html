@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Modelo 8 · Retro Corporate · Total Empresarial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Work+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f4ede4;
+  --paper: #faf6f0;
+  --ink: #2c1810;
+  --ink-2: #5a4030;
+  --ink-3: #8b7355;
+  --rust: #c25e3e;
+  --olive: #5a6b3a;
+  --mustard: #d4a843;
+  --cream: #f4ede4;
+  --line: #d4c5b0;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Work Sans', sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.6;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+}
+img { max-width: 100%; display: block; }
+a { color: inherit; text-decoration: none; }
+
+.wrap { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+/* Header */
+header {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--paper);
+  border-bottom: 2px solid var(--ink);
+}
+.nav { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; gap: 12px; }
+.brand img { height: 36px; width: auto; }
+.nav-links { display: none; list-style: none; gap: 24px; }
+.nav-links a {
+  font-family: 'Playfair Display', serif;
+  font-size: 15px; font-weight: 600;
+  color: var(--ink-2);
+  transition: color 0.2s;
+}
+.nav-links a:hover { color: var(--rust); }
+.nav-cta { display: none; }
+.burger {
+  width: 44px; height: 44px;
+  background: var(--rust);
+  border: 2px solid var(--ink);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Playfair Display', serif;
+  font-weight: 700; font-size: 14px;
+  color: var(--paper);
+}
+
+/* Menu mobile */
+.menu-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: var(--paper);
+  transform: translateX(100%);
+  transition: transform 0.4s cubic-bezier(.4,0,.2,1);
+  padding: 80px 24px 32px;
+  display: flex; flex-direction: column;
+}
+.menu-overlay.open { transform: translateX(0); }
+.menu-overlay .close-btn {
+  position: absolute; top: 18px; right: 24px;
+  width: 44px; height: 44px;
+  background: var(--ink); color: var(--paper);
+  border: 2px solid var(--ink);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Playfair Display', serif; font-weight: 700;
+}
+.menu-overlay ul { list-style: none; flex: 1; }
+.menu-overlay li { border-bottom: 1px solid var(--line); }
+.menu-overlay li a {
+  display: block; padding: 18px 0;
+  font-family: 'Playfair Display', serif;
+  font-size: 26px; font-weight: 700;
+  color: var(--ink);
+}
+.menu-overlay .actions { padding-top: 24px; display: flex; flex-direction: column; gap: 10px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 14px 28px;
+  font-family: 'Playfair Display', serif;
+  font-size: 15px; font-weight: 700;
+  border: 2px solid var(--ink);
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-primary { background: var(--ink); color: var(--paper); }
+.btn-primary:hover { background: var(--rust); }
+.btn-rust { background: var(--rust); color: var(--paper); }
+.btn-rust:hover { background: var(--ink); }
+.btn-outline:hover { background: var(--ink); color: var(--paper); }
+
+/* Hero */
+.hero { padding: 48px 0 64px; }
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  padding: 8px 16px;
+  font-family: 'Playfair Display', serif;
+  font-size: 13px; font-weight: 600;
+  font-style: italic;
+  margin-bottom: 24px;
+}
+.hero-badge .dot { width: 8px; height: 8px; background: var(--olive); border-radius: 50%; }
+
+h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(42px, 11vw, 90px);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin-bottom: 24px;
+}
+h1 em { font-style: italic; color: var(--rust); }
+h1 .hl-mustard { background: var(--mustard); padding: 0 0.1em; display: inline-block; }
+
+.hero-desc {
+  font-size: 18px; color: var(--ink-2);
+  max-width: 480px; margin-bottom: 32px;
+  line-height: 1.7;
+}
+.hero-desc strong {
+  background: var(--mustard); padding: 2px 6px;
+  font-weight: 700; color: var(--ink);
+}
+
+.hero-actions { display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; }
+.hero-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 32px; }
+.hero-tag {
+  padding: 6px 14px;
+  border: 1.5px solid var(--ink);
+  font-family: 'Playfair Display', serif;
+  font-size: 13px; font-weight: 600;
+  font-style: italic;
+}
+.hero-tag:nth-child(1) { background: var(--olive); color: var(--paper); }
+.hero-tag:nth-child(2) { background: var(--rust); color: var(--paper); }
+.hero-tag:nth-child(3) { background: var(--mustard); }
+.hero-tag:nth-child(4) { background: var(--paper); }
+
+.hero-visual {
+  position: relative;
+  margin-top: 32px;
+}
+.hero-frame {
+  background: var(--paper);
+  border: 3px solid var(--ink);
+  padding: 10px;
+}
+.hero-frame img {
+  width: 100%; aspect-ratio: 4/5; object-fit: cover;
+  filter: sepia(0.2) contrast(1.05);
+  border: 1px solid var(--ink);
+}
+.hero-float {
+  position: absolute;
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  padding: 12px 16px;
+  font-family: 'Playfair Display', serif;
+}
+.float-1 { top: -10px; left: -10px; background: var(--rust); color: var(--paper); transform: rotate(-3deg); }
+.float-1 .num { font-size: 22px; font-weight: 900; }
+.float-1 .lbl { font-size: 11px; font-style: italic; opacity: 0.8; }
+.float-2 { bottom: 24px; right: -10px; background: var(--olive); color: var(--paper); transform: rotate(2deg); }
+.float-2 .num { font-size: 20px; font-weight: 900; }
+.float-2 .lbl { font-size: 11px; font-style: italic; opacity: 0.8; }
+
+/* Section base */
+section { padding: 64px 0; }
+.section-label {
+  display: inline-block;
+  font-family: 'Playfair Display', serif;
+  font-size: 14px; font-weight: 600;
+  font-style: italic;
+  color: var(--rust);
+  margin-bottom: 12px;
+}
+h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(32px, 7vw, 56px);
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin-bottom: 40px;
+}
+h2 em { font-style: italic; color: var(--rust); }
+
+/* Services */
+.services-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
+.service-card {
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  padding: 28px;
+  position: relative;
+}
+.service-card::before {
+  content: ''; position: absolute;
+  top: 0; left: 0; right: 0; height: 4px;
+}
+.service-card:nth-child(1)::before { background: var(--rust); }
+.service-card:nth-child(2)::before { background: var(--olive); }
+.service-card:nth-child(3)::before { background: var(--mustard); }
+.service-card:nth-child(4)::before { background: var(--rust); }
+.service-num {
+  font-family: 'Playfair Display', serif;
+  font-size: 48px; font-weight: 900;
+  color: var(--line);
+  line-height: 1;
+  margin-bottom: 16px;
+}
+.service-card h3 {
+  font-family: 'Playfair Display', serif;
+  font-size: 22px; font-weight: 700;
+  margin-bottom: 10px;
+}
+.service-card p { font-size: 15px; color: var(--ink-2); margin-bottom: 16px; }
+.service-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: 'Playfair Display', serif;
+  font-size: 14px; font-weight: 700;
+  font-style: italic;
+  color: var(--rust);
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--rust);
+}
+
+/* About */
+.about-section {
+  background: var(--ink); color: var(--paper);
+  border-top: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+}
+.about-section .section-label { color: var(--mustard); }
+.about-section h2 { color: var(--paper); }
+.about-section h2 em { color: var(--mustard); }
+.about-grid { display: grid; gap: 40px; }
+.about-photo {
+  border: 3px solid var(--paper);
+  padding: 8px;
+}
+.about-photo img {
+  width: 100%; aspect-ratio: 4/5; object-fit: cover;
+  filter: sepia(0.3) contrast(1.1);
+  border: 1px solid var(--ink-3);
+}
+.about-text p { color: rgba(244,237,228,0.7); font-size: 17px; margin-bottom: 16px; line-height: 1.7; }
+.about-text strong { color: var(--paper); }
+.about-checklist { list-style: none; margin-top: 32px; }
+.about-checklist li {
+  display: flex; gap: 14px; padding: 16px 0;
+  border-bottom: 1px solid rgba(244,237,228,0.15);
+}
+.about-checklist li:last-child { border: 0; }
+.check-icon {
+  flex-shrink: 0; width: 32px; height: 32px;
+  background: var(--olive);
+  border: 2px solid var(--paper);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Playfair Display', serif;
+  font-weight: 900; font-size: 16px;
+}
+.about-checklist strong { color: var(--paper); display: block; margin-bottom: 4px; }
+.about-checklist span { color: rgba(244,237,228,0.5); font-size: 14px; }
+
+/* Stats */
+.stats-section { padding: 64px 0; }
+.stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.stat-card {
+  border: 2px solid var(--ink);
+  padding: 24px;
+  text-align: center;
+}
+.stat-card:nth-child(1) { background: var(--rust); color: var(--paper); }
+.stat-card:nth-child(2) { background: var(--olive); color: var(--paper); }
+.stat-card:nth-child(3) { background: var(--mustard); }
+.stat-card:nth-child(4) { background: var(--paper); }
+.stat-num {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(40px, 10vw, 64px);
+  font-weight: 900;
+  line-height: 1;
+}
+.stat-lbl {
+  font-family: 'Playfair Display', serif;
+  font-size: 13px; font-weight: 600;
+  font-style: italic;
+  margin-top: 8px;
+  opacity: 0.8;
+}
+
+/* CTA */
+.cta-section {
+  background: var(--mustard);
+  border: 3px solid var(--ink);
+  padding: 48px 24px;
+  margin: 0 -8px;
+  text-align: center;
+}
+.cta-section h2 { margin-bottom: 16px; }
+.cta-section p { font-size: 17px; max-width: 480px; margin: 0 auto 32px; }
+.cta-buttons { display: flex; flex-direction: column; gap: 12px; justify-content: center; }
+
+/* Footer */
+footer {
+  background: var(--ink); color: var(--paper);
+  padding: 64px 0 24px;
+}
+.foot-top {
+  display: flex; flex-direction: column; gap: 32px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid rgba(244,237,228,0.15);
+  margin-bottom: 24px;
+}
+.foot-brand img { height: 36px; margin-bottom: 16px; }
+.foot-brand p { font-size: 14px; color: rgba(244,237,228,0.6); max-width: 280px; }
+.foot-links { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.foot-col h4 {
+  font-family: 'Playfair Display', serif;
+  font-size: 14px; font-weight: 700;
+  font-style: italic;
+  color: var(--mustard);
+  margin-bottom: 14px;
+}
+.foot-col ul { list-style: none; }
+.foot-col li { margin-bottom: 6px; }
+.foot-col a, .foot-col span { font-size: 14px; color: rgba(244,237,228,0.6); }
+.foot-col a:hover { color: var(--mustard); }
+.foot-contact strong { display: block; margin-bottom: 4px; color: var(--paper); }
+.foot-bottom {
+  display: flex; flex-direction: column; gap: 8px;
+  font-size: 12px; color: rgba(244,237,228,0.4);
+}
+
+.wa-float {
+  position: fixed; bottom: 20px; right: 20px; z-index: 90;
+  width: 56px; height: 56px;
+  background: #25d366;
+  border: 2px solid var(--ink);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.2s;
+}
+.wa-float svg { width: 28px; height: 28px; color: #fff; }
+.wa-float:hover { transform: scale(1.1); }
+
+.reveal { opacity: 0; transform: translateY(20px); transition: opacity 0.6s, transform 0.6s; }
+.reveal.in { opacity: 1; transform: translateY(0); }
+
+@media (min-width: 700px) {
+  .nav-links { display: flex; }
+  .nav-cta { display: inline-flex; }
+  .burger { display: none; }
+  .hero-actions { flex-direction: row; }
+  .hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+  .hero-visual { margin-top: 0; }
+  .services-grid { grid-template-columns: repeat(2, 1fr); }
+  .about-grid { grid-template-columns: 1fr 1.2fr; gap: 48px; align-items: center; }
+  .stats-grid { grid-template-columns: repeat(4, 1fr); }
+  .cta-buttons { flex-direction: row; }
+  .foot-top { flex-direction: row; gap: 48px; }
+  .foot-links { flex: 2; grid-template-columns: repeat(3, 1fr); }
+  .foot-bottom { flex-direction: row; justify-content: space-between; }
+}
+@media (min-width: 980px) {
+  .services-grid { grid-template-columns: repeat(4, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a href="#" class="brand"><img src="assets/logo.webp" alt="Total Empresarial"></a>
+    <ul class="nav-links">
+      <li><a href="#">Início</a></li>
+      <li><a href="#servicos">Serviços</a></li>
+      <li><a href="#">MEI</a></li>
+      <li><a href="#sobre">Sobre</a></li>
+      <li><a href="#contato">Contato</a></li>
+    </ul>
+    <a href="#" class="btn btn-primary nav-cta">Abrir Empresa</a>
+    <button class="burger" id="openMenu">MENU</button>
+  </div>
+</header>
+
+<div class="menu-overlay" id="menuMobile">
+  <button class="close-btn" id="closeMenu">✕</button>
+  <ul>
+    <li><a href="#">Início</a></li>
+    <li><a href="#servicos">Serviços</a></li>
+    <li><a href="#">MEI</a></li>
+    <li><a href="#sobre">Sobre</a></li>
+    <li><a href="#contato">Contato</a></li>
+  </ul>
+  <div class="actions">
+    <a href="#" class="btn btn-primary">Abrir empresa grátis</a>
+    <a href="https://wa.me/5511981050614" class="btn btn-rust">WhatsApp</a>
+  </div>
+</div>
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="reveal">
+      <div class="hero-badge"><div class="dot"></div> Atendendo novos clientes</div>
+      <h1>Abrir empresa<br>é <em>simples.</em><br>É <span class="hl-mustard">grátis.</span></h1>
+      <p class="hero-desc">Da abertura à expansão. Cuidamos de toda a contabilidade enquanto você foca no que importa: <strong>fazer o negócio crescer</strong>.</p>
+      <div class="hero-actions">
+        <a href="#" class="btn btn-primary">Abrir empresa grátis</a>
+        <a href="https://wa.me/5511981050614" class="btn btn-outline">WhatsApp direto</a>
+      </div>
+      <div class="hero-tags">
+        <span class="hero-tag">CRC ativo</span>
+        <span class="hero-tag">Sem fidelidade</span>
+        <span class="hero-tag">LGPD</span>
+        <span class="hero-tag">★ 4,9 / 5</span>
+      </div>
+    </div>
+    <div class="reveal hero-visual">
+      <div class="hero-float float-1">
+        <div class="num">7 dias</div>
+        <div class="lbl">Para abrir</div>
+      </div>
+      <div class="hero-float float-2">
+        <div class="num">R$ 1.840</div>
+        <div class="lbl">Economia/mês</div>
+      </div>
+      <div class="hero-frame">
+        <img src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=900&q=80" alt="">
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="servicos">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="section-label">Nossos serviços</div>
+      <h2>O que fazemos<br>de <em>melhor.</em></h2>
+    </div>
+    <div class="services-grid">
+      <div class="service-card reveal">
+        <div class="service-num">01</div>
+        <h3>Abertura Grátis</h3>
+        <p>Resolvemos toda a parte burocrática. Para clientes da assessoria mensal, é totalmente grátis.</p>
+        <a href="#" class="service-link">Vantagens →</a>
+      </div>
+      <div class="service-card reveal">
+        <div class="service-num">02</div>
+        <h3>Consultoria</h3>
+        <p>Estratégia tributária e análise de cenários para maximizar resultado e otimizar processos.</p>
+        <a href="#" class="service-link">Vantagens →</a>
+      </div>
+      <div class="service-card reveal">
+        <div class="service-num">03</div>
+        <h3>Assessoria</h3>
+        <p>Acompanhamento contábil, fiscal e trabalhista contínuo. Conformidade sem dor de cabeça.</p>
+        <a href="#" class="service-link">Vantagens →</a>
+      </div>
+      <div class="service-card reveal">
+        <div class="service-num">04</div>
+        <h3>Perícia</h3>
+        <p>Cálculos para processos judiciais e avaliação de empresas para venda ou dissolução.</p>
+        <a href="#" class="service-link">Vantagens →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="sobre" class="about-section">
+  <div class="wrap about-grid">
+    <div class="reveal">
+      <div class="about-photo">
+        <img src="https://images.unsplash.com/photo-1556157382-97eda2d62296?w=900&q=80" alt="">
+      </div>
+    </div>
+    <div class="reveal">
+      <div class="section-label">Sobre nós</div>
+      <h2>Performance com<br><em>contabilidade.</em></h2>
+      <div class="about-text">
+        <p>Queremos estar na ponta da tomada de decisões. Nosso trabalho vai além de registros e guias — somos parceiros estratégicos do seu crescimento.</p>
+        <p>Na busca por oferecer um trabalho diferenciado, os nossos serviços estão pautados na <strong>transparência</strong> e na <strong>ética</strong>.</p>
+      </div>
+      <ul class="about-checklist">
+        <li><div class="check-icon">✓</div><div><strong>Postura diferenciada</strong><span>Foco em resultado, não em burocracia.</span></div></li>
+        <li><div class="check-icon">✓</div><div><strong>Relação de confiança</strong><span>Transparência como principal diferencial.</span></div></li>
+        <li><div class="check-icon">✓</div><div><strong>Inovação real</strong><span>Tecnologia trabalhando a favor do seu tempo.</span></div></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="stats-section">
+  <div class="wrap">
+    <div class="reveal" style="margin-bottom: 32px;">
+      <div class="section-label">Em números</div>
+      <h2>Quem confia<br>em <em>nós.</em></h2>
+    </div>
+    <div class="stats-grid reveal">
+      <div class="stat-card"><div class="stat-num">500+</div><div class="stat-lbl">Empresas</div></div>
+      <div class="stat-card"><div class="stat-num">15A</div><div class="stat-lbl">De mercado</div></div>
+      <div class="stat-card"><div class="stat-num">98%</div><div class="stat-lbl">Retenção</div></div>
+      <div class="stat-card"><div class="stat-num">24H</div><div class="stat-lbl">SLA resposta</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="contato">
+  <div class="wrap">
+    <div class="cta-section reveal">
+      <div class="section-label">Vamos lá</div>
+      <h2>Bora abrir<br>a <em>sua?</em></h2>
+      <p>Comente sobre a necessidade do seu negócio. Nossa equipe responde em até 24 horas, dias úteis.</p>
+      <div class="cta-buttons">
+        <a href="#" class="btn btn-primary">Solicitar proposta</a>
+        <a href="https://wa.me/5511981050614" class="btn btn-rust">WhatsApp direto</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-top">
+      <div class="foot-brand">
+        <img src="assets/logo.webp" alt="Total Empresarial">
+        <p>Contabilidade especializada em performance empresarial. Tradição, tecnologia e atendimento humano para todo o Brasil.</p>
+      </div>
+      <div class="foot-links">
+        <div class="foot-col">
+          <h4>Serviços</h4>
+          <ul>
+            <li><a href="#">Abrir Empresa Grátis</a></li>
+            <li><a href="#">Consultoria</a></li>
+            <li><a href="#">Assessoria Mensal</a></li>
+            <li><a href="#">Perícia Contábil</a></li>
+            <li><a href="#">Contabilidade MEI</a></li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <h4>Empresa</h4>
+          <ul>
+            <li><a href="#">Sobre</a></li>
+            <li><a href="#">Contato</a></li>
+            <li><a href="#">Política de Cookies</a></li>
+            <li><a href="#">Termos e Condições</a></li>
+            <li><a href="#">Política de Privacidade</a></li>
+          </ul>
+        </div>
+        <div class="foot-col foot-contact">
+          <h4>Contato</h4>
+          <span><strong>(11) 98105-0614</strong>contato@totalempresarial.com.br<br><strong>Rua Lidia Lisfei, 83</strong>Casa 2, Helena Maria<br>Osasco / SP — CEP 06.253-080</span>
+        </div>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 TOTAL EMPRESARIAL · CNPJ 44.847.547/0001-00 · RAZÃO SOCIAL: 44.847.547 HENRIQUE FELIZ DOS SANTOS MORAES</span>
+      <span>TODOS OS DIREITOS RESERVADOS</span>
+    </div>
+  </div>
+</footer>
+
+<a href="https://wa.me/5511981050614" class="wa-float" aria-label="WhatsApp">
+  <svg viewBox="0 0 32 32" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M16 3C8.8 3 3 8.8 3 16c0 2.4.7 4.7 1.9 6.7L3 29l6.5-1.7c1.9 1.1 4.1 1.7 6.5 1.7 7.2 0 13-5.8 13-13S23.2 3 16 3zm0 23.6c-2.1 0-4.1-.6-5.8-1.6l-.4-.2-3.8 1 1-3.7-.3-.4C5.6 20 5 18 5 16c0-6.1 4.9-11 11-11s11 4.9 11 11-4.9 11-11 11.6zm6-8.2c-.3-.2-1.9-1-2.2-1.1-.3-.1-.5-.2-.7.2-.2.3-.8 1.1-1 1.3-.2.2-.4.2-.7.1-.3-.2-1.3-.5-2.5-1.5-.9-.8-1.5-1.8-1.7-2.2-.2-.3 0-.5.1-.7.1-.1.3-.4.5-.6.2-.2.2-.3.4-.5.1-.2.1-.4 0-.5-.1-.2-.7-1.7-1-2.4-.3-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1 2.9 1.2 3.1c.2.2 2.1 3.2 5 4.5.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.9-.8 2.1-1.5.3-.7.3-1.4.2-1.5-.1-.2-.3-.2-.6-.4z"/>
+  </svg>
+</a>
+
+<script>
+const menu = document.getElementById('menuMobile');
+document.getElementById('openMenu').onclick = () => menu.classList.add('open');
+document.getElementById('closeMenu').onclick = () => menu.classList.remove('open');
+menu.querySelectorAll('a').forEach(a => a.onclick = () => menu.classList.remove('open'));
+const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && e.target.classList.add('in')), { threshold: 0.1 });
+document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+</script>
+</body>
+</html>

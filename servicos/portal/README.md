@@ -15,6 +15,7 @@ Home publica da stack. Hoje ela e um front estatico servido pelo nginx e funcion
   - Proxy Lab
   - IQ Bridge
   - OpenClaw
+- galeria de modelos empresariais em `/modelos/` (8 templates)
 
 ## Dependencias do host
 
@@ -70,7 +71,15 @@ curl -I http://127.0.0.1/
 ## Runtime oficial na RED
 
 - arquivos: `/var/www/red-portal`
-- exposicao: nginx em `/`
+- galeria de modelos: `/var/www/modelos/` (8 templates)
+- exposicao: nginx em `/` e `/modelos/`
+
+## Galeria de Modelos
+
+A galeria contem 8 landing pages empresariais estaticas publicadas em `/modelos/`:
+
+- Aurora, Editorial, Esmeralda, Brutalist, Swiss, Pastel, Glass, Retro
+- Documentacao completa: [modelos/README.md](modelos/README.md)
 
 ## Observacoes
 
