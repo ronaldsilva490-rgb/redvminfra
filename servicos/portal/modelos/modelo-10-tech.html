@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Modelo 10 · Tech Modern · Total Empresarial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fira+Code:wght@500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0f172a;
+  --bg-2: #1e293b;
+  --paper: rgba(30, 41, 59, 0.7);
+  --ink: #f1f5f9;
+  --ink-2: #cbd5e1;
+  --ink-3: #94a3b8;
+  --line: rgba(148, 163, 184, 0.15);
+  --blue: #3b82f6;
+  --purple: #8b5cf6;
+  --cyan: #06b6d4;
+  --pink: #ec4899;
+  --gradient-1: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  --gradient-2: linear-gradient(135deg, #06b6d4, #3b82f6);
+  --gradient-3: linear-gradient(135deg, #8b5cf6, #ec4899);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.6; font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+img { max-width: 100%; display: block; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; border: 0; background: 0; cursor: pointer; color: inherit; }
+
+.wrap { width: 100%; max-width: 1240px; margin: 0 auto; padding: 0 20px; }
+
+/* Header */
+.top-bar {
+  background: var(--bg-2); color: var(--ink-2);
+  font-size: 13px; padding: 10px 0;
+  text-align: center;
+  border-bottom: 1px solid var(--line);
+}
+.top-bar a { color: var(--cyan); font-weight: 600; text-decoration: underline; }
+
+header {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 50;
+}
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; }
+.brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.brand img { height: 40px; width: auto; filter: brightness(1.2); }
+.nav-desktop, .nav-cta-desktop { display: none; }
+.burger {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: var(--paper); border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.burger span { width: 18px; height: 2px; background: var(--ink); position: relative; }
+.burger span::before, .burger span::after {
+  content: ''; position: absolute; left: 0; width: 100%; height: 2px; background: var(--ink);
+}
+.burger span::before { top: -6px; }
+.burger span::after { top: 6px; }
+
+.menu-mobile {
+  position: fixed; inset: 0; z-index: 100;
+  background: var(--bg-2); padding: 80px 24px 32px;
+  transform: translateX(100%); transition: transform 0.4s cubic-bezier(.4,0,.2,1);
+  display: flex; flex-direction: column;
+}
+.menu-mobile.open { transform: translateX(0); }
+.menu-mobile .close {
+  position: absolute; top: 18px; right: 18px;
+  width: 44px; height: 44px; border-radius: 12px;
+  background: var(--paper); border: 1px solid var(--line);
+  font-size: 20px;
+}
+.menu-mobile ul { list-style: none; flex: 1; }
+.menu-mobile li a {
+  display: block; padding: 18px 16px; border-radius: 16px;
+  font-size: 22px; font-weight: 600; color: var(--ink);
+  margin-bottom: 4px; transition: background 0.2s;
+}
+.menu-mobile li a:hover { background: rgba(59, 130, 246, 0.15); }
+.menu-mobile .actions { padding-top: 24px; display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--line); }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 14px 24px; border-radius: 12px;
+  font-weight: 600; font-size: 15px;
+  border: 1.5px solid transparent;
+  transition: transform 0.2s, background 0.2s, color 0.2s, box-shadow 0.2s;
+  white-space: nowrap;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary {
+  background: var(--gradient-1); color: #fff;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4), inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.btn-primary:hover { box-shadow: 0 8px 24px rgba(59, 130, 246, 0.6); transform: translateY(-2px); }
+.btn-outline { background: transparent; color: var(--ink); border-color: var(--line); }
+.btn-outline:hover { border-color: var(--blue); background: rgba(59, 130, 246, 0.1); }
+.btn-dark { background: var(--bg-2); color: var(--ink); }
+.btn-wa { background: #25d366; color: #fff; }
+
+/* Hero */
+.hero { padding: 40px 0 64px; position: relative; overflow: hidden; }
+.hero::before {
+  content: ''; position: absolute; top: -50%; right: -20%;
+  width: 800px; height: 800px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.15), transparent 70%);
+  animation: float 20s ease-in-out infinite;
+}
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(-30px, -30px) rotate(180deg); }
+}
+
+.hero-tag {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 14px; border-radius: 99px;
+  background: rgba(59, 130, 246, 0.15); color: var(--blue);
+  font-size: 13px; font-weight: 600;
+  margin-bottom: 24px;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+.hero-tag::before {
+  content: ''; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.2);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+h1 {
+  font-size: clamp(40px, 10vw, 72px);
+  font-weight: 800; line-height: 1.05;
+  letter-spacing: -0.035em; color: var(--ink);
+  margin-bottom: 20px;
+}
+h1 em {
+  font-style: italic; font-weight: 600;
+  background: var(--gradient-1);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.lead {
+  font-size: clamp(16px, 4vw, 19px);
+  color: var(--ink-2);
+  max-width: 540px;
+  margin-bottom: 32px;
+}
+.lead strong { color: var(--ink); font-weight: 600; }
+
+.hero-cta { display: flex; flex-direction: column; gap: 12px; margin-bottom: 40px; }
+.hero-cta .btn { width: 100%; }
+
+.hero-checks {
+  display: flex; flex-wrap: wrap; gap: 8px 20px;
+  font-size: 14px; color: var(--ink-2);
+  margin-bottom: 40px;
+}
+.hero-checks div { display: flex; align-items: center; gap: 6px; }
+.hero-checks .ck {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--gradient-1); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+}
+
+/* Hero visual: tech dashboard mockup */
+.hero-visual {
+  background: var(--paper); border: 1px solid var(--line);
+  border-radius: 20px; padding: 24px;
+  position: relative;
+  backdrop-filter: blur(10px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.1) inset,
+    0 30px 60px rgba(0,0,0,0.3),
+    0 0 0 1px rgba(59, 130, 246, 0.1);
+}
+.dash-photo {
+  border-radius: 14px; overflow: hidden; aspect-ratio: 16/9;
+  margin-bottom: 16px;
+  position: relative;
+}
+.dash-photo img { width: 100%; height: 100%; object-fit: cover; }
+.dash-photo::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(180deg, transparent 50%, rgba(15, 23, 42, 0.6));
+}
+.dash-photo-label {
+  position: absolute; bottom: 12px; left: 12px;
+  background: rgba(30, 41, 59, 0.95);
+  backdrop-filter: blur(10px);
+  padding: 8px 12px; border-radius: 10px;
+  font-size: 12px; font-weight: 600; color: var(--ink);
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid var(--line);
+}
+.dash-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.dash-card {
+  border: 1px solid var(--line); border-radius: 14px;
+  padding: 14px; background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(5px);
+}
+.dash-card .lbl { font-size: 11px; color: var(--ink-3); text-transform: uppercase;
+  letter-spacing: 1px; font-weight: 600; margin-bottom: 6px; }
+.dash-card .val { font-size: 22px; font-weight: 700; color: var(--ink); line-height: 1; }
+.dash-card .delta { font-size: 12px; color: var(--cyan); margin-top: 4px; font-weight: 600; }
+.dash-card .delta.down { color: var(--pink); }
+.dash-mini {
+  height: 32px; margin-top: 8px;
+  background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 40' preserveAspectRatio='none'><defs><linearGradient id='g' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='%233b82f6' stop-opacity='0.3'/><stop offset='1' stop-color='%233b82f6' stop-opacity='0'/></linearGradient></defs><polyline fill='url(%23g)' points='0,40 0,30 25,28 50,22 75,25 100,18 125,20 150,12 175,14 200,8 200,40'/><polyline fill='none' stroke='%233b82f6' stroke-width='2' points='0,30 25,28 50,22 75,25 100,18 125,20 150,12 175,14 200,8'/></svg>") no-repeat;
+  background-size: 100% 100%;
+}
+
+/* Sections */
+section { padding: 64px 0; }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 700; letter-spacing: 2.5px;
+  text-transform: uppercase; color: var(--cyan);
+  margin-bottom: 16px;
+}
+.eyebrow::before { content: '◆'; font-size: 8px; }
+h2 {
+  font-size: clamp(32px, 8vw, 56px); font-weight: 800;
+  letter-spacing: -0.025em; line-height: 1.05; color: var(--ink);
+  margin-bottom: 16px;
+}
+h2 em {
+  font-style: italic; font-weight: 600;
+  background: var(--gradient-2);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.section-head p { color: var(--ink-2); font-size: 17px; max-width: 540px; }
+
+/* Services */
+.services-grid { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 40px; }
+.service {
+  background: var(--paper);
+  border: 1px solid var(--line); border-radius: 20px;
+  padding: 28px; transition: transform 0.3s, box-shadow 0.3s, border-color 0.3s;
+  position: relative; overflow: hidden;
+  backdrop-filter: blur(10px);
+}
+.service::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--gradient-1); transform: scaleX(0); transform-origin: left;
+  transition: transform 0.4s;
+}
+.service:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+  border-color: var(--blue);
+}
+.service:hover::before { transform: scaleX(1); }
+.service-ic {
+  width: 56px; height: 56px; border-radius: 16px;
+  background: var(--gradient-1); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px; margin-bottom: 20px;
+}
+.service-num {
+  position: absolute; top: 24px; right: 24px;
+  font-family: 'Fira Code', monospace;
+  font-size: 18px; color: var(--ink-3);
+}
+.service h3 {
+  font-size: 22px; font-weight: 700; color: var(--ink);
+  margin-bottom: 8px;
+}
+.service p { font-size: 15px; color: var(--ink-2); margin-bottom: 16px; }
+.service-link {
+  font-weight: 600; font-size: 14px;
+  color: var(--cyan); display: inline-flex; align-items: center; gap: 6px;
+}
+.service-link::after { content: '→'; transition: transform 0.2s; }
+.service:hover .service-link::after { transform: translateX(4px); }
+
+/* About */
+.about-section { background: var(--bg-2); }
+.about-grid { display: flex; flex-direction: column; gap: 40px; }
+.about-image {
+  border-radius: 24px; overflow: hidden;
+  aspect-ratio: 4/5;
+  box-shadow: 0 30px 60px rgba(0,0,0,0.4);
+  position: relative;
+}
+.about-image img { width: 100%; height: 100%; object-fit: cover; }
+.about-image::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(135deg, transparent 50%, rgba(59, 130, 246, 0.2));
+}
+.about-badge {
+  position: absolute; top: 20px; left: 20px;
+  background: var(--paper);
+  padding: 12px 16px; border-radius: 14px;
+  display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--line);
+}
+.about-badge .ic {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: var(--gradient-1); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+}
+.about-badge .lbl { font-size: 11px; color: var(--ink-3); text-transform: uppercase;
+  letter-spacing: 1px; font-weight: 600; }
+.about-badge strong { color: var(--ink); font-size: 14px; line-height: 1.2; }
+
+.about-list { list-style: none; margin-top: 28px; }
+.about-list li {
+  display: flex; gap: 14px; padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+.about-list li:last-child { border: 0; }
+.about-list .num {
+  flex-shrink: 0; width: 36px; height: 36px; border-radius: 50%;
+  background: var(--gradient-1); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px;
+}
+.about-list strong { color: var(--ink); display: block; margin-bottom: 4px; font-size: 16px; }
+.about-list span { color: var(--ink-2); font-size: 14px; }
+
+/* Stats */
+.stats-section { background: var(--bg-2); position: relative; }
+.stats-section::before {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0;
+  height: 200px;
+  background: radial-gradient(circle at 50% 100%, rgba(139, 92, 246, 0.15), transparent 70%);
+}
+.stats-section .eyebrow { color: var(--purple); }
+.stats-section h2 { color: #fff; }
+.stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; margin-top: 40px; }
+.stat {
+  padding: 24px; border-radius: 20px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  backdrop-filter: blur(10px);
+}
+.stat-num {
+  font-size: clamp(40px, 10vw, 64px);
+  font-weight: 800; line-height: 1;
+  background: var(--gradient-1);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.stat-lbl { font-size: 13px; color: rgba(255,255,255,0.65); margin-top: 8px;
+  text-transform: uppercase; letter-spacing: 1.5px; }
+
+/* Trust strip */
+.trust-strip {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  padding: 32px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  margin: 40px 0;
+}
+.trust-item {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 14px;
+}
+.trust-item .ic {
+  width: 40px; height: 40px; border-radius: 12px;
+  background: var(--gradient-1); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+.trust-item strong { display: block; color: var(--ink); font-size: 14px; line-height: 1.2; }
+.trust-item span { font-size: 12px; color: var(--ink-3); }
+
+/* CTA */
+.cta-card {
+  background:
+    radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.4), transparent 50%),
+    var(--bg-2);
+  color: #fff;
+  border-radius: 28px;
+  padding: 48px 28px;
+  position: relative; overflow: hidden;
+  border: 1px solid var(--line);
+}
+.cta-card::before {
+  content: ''; position: absolute; bottom: -100px; left: -50px;
+  width: 300px; height: 300px; border-radius: 50%;
+  background: rgba(255,255,255,0.04);
+}
+.cta-card > * { position: relative; }
+.cta-card .eyebrow { color: var(--purple); }
+.cta-card h2 { color: #fff; }
+.cta-card h2 em {
+  background: var(--gradient-3);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.cta-card p { color: rgba(255,255,255,0.8); margin: 16px 0 28px; max-width: 480px; font-size: 17px; }
+.cta-buttons { display: flex; flex-direction: column; gap: 12px; }
+.cta-card .btn-primary { background: #fff; color: var(--bg-2); }
+.cta-card .btn-primary:hover { background: var(--ink); }
+.cta-card .btn-outline { background: transparent; color: #fff; border-color: rgba(255,255,255,0.3); }
+.cta-card .btn-outline:hover { background: rgba(255,255,255,0.1); border-color: #fff; }
+
+/* Footer */
+footer { background: var(--bg-2); padding: 80px 0 24px; border-top: 1px solid var(--line); }
+.foot-top { display: flex; flex-direction: column; gap: 40px; padding-bottom: 40px;
+  border-bottom: 1px solid var(--line); margin-bottom: 32px; }
+.foot-brand img { height: 44px; margin-bottom: 16px; filter: brightness(1.2); }
+.foot-brand p { font-size: 14px; max-width: 320px; color: var(--ink-2); }
+.foot-links { display: grid; grid-template-columns: 1fr 1fr; gap: 32px 24px; }
+.foot-col h4 {
+  font-size: 13px; font-weight: 700; color: var(--ink);
+  text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 14px;
+}
+.foot-col ul { list-style: none; }
+.foot-col li { padding: 4px 0; }
+.foot-col a, .foot-col span { color: var(--ink-2); font-size: 14px; line-height: 1.6; }
+.foot-col a:hover { color: var(--cyan); }
+.foot-info { font-size: 13px; line-height: 1.7; color: var(--ink-2); }
+.foot-info strong { color: var(--ink); display: block; margin-top: 8px; }
+.foot-bottom { display: flex; flex-direction: column; gap: 12px; font-size: 12px; color: var(--ink-3); }
+
+/* WA */
+.wa-float {
+  position: fixed; bottom: 20px; right: 20px; z-index: 90;
+  width: 60px; height: 60px; border-radius: 50%;
+  background: #25d366; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 30px; box-shadow: 0 8px 24px rgba(37,211,102,0.4);
+}
+
+.reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.8s, transform 0.8s; }
+.reveal.in { opacity: 1; transform: translateY(0); }
+
+@media (min-width: 700px) {
+  .hero-cta { flex-direction: row; }
+  .hero-cta .btn { width: auto; }
+  .services-grid { grid-template-columns: repeat(2, 1fr); }
+  .stats-grid { grid-template-columns: repeat(4, 1fr); }
+  .trust-strip { grid-template-columns: repeat(4, 1fr); }
+  .cta-buttons { flex-direction: row; }
+  .foot-top { flex-direction: row; gap: 64px; }
+  .foot-brand { flex: 1; }
+  .foot-links { flex: 2; grid-template-columns: repeat(3, 1fr); }
+  .foot-bottom { flex-direction: row; justify-content: space-between; }
+}
+@media (min-width: 980px) {
+  .nav-desktop { display: flex; gap: 32px; list-style: none; flex: 1; justify-content: center; }
+  .nav-desktop a { font-weight: 500; font-size: 15px; color: var(--ink-2); transition: color 0.2s; }
+  .nav-desktop a:hover { color: var(--ink); }
+  .nav-cta-desktop { display: inline-flex; }
+  .burger { display: none; }
+  .hero { padding: 64px 0 96px; }
+  .hero-grid { display: grid; grid-template-columns: 1.05fr 1fr; gap: 64px; align-items: center; }
+  section { padding: 96px 0; }
+  .services-grid { grid-template-columns: repeat(4, 1fr); }
+  .about-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
+}
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  📞 (11) 98105-0614 · contato@totalempresarial.com.br · <a href="#">Abrir empresa GRÁTIS →</a>
+</div>
+
+<header>
+  <div class="wrap nav">
+    <a href="#" class="brand"><img src="assets/logo.webp" alt="Total Empresarial"></a>
+    <ul class="nav-desktop">
+      <li><a href="#">Início</a></li>
+      <li><a href="#servicos">Serviços</a></li>
+      <li><a href="#">Contabilidade MEI</a></li>
+      <li><a href="#sobre">Sobre</a></li>
+      <li><a href="#contato">Contato</a></li>
+    </ul>
+    <a href="#" class="btn btn-primary nav-cta-desktop">Abrir empresa →</a>
+    <button class="burger" id="openMenu" aria-label="Menu"><span></span></button>
+  </div>
+</header>
+
+<div class="menu-mobile" id="menuMobile">
+  <button class="close" id="closeMenu">✕</button>
+  <ul>
+    <li><a href="#">Início</a></li>
+    <li><a href="#servicos">Serviços</a></li>
+    <li><a href="#">MEI</a></li>
+    <li><a href="#sobre">Sobre</a></li>
+    <li><a href="#contato">Contato</a></li>
+  </ul>
+  <div class="actions">
+    <a href="#" class="btn btn-primary">Abrir empresa grátis</a>
+    <a href="https://wa.me/5511981050614" class="btn btn-wa">💬 WhatsApp</a>
+  </div>
+</div>
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="reveal">
+      <div class="hero-tag">Aceitando novos clientes em 2026</div>
+      <h1>Sua empresa <em>cuidada</em> com a precisão que ela merece.</h1>
+      <p class="lead">
+        Abrimos sua empresa <strong>grátis</strong>. Cuidamos da contabilidade, da folha, dos impostos e da estratégia. Você foca no que importa: <strong>crescer</strong>.
+      </p>
+      <div class="hero-cta">
+        <a href="#" class="btn btn-primary">Abrir empresa grátis →</a>
+        <a href="https://wa.me/5511981050614" class="btn btn-outline">💬 Falar com especialista</a>
+      </div>
+      <div class="hero-checks">
+        <div><div class="ck">✓</div> Sem fidelidade</div>
+        <div><div class="ck">✓</div> CRC ativo</div>
+        <div><div class="ck">✓</div> LGPD compliant</div>
+        <div><div class="ck">✓</div> Resposta em 24h</div>
+      </div>
+    </div>
+    <div class="reveal">
+      <div class="hero-visual">
+        <div class="dash-photo">
+          <img src="https://images.unsplash.com/photo-1553877522-43269d4ea984?w=900&q=80" alt="">
+          <div class="dash-photo-label">📈 Receita do mês</div>
+        </div>
+        <div class="dash-row">
+          <div class="dash-card">
+            <div class="lbl">Receita</div>
+            <div class="val">R$ 84.230</div>
+            <div class="delta">↑ 12,4% vs mês anterior</div>
+            <div class="dash-mini"></div>
+          </div>
+          <div class="dash-card">
+            <div class="lbl">Imposto otimizado</div>
+            <div class="val" style="color:var(--cyan);">- R$ 1.840</div>
+            <div class="delta">economia mensal</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="servicos">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="eyebrow">Serviços</div>
+      <h2>Tudo o que sua empresa <em>precisa</em>.</h2>
+      <p>Da abertura à expansão — operamos como extensão do seu time financeiro.</p>
+    </div>
+    <div class="services-grid">
+      <div class="service reveal">
+        <div class="service-num">01</div>
+        <div class="service-ic">⚡</div>
+        <h3>Abertura de Empresa</h3>
+        <p>Resolvemos toda a parte burocrática. Para clientes da assessoria mensal, é totalmente grátis.</p>
+        <a href="#" class="service-link">Ver vantagens</a>
+      </div>
+      <div class="service reveal">
+        <div class="service-num">02</div>
+        <div class="service-ic">📊</div>
+        <h3>Consultoria</h3>
+        <p>Estratégia tributária e análise de cenários para maximizar o resultado do seu negócio.</p>
+        <a href="#" class="service-link">Ver vantagens</a>
+      </div>
+      <div class="service reveal">
+        <div class="service-num">03</div>
+        <div class="service-ic">🛡</div>
+        <h3>Assessoria Mensal</h3>
+        <p>Acompanhamento contábil, fiscal e trabalhista contínuo. Conformidade sem dor de cabeça.</p>
+        <a href="#" class="service-link">Ver vantagens</a>
+      </div>
+      <div class="service reveal">
+        <div class="service-num">04</div>
+        <div class="service-ic">⚖</div>
+        <h3>Perícia Contábil</h3>
+        <p>Cálculos para processos judiciais e avaliação de empresas para venda ou dissolução.</p>
+        <a href="#" class="service-link">Ver vantagens</a>
+      </div>
+    </div>
+    <div class="trust-strip reveal">
+      <div class="trust-item"><div class="ic">⚖</div><div><strong>CRC ativo</strong><span>Profissionais habilitados</span></div></div>
+      <div class="trust-item"><div class="ic">🔒</div><div><strong>LGPD</strong><span>Dados protegidos</span></div></div>
+      <div class="trust-item"><div class="ic">⚡</div><div><strong>24h SLA</strong><span>Resposta garantida</span></div></div>
+      <div class="trust-item"><div class="ic">★</div><div><strong>4,9 / 5</strong><span>Avaliação Google</span></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="sobre" class="about-section">
+  <div class="wrap about-grid">
+    <div class="reveal">
+      <div class="about-image">
+        <img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?w=900&q=80" alt="Profissional contábil">
+        <div class="about-badge">
+          <div class="ic">★</div>
+          <div>
+            <div class="lbl">Cliente desde</div>
+            <strong>+15 anos atendendo</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="reveal">
+      <div class="eyebrow">Sobre Nós</div>
+      <h2>A linha tênue entre <em>performance</em> e contabilidade.</h2>
+      <p style="font-size:17px;color:var(--ink-2);">Queremos estar na ponta da tomada de decisões. Nosso trabalho vai além de registros e guias — somos parceiros estratégicos do seu crescimento.</p>
+      <ul class="about-list">
+        <li><div class="num">01</div><div><strong>Postura diferenciada</strong><span>Foco em resultado, não em burocracia. Inovação que traz valor real.</span></div></li>
+        <li><div class="num">02</div><div><strong>Transparência e ética</strong><span>Relatórios claros, sem letras miúdas. Relação de confiança como diferencial.</span></div></li>
+        <li><div class="num">03</div><div><strong>Tecnologia + humano</strong><span>Plataforma moderna com atendimento próximo. O melhor dos dois mundos.</span></div></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="stats-section">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="eyebrow">Números</div>
+      <h2 style="max-width:600px;">Quem confia em <em>nós</em>.</h2>
+    </div>
+    <div class="stats-grid reveal">
+      <div class="stat"><div class="stat-num">500+</div><div class="stat-lbl">Empresas atendidas</div></div>
+      <div class="stat"><div class="stat-num">15</div><div class="stat-lbl">Anos no mercado</div></div>
+      <div class="stat"><div class="stat-num">98%</div><div class="stat-lbl">Retenção</div></div>
+      <div class="stat"><div class="stat-num">24h</div><div class="stat-lbl">SLA resposta</div></div>
+    </div>
+  </div>
+</section>
+
+<section id="contato">
+  <div class="wrap">
+    <div class="cta-card reveal">
+      <div class="eyebrow">Vamos conversar</div>
+      <h2>Pronto para tirar a empresa do <em>papel</em>?</h2>
+      <p>Comente sobre a necessidade do seu negócio. Nossa equipe responde em até 24 horas.</p>
+      <div class="cta-buttons">
+        <a href="#" class="btn btn-primary">Solicitar proposta →</a>
+        <a href="https://wa.me/5511981050614" class="btn btn-outline">💬 WhatsApp direto</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-top">
+      <div class="foot-brand">
+        <img src="assets/logo.webp" alt="Total Empresarial">
+        <p>Contabilidade especializada em performance empresarial. Tradição, tecnologia e atendimento humano para todo o Brasil.</p>
+      </div>
+      <div class="foot-links">
+        <div class="foot-col">
+          <h4>Serviços</h4>
+          <ul>
+            <li><a href="#">Abrir Empresa Grátis</a></li>
+            <li><a href="#">Consultoria</a></li>
+            <li><a href="#">Assessoria Mensal</a></li>
+            <li><a href="#">Perícia Contábil</a></li>
+            <li><a href="#">Contabilidade MEI</a></li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <h4>Empresa</h4>
+          <ul>
+            <li><a href="#">Sobre</a></li>
+            <li><a href="#">Contato</a></li>
+            <li><a href="#">Política de Cookies</a></li>
+            <li><a href="#">Termos e Condições</a></li>
+            <li><a href="#">Política de Privacidade</a></li>
+          </ul>
+        </div>
+        <div class="foot-col">
+          <h4>Contato</h4>
+          <div class="foot-info">
+            <strong>📞 (11) 98105-0614</strong>
+            contato@totalempresarial.com.br
+            <strong>📍 Endereço</strong>
+            Rua Lidia Lisfei, 83, Casa 2<br>
+            Helena Maria — Osasco/SP<br>
+            CEP 06.253-080
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 Total Empresarial · CNPJ 44.847.547/0001-00<br>Razão social: 44.847.547 HENRIQUE FELIZ DOS SANTOS MORAES</span>
+      <span>Todos os direitos reservados</span>
+    </div>
+  </div>
+</footer>
+
+<a href="https://wa.me/5511981050614" class="wa-float" aria-label="WhatsApp">💬</a>
+
+<script>
+const menu = document.getElementById('menuMobile');
+document.getElementById('openMenu').onclick = () => menu.classList.add('open');
+document.getElementById('closeMenu').onclick = () => menu.classList.remove('open');
+menu.querySelectorAll('a').forEach(a => a.onclick = () => menu.classList.remove('open'));
+const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && e.target.classList.add('in')), { threshold: 0.1 });
+document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+</script>
+</body>
+</html>
