@@ -56,6 +56,32 @@ class RedLightningClaudeTests(unittest.TestCase):
         self.assertEqual(payload["messages"][3]["role"], "tool")
         self.assertEqual(payload["tool_choice"]["function"]["name"], "shell")
 
+    def test_anthropic_payload_preserves_tool_result_before_followup_user_text(self):
+        body = {
+            "model": "anthropic/claude-sonnet-4-6",
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "id": "toolu_1", "name": "shell", "input": {"command": "dir"}}
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "toolu_1", "content": "resultado"},
+                        {"type": "text", "text": "docker nao, poe xampp mesmo"},
+                    ],
+                },
+            ],
+        }
+        payload = proxy.anthropic_to_openai_payload(body, proxy.resolve_model(body["model"]))
+        self.assertEqual(payload["messages"][0]["role"], "assistant")
+        self.assertEqual(payload["messages"][1]["role"], "tool")
+        self.assertEqual(payload["messages"][1]["tool_call_id"], "toolu_1")
+        self.assertEqual(payload["messages"][2]["role"], "user")
+        self.assertEqual(payload["messages"][2]["content"], "docker nao, poe xampp mesmo")
+
     def test_anthropic_message_from_openai_maps_tool_calls(self):
         payload = {
             "id": "chatcmpl_1",

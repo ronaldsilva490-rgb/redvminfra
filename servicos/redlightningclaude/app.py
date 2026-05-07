@@ -319,9 +319,42 @@ def anthropic_messages_to_openai(body: dict[str, Any]) -> list[dict[str, Any]]:
             messages.append({"role": role, "content": text_from_content(content)})
             continue
 
+        if role != "assistant":
+            pending_parts: list[dict[str, Any]] = []
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                block_type = str(block.get("type") or "").strip()
+                if block_type in {"text", "image"}:
+                    converted = content_block_to_openai(block)
+                    if converted is not None:
+                        pending_parts.append(converted)
+                    continue
+                if block_type == "tool_result":
+                    if pending_parts:
+                        if any(item.get("type") == "image_url" for item in pending_parts):
+                            messages.append({"role": role, "content": pending_parts})
+                        else:
+                            messages.append({"role": role, "content": text_from_content(pending_parts)})
+                        pending_parts = []
+                    tool_call_id = str(block.get("tool_use_id") or "")
+                    if tool_call_id:
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call_id,
+                                "content": text_from_content(block.get("content")),
+                            }
+                        )
+            if pending_parts:
+                if any(item.get("type") == "image_url" for item in pending_parts):
+                    messages.append({"role": role, "content": pending_parts})
+                else:
+                    messages.append({"role": role, "content": text_from_content(pending_parts)})
+            continue
+
         text_parts: list[dict[str, Any]] = []
         tool_calls: list[dict[str, Any]] = []
-        tool_results: list[dict[str, Any]] = []
 
         for block in content:
             if not isinstance(block, dict):
@@ -338,16 +371,8 @@ def anthropic_messages_to_openai(body: dict[str, Any]) -> list[dict[str, Any]]:
                         "type": "function",
                         "function": {
                             "name": str(block.get("name") or ""),
-                            "arguments": json.dumps(block.get("input") or {}, ensure_ascii=False),
+                        "arguments": json.dumps(block.get("input") or {}, ensure_ascii=False),
                         },
-                    }
-                )
-            elif block_type == "tool_result":
-                tool_results.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": str(block.get("tool_use_id") or ""),
-                        "content": text_from_content(block.get("content")),
                     }
                 )
 
@@ -367,7 +392,6 @@ def anthropic_messages_to_openai(body: dict[str, Any]) -> list[dict[str, Any]]:
                     messages.append({"role": role, "content": text_parts})
                 else:
                     messages.append({"role": role, "content": text_from_content(text_parts)})
-        messages.extend(item for item in tool_results if item.get("tool_call_id"))
     return messages
 
 
