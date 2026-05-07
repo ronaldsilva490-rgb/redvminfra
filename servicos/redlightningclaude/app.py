@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 import uuid
 from copy import deepcopy
@@ -44,6 +45,7 @@ LIGHTNING_API_KEY = (
     or os.getenv("LIGHTNING_API_KEY")
     or ""
 ).strip()
+LIGHTNING_API_KEYS = split_values(os.getenv("REDLIGHTNINGCLAUDE_API_KEYS", ""))
 REQUIRE_AUTH = env_bool("REDLIGHTNINGCLAUDE_REQUIRE_AUTH", True)
 AUTH_TOKENS = set(split_values(os.getenv("REDLIGHTNINGCLAUDE_AUTH_TOKENS", "red")))
 DEFAULT_MODEL = (
@@ -59,6 +61,11 @@ TOKEN_SAFETY_MARGIN = max(0, env_int("REDLIGHTNINGCLAUDE_TOKEN_SAFETY_MARGIN", 4
 MIN_COMPLETION_TOKENS = max(1, env_int("REDLIGHTNINGCLAUDE_MIN_COMPLETION_TOKENS", 256))
 MAX_CONTEXT_RETRIES = max(1, env_int("REDLIGHTNINGCLAUDE_MAX_CONTEXT_RETRIES", 5))
 CONTEXT_RETRY_MARGIN_STEP = max(0, env_int("REDLIGHTNINGCLAUDE_CONTEXT_RETRY_MARGIN_STEP", 2048))
+RATE_LIMIT_MIN_INTERVAL_SECONDS = max(0, env_int("REDLIGHTNINGCLAUDE_RATE_LIMIT_MIN_INTERVAL_SECONDS", 1))
+RATE_LIMIT_COOLDOWN_SECONDS = max(1, env_int("REDLIGHTNINGCLAUDE_RATE_LIMIT_COOLDOWN_SECONDS", 12))
+RATE_LIMIT_COOLDOWN_STEP_SECONDS = max(0, env_int("REDLIGHTNINGCLAUDE_RATE_LIMIT_COOLDOWN_STEP_SECONDS", 4))
+RATE_LIMIT_MAX_COOLDOWN_SECONDS = max(1, env_int("REDLIGHTNINGCLAUDE_RATE_LIMIT_MAX_COOLDOWN_SECONDS", 45))
+MAX_429_RETRIES = max(0, env_int("REDLIGHTNINGCLAUDE_MAX_429_RETRIES", 6))
 
 http = requests.Session()
 http.headers.update({"Accept": "application/json"})
@@ -102,6 +109,60 @@ MODEL_BY_ID = {item["id"].lower(): item for item in MODELS}
 MODEL_BY_TARGET = {item["target"].lower(): item for item in MODELS}
 
 app = Flask(__name__)
+
+
+class LightningKeyPool:
+    def __init__(self, keys: list[str]) -> None:
+        self._keys = [{"token": key, "next_allowed_at": 0.0, "cooldown_until": 0.0, "consecutive_429": 0} for key in keys if key]
+        self._lock = threading.Lock()
+        self._rr_index = 0
+
+    def has_keys(self) -> bool:
+        return bool(self._keys)
+
+    def acquire(self) -> dict[str, Any] | None:
+        if not self._keys:
+            return None
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                best_wait = None
+                for offset in range(len(self._keys)):
+                    idx = (self._rr_index + offset) % len(self._keys)
+                    item = self._keys[idx]
+                    target = max(item["next_allowed_at"], item["cooldown_until"])
+                    wait = target - now
+                    if wait <= 0:
+                        item["next_allowed_at"] = now + RATE_LIMIT_MIN_INTERVAL_SECONDS
+                        self._rr_index = (idx + 1) % len(self._keys)
+                        return item
+                    if best_wait is None or wait < best_wait:
+                        best_wait = wait
+            time.sleep(min(max(best_wait or 0.05, 0.05), 0.25))
+
+    def on_success(self, item: dict[str, Any]) -> None:
+        with self._lock:
+            item["consecutive_429"] = 0
+
+    def on_429(self, item: dict[str, Any]) -> None:
+        with self._lock:
+            item["consecutive_429"] += 1
+            penalty = RATE_LIMIT_COOLDOWN_SECONDS + max(0, item["consecutive_429"] - 1) * RATE_LIMIT_COOLDOWN_STEP_SECONDS
+            penalty = min(RATE_LIMIT_MAX_COOLDOWN_SECONDS, penalty)
+            item["cooldown_until"] = max(item["cooldown_until"], time.monotonic() + penalty)
+
+
+def configured_lightning_keys() -> list[str]:
+    keys: list[str] = []
+    if LIGHTNING_API_KEY:
+        keys.append(LIGHTNING_API_KEY)
+    for key in LIGHTNING_API_KEYS:
+        if key and key not in keys:
+            keys.append(key)
+    return keys
+
+
+KEY_POOL = LightningKeyPool(configured_lightning_keys())
 
 
 def request_id() -> str:
@@ -435,9 +496,9 @@ def is_context_error(status_code: int, body: str) -> bool:
     return status_code == 400 and "maximum context length" in lowered and "input tokens" in lowered
 
 
-def lightning_headers() -> dict[str, str]:
+def lightning_headers(api_key: str) -> dict[str, str]:
     return {
-        "Authorization": f"Bearer {LIGHTNING_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
@@ -464,10 +525,10 @@ def lightning_error_message(status_code: int, body: str) -> str:
     return body[:240] or f"upstream error {status_code}"
 
 
-def proxy_openai_chat(payload: dict[str, Any], *, stream: bool) -> requests.Response:
+def proxy_openai_chat(payload: dict[str, Any], *, stream: bool, api_key: str) -> requests.Response:
     return http.post(
         f"{LIGHTNING_BASE_URL}/chat/completions",
-        headers=lightning_headers(),
+        headers=lightning_headers(api_key),
         json=payload,
         timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
         stream=stream,
@@ -483,14 +544,25 @@ def proxy_openai_chat_with_context_retry(
 ) -> requests.Response:
     current_payload = apply_context_guard(payload, input_tokens=input_tokens, context_window=context_window)
     extra_margin = 0
-    for _attempt in range(MAX_CONTEXT_RETRIES + 1):
-        response = proxy_openai_chat(current_payload, stream=stream)
+    rate_retries_left = MAX_429_RETRIES
+    for _attempt in range(MAX_CONTEXT_RETRIES + MAX_429_RETRIES + 1):
+        pool_item = KEY_POOL.acquire()
+        if pool_item is None:
+            raise RuntimeError("lightning api key not configured")
+        response = proxy_openai_chat(current_payload, stream=stream, api_key=str(pool_item["token"]))
         if response.status_code < 400:
+            KEY_POOL.on_success(pool_item)
             return response
         try:
             body_text = response.text
         except Exception:
             body_text = ""
+        if response.status_code == 429:
+            KEY_POOL.on_429(pool_item)
+            if rate_retries_left <= 0:
+                return response
+            rate_retries_left -= 1
+            continue
         if not is_context_error(response.status_code, body_text):
             return response
         limits = parse_context_error_limits(body_text)
@@ -739,7 +811,7 @@ def anthropic_messages() -> Response:
     auth_error = authorize()
     if auth_error is not None:
         return auth_error
-    if not LIGHTNING_API_KEY:
+    if not KEY_POOL.has_keys():
         return error_response("lightning api key not configured", 503, "configuration_error")
     body, json_error = parse_json_body()
     if json_error is not None:
@@ -775,7 +847,7 @@ def openai_chat_completions() -> Response:
     auth_error = authorize()
     if auth_error is not None:
         return auth_error
-    if not LIGHTNING_API_KEY:
+    if not KEY_POOL.has_keys():
         return error_response("lightning api key not configured", 503, "configuration_error")
     body, json_error = parse_json_body()
     if json_error is not None:
