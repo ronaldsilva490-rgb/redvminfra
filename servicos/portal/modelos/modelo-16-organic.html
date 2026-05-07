@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Total Empresarial · Organic Natural</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #faf8f5;
+  --cream: #f5f0e8;
+  --sand: #e8dfd3;
+  --olive: #6b7c5c;
+  --olive-dark: #4a5a3d;
+  --rust: #c27052;
+  --warm-brown: #8b6f4e;
+  --text: #3d3528;
+  --text-light: #7a6f5e;
+  --white: #ffffff;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Nunito', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* Organic blob shapes */
+.blob {
+  position: fixed;
+  z-index: -1;
+  pointer-events: none;
+  filter: blur(60px);
+  opacity: 0.4;
+}
+.blob-1 {
+  width: 400px; height: 400px;
+  background: var(--olive);
+  border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+  top: -100px; right: -100px;
+}
+.blob-2 {
+  width: 300px; height: 350px;
+  background: var(--rust);
+  border-radius: 30% 70% 70% 30% / 30% 30% 70% 70%;
+  bottom: 10%; left: -80px;
+}
+.blob-3 {
+  width: 250px; height: 250px;
+  background: var(--sand);
+  border-radius: 50% 50% 40% 60% / 50% 60% 40% 50%;
+  top: 50%; right: 10%;
+}
+
+/* Header */
+header {
+  padding: 20px 24px;
+  display: flex; align-items: center; justify-content: space-between;
+  background: rgba(250, 248, 245, 0.9);
+  backdrop-filter: blur(10px);
+  position: sticky; top: 0; z-index: 100;
+  border-bottom: 1px solid var(--sand);
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand img { height: 38px; width: auto; }
+.brand-text {
+  font-family: 'Lora', serif;
+  font-weight: 600; font-size: 17px;
+  color: var(--olive-dark);
+}
+nav { display: flex; gap: 24px; }
+nav a {
+  font-size: 14px; font-weight: 600;
+  color: var(--text-light);
+  text-decoration: none;
+  transition: color 0.2s;
+  position: relative;
+}
+nav a::after {
+  content: '';
+  position: absolute;
+  bottom: -4px; left: 0;
+  width: 0; height: 2px;
+  background: var(--olive);
+  transition: width 0.3s;
+}
+nav a:hover { color: var(--olive-dark); }
+nav a:hover::after { width: 100%; }
+
+/* Hero */
+.hero {
+  padding: 80px 24px 100px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 48px;
+  align-items: center;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.hero-content h1 {
+  font-family: 'Lora', serif;
+  font-size: clamp(32px, 7vw, 56px);
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--olive-dark);
+  margin-bottom: 20px;
+}
+.hero-content h1 em {
+  font-style: italic;
+  color: var(--rust);
+}
+.hero-content p {
+  font-size: 18px;
+  color: var(--text-light);
+  max-width: 480px;
+  margin-bottom: 32px;
+  line-height: 1.7;
+}
+.btn-primary {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 14px 28px;
+  background: var(--olive);
+  color: var(--white);
+  font-weight: 700; font-size: 15px;
+  text-decoration: none;
+  border-radius: 50px;
+  transition: all 0.3s;
+  box-shadow: 0 4px 16px rgba(107, 124, 92, 0.3);
+}
+.btn-primary:hover {
+  background: var(--olive-dark);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(107, 124, 92, 0.4);
+}
+.hero-visual {
+  position: relative;
+  height: 400px;
+  display: flex; align-items: center; justify-content: center;
+}
+.organic-card {
+  background: var(--white);
+  border-radius: 30px;
+  padding: 40px;
+  box-shadow: 0 20px 60px rgba(61, 53, 40, 0.08);
+  max-width: 320px;
+  position: relative;
+}
+.organic-card::before {
+  content: '';
+  position: absolute;
+  width: 100px; height: 100px;
+  background: var(--rust);
+  border-radius: 50%;
+  top: -30px; right: -20px;
+  opacity: 0.2;
+}
+.organic-card .icon-circle {
+  width: 64px; height: 64px;
+  background: var(--cream);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 20px;
+}
+.organic-card .icon-circle svg {
+  width: 28px; height: 28px;
+  fill: var(--olive);
+}
+.organic-card h3 {
+  font-family: 'Lora', serif;
+  font-size: 20px;
+  color: var(--olive-dark);
+  margin-bottom: 12px;
+}
+.organic-card p {
+  font-size: 14px;
+  color: var(--text-light);
+  line-height: 1.6;
+}
+
+/* Services */
+.services {
+  padding: 80px 24px;
+  background: var(--cream);
+  position: relative;
+}
+.services::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 80px;
+  background: linear-gradient(to bottom, var(--bg), transparent);
+}
+.section-header {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto 56px;
+}
+.section-header h2 {
+  font-family: 'Lora', serif;
+  font-size: clamp(28px, 5vw, 40px);
+  font-weight: 600;
+  color: var(--olive-dark);
+  margin-bottom: 16px;
+}
+.section-header p {
+  font-size: 16px;
+  color: var(--text-light);
+}
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.card {
+  background: var(--white);
+  border-radius: 24px;
+  padding: 36px 28px;
+  box-shadow: 0 8px 32px rgba(61, 53, 40, 0.06);
+  transition: transform 0.3s, box-shadow 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 4px; height: 100%;
+  background: var(--olive);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 48px rgba(61, 53, 40, 0.1);
+}
+.card:hover::before { opacity: 1; }
+.card-icon {
+  width: 56px; height: 56px;
+  background: var(--cream);
+  border-radius: 16px;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 20px;
+}
+.card-icon svg {
+  width: 26px; height: 26px;
+  fill: var(--olive);
+}
+.card h3 {
+  font-family: 'Lora', serif;
+  font-size: 20px;
+  color: var(--olive-dark);
+  margin-bottom: 12px;
+}
+.card p {
+  font-size: 15px;
+  color: var(--text-light);
+  line-height: 1.65;
+}
+
+/* Values Section */
+.values {
+  padding: 80px 24px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+.values-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+}
+.value-item {
+  display: flex; gap: 20px;
+  align-items: flex-start;
+}
+.value-number {
+  font-family: 'Lora', serif;
+  font-size: 48px;
+  font-weight: 600;
+  color: var(--sand);
+  line-height: 1;
+  min-width: 60px;
+}
+.value-content h3 {
+  font-family: 'Lora', serif;
+  font-size: 20px;
+  color: var(--olive-dark);
+  margin-bottom: 8px;
+}
+.value-content p {
+  font-size: 15px;
+  color: var(--text-light);
+  line-height: 1.65;
+}
+
+/* CTA */
+.cta {
+  padding: 80px 24px;
+  background: var(--olive);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.cta::before {
+  content: '';
+  position: absolute;
+  width: 500px; height: 500px;
+  background: var(--olive-dark);
+  border-radius: 50%;
+  top: -300px; right: -200px;
+  opacity: 0.3;
+}
+.cta h2 {
+  font-family: 'Lora', serif;
+  font-size: clamp(28px, 6vw, 44px);
+  font-weight: 600;
+  color: var(--white);
+  margin-bottom: 16px;
+  position: relative;
+}
+.cta p {
+  font-size: 18px;
+  color: rgba(255,255,255,0.8);
+  max-width: 500px;
+  margin: 0 auto 32px;
+  position: relative;
+}
+.btn-white {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 14px 28px;
+  background: var(--white);
+  color: var(--olive-dark);
+  font-weight: 700; font-size: 15px;
+  text-decoration: none;
+  border-radius: 50px;
+  transition: all 0.3s;
+  position: relative;
+}
+.btn-white:hover {
+  background: var(--cream);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+}
+
+/* Footer */
+footer {
+  padding: 60px 24px 40px;
+  background: var(--text);
+  color: rgba(255,255,255,0.7);
+}
+.footer-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 40px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.footer-brand img { height: 34px; width: auto; margin-bottom: 16px; filter: brightness(0) invert(1); }
+.footer-brand p {
+  font-size: 14px;
+  line-height: 1.7;
+  max-width: 300px;
+}
+.footer-links h4 {
+  font-family: 'Lora', serif;
+  font-size: 16px;
+  color: var(--white);
+  margin-bottom: 16px;
+}
+.footer-links ul { list-style: none; }
+.footer-links li { margin-bottom: 10px; }
+.footer-links a {
+  color: rgba(255,255,255,0.6);
+  text-decoration: none;
+  font-size: 14px;
+  transition: color 0.2s;
+}
+.footer-links a:hover { color: var(--white); }
+.footer-bottom {
+  max-width: 1200px;
+  margin: 40px auto 0;
+  padding-top: 24px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  text-align: center;
+  font-size: 13px;
+  color: rgba(255,255,255,0.4);
+}
+
+/* Reveal animation */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (min-width: 700px) {
+  .hero { grid-template-columns: 1fr 1fr; padding: 100px 48px; }
+  .grid { grid-template-columns: 1fr 1fr; }
+  .values-grid { grid-template-columns: 1fr 1fr; }
+  footer { padding: 80px 48px 40px; }
+  .footer-grid { grid-template-columns: 2fr 1fr 1fr; }
+}
+@media (min-width: 980px) {
+  .grid { grid-template-columns: repeat(4, 1fr); }
+  header { padding: 20px 48px; }
+  .services { padding: 100px 48px; }
+  .values { padding: 100px 48px; }
+  .cta { padding: 100px 48px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Organic blob backgrounds -->
+<div class="blob blob-1"></div>
+<div class="blob blob-2"></div>
+<div class="blob blob-3"></div>
+
+<header>
+  <div class="brand">
+    <img src="logo.webp" alt="Total Empresarial">
+    <span class="brand-text">Total Empresarial</span>
+  </div>
+  <nav>
+    <a href="#servicos">Serviços</a>
+    <a href="#valores">Valores</a>
+    <a href="#contato">Contato</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="hero-content">
+    <h1>Contabilidade com <em>propósito</em> e cuidado</h1>
+    <p>Cuidamos da sua empresa com atenção aos detalhes e compromisso genuíno com o seu crescimento. Gestão contábil humanizada e eficiente.</p>
+    <a href="#contato" class="btn-primary">Conheça nossos serviços →</a>
+  </div>
+  <div class="hero-visual">
+    <div class="organic-card">
+      <div class="icon-circle">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+      </div>
+      <h3>Gestão Completa</h3>
+      <p>Tudo que sua empresa precisa em um só lugar, com acompanhamento personalizado.</p>
+    </div>
+  </div>
+</section>
+
+<section class="services" id="servicos">
+  <div class="section-header reveal">
+    <h2>O que fazemos por você</h2>
+    <p>Soluções contábeis pensadas para simplificar sua rotina e impulsionar resultados.</p>
+  </div>
+  <div class="grid">
+    <div class="card reveal">
+      <div class="card-icon">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 2l5 5h-5V4zM6 20V4h5v7h7v9H6z"/></svg>
+      </div>
+      <h3>Contabilidade Fiscal</h3>
+      <p>Apuração de tributos, entrega de obrigações e planejamento tributário estratégico para sua empresa.</p>
+    </div>
+    <div class="card reveal">
+      <div class="card-icon">
+        <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+      </div>
+      <h3>Departamento Pessoal</h3>
+      <p>Folha de pagamento, admissões, rescisões e toda gestão de pessoas com segurança jurídica.</p>
+    </div>
+    <div class="card reveal">
+      <div class="card-icon">
+        <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5 1.41-1.41L12 14.17l7.59-7.59L21 8l-9 9z"/></svg>
+      </div>
+      <h3>Consultoria Estratégica</h3>
+      <p>Análise financeira detalhada e orientação para decisões que impactam o futuro do negócio.</p>
+    </div>
+    <div class="card reveal">
+      <div class="card-icon">
+        <svg viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
+      </div>
+      <h3>BPO Financeiro</h3>
+      <p>Terceirização da gestão financeira: contas a pagar, receber e conciliação bancária completa.</p>
+    </div>
+  </div>
+</section>
+
+<section class="values" id="valores">
+  <div class="section-header reveal">
+    <h2>Nossos valores</h2>
+    <p>O que nos move todos os dias.</p>
+  </div>
+  <div class="values-grid">
+    <div class="value-item reveal">
+      <div class="value-number">01</div>
+      <div class="value-content">
+        <h3>Transparência</h3>
+        <p>Comunicação clara e acesso total às informações da sua empresa. Sem surpresas, sem letras miúdas.</p>
+      </div>
+    </div>
+    <div class="value-item reveal">
+      <div class="value-number">02</div>
+      <div class="value-content">
+        <h3>Compromisso</h3>
+        <p>Tratamos cada cliente como único, com dedicação total e responsabilidade em cada entrega.</p>
+      </div>
+    </div>
+    <div class="value-item reveal">
+      <div class="value-number">03</div>
+      <div class="value-content">
+        <h3>Inovação</h3>
+        <p>Tecnologia a serviço da eficiência. Processos otimizados para entregar mais com menos burocracia.</p>
+      </div>
+    </div>
+    <div class="value-item reveal">
+      <div class="value-number">04</div>
+      <div class="value-content">
+        <h3>Parceria</h3>
+        <p>Mais que prestadores de serviço, somos parceiros no crescimento sustentável do seu negócio.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta" id="contato">
+  <h2 class="reveal">Vamos conversar sobre<br>o futuro da sua empresa?</h2>
+  <p class="reveal">Entre em contato e descubra como podemos ajudar seu negócio a crescer com segurança.</p>
+  <a href="#" class="btn-white reveal">Fale com um especialista →</a>
+</section>
+
+<footer>
+  <div class="footer-grid">
+    <div class="footer-brand">
+      <img src="logo.webp" alt="Total Empresarial">
+      <p>Contabilidade com propósito, tecnologia e cuidado humano. Sua empresa merece essa atenção.</p>
+    </div>
+    <div class="footer-links">
+      <h4>Serviços</h4>
+      <ul>
+        <li><a href="#">Contabilidade Fiscal</a></li>
+        <li><a href="#">Departamento Pessoal</a></li>
+        <li><a href="#">Consultoria</a></li>
+        <li><a href="#">BPO Financeiro</a></li>
+      </ul>
+    </div>
+    <div class="footer-links">
+      <h4>Contato</h4>
+      <ul>
+        <li><a href="#">(11) 9999-9999</a></li>
+        <li><a href="#">contato@totalempresarial.com</a></li>
+        <li><a href="#">São Paulo, SP</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    © 2026 Total Empresarial. Todos os direitos reservados. CNPJ: 00.000.000/0001-00
+  </div>
+</footer>
+
+<script>
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+</script>
+</body>
+</html>
