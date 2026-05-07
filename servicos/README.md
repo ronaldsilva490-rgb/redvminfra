@@ -10,6 +10,9 @@ dashboard/              Painel principal da VM unica
 proxy/                  Proxy IA oficial
 redproxypro/            Proxy Vercel AI Gateway com rotacao de keys
 redclaudeproxy/         Ponte Claude para modelos do proxy normal
+rednimclaude/           Gateway direto para NVIDIA NIM (porta 5050)
+redlightningclaude/     Gateway direto para Lightning AI (porta 5051)
+redalibabaclaude/       Gateway direto para Alibaba DashScope (porta 5052)
 msredpdf/               Analise juridica de PDFs com IA
 searxng/                Busca web gratuita para OpenClaude
 proxy-lab/              Laboratorio de benchmark pago
@@ -31,6 +34,9 @@ deploy-agent/           Legado
 - [proxy/README.md](proxy/README.md)
 - [redproxypro/README.md](redproxypro/README.md)
 - [redclaudeproxy/README.md](redclaudeproxy/README.md)
+- [rednimclaude/README.md](rednimclaude/README.md)
+- [redlightningclaude/README.md](redlightningclaude/README.md)
+- [redalibabaclaude/README.md](redalibabaclaude/README.md)
 - [msredpdf/README.md](msredpdf/README.md)
 - [searxng/README.md](searxng/README.md)
 - [proxy-lab/README.md](proxy-lab/README.md)
@@ -51,6 +57,9 @@ deploy-agent/           Legado
 - `proxy-lab/` e laboratorio; nao trate como producao.
 - `redproxypro/` e o proxy dedicado ao Vercel AI Gateway; keys reais vivem em `/etc/redproxypro.env`, nunca no repo.
 - `redclaudeproxy/` e a ponte dedicada do Claude Desktop/Code para os modelos do proxy normal; usa `/etc/redclaudeproxy.env`.
+- `rednimclaude/` e o gateway direto para NVIDIA NIM em porta propria (5050); TLS proprio, auth `red`.
+- `redlightningclaude/` e o gateway direto para Lightning AI em porta propria (5051); TLS proprio, auth `red`.
+- `redalibabaclaude/` e o gateway direto para Alibaba DashScope multi-regiao em porta propria (5052); TLS proprio, auth `red`.
 - `msredpdf/` e o backend de analise juridica de PDF, publicado em `/msredpdf/` e integrado ao proxy IA oficial.
 - `searxng/` e o backend de busca web gratuita usado pelo OpenClaude via provedor custom.
 - `rapidleech/` virou parte oficial da stack e deve ser tratado como runtime publicado por `/rapidleech/`, nao como pasta solta fora do repo.
@@ -65,8 +74,9 @@ deploy-agent/           Legado
 Ativos:
 
 ```text
-dashboard, proxy, redproxypro, redclaudeproxy, searxng, msredpdf, rapidleech,
-redia, redsebia, red-seb-monitor, proxy-lab
+dashboard, proxy, redproxypro, redclaudeproxy, rednimclaude, redlightningclaude,
+redalibabaclaude, searxng, msredpdf, rapidleech, redia, redsebia, red-seb-monitor,
+proxy-lab
 ```
 
 Inativos por decisao operacional:
