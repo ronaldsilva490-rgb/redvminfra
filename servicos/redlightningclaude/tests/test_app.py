@@ -170,6 +170,40 @@ class RedLightningClaudeTests(unittest.TestCase):
         on_429.assert_called_once()
         on_success.assert_called_once()
 
+    def test_server_error_rotates_to_next_key(self):
+        broken = FakeResponse(status_code=502, payload={"error": {"message": "temporary failure"}})
+        ok = FakeResponse(
+            payload={
+                "id": "chatcmpl_4",
+                "choices": [{"finish_reason": "stop", "message": {"content": "OK"}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+            }
+        )
+        calls = []
+        pool_items = [{"token": "key1"}, {"token": "key2"}]
+
+        def fake_acquire():
+            return pool_items[len(calls)]
+
+        def fake_proxy(payload, *, stream, api_key):
+            calls.append(api_key)
+            return broken if api_key == "key1" else ok
+
+        with patch.object(proxy, "proxy_openai_chat", side_effect=fake_proxy), \
+             patch.object(proxy.KEY_POOL, "acquire", side_effect=fake_acquire), \
+             patch.object(proxy.KEY_POOL, "on_5xx", return_value=None) as on_5xx, \
+             patch.object(proxy.KEY_POOL, "on_success", return_value=None) as on_success:
+            response = proxy.proxy_openai_chat_with_context_retry(
+                {"model": "anthropic/claude-sonnet-4-6", "messages": [{"role": "user", "content": "oi"}], "max_tokens": 64},
+                stream=False,
+                context_window=200000,
+                input_tokens=1000,
+            )
+        self.assertIs(response, ok)
+        self.assertEqual(calls, ["key1", "key2"])
+        on_5xx.assert_called_once()
+        on_success.assert_called_once()
+
     def test_context_retry_reduces_max_tokens_after_upstream_400(self):
         too_long = FakeResponse(
             status_code=400,

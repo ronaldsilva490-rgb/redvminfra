@@ -66,6 +66,8 @@ RATE_LIMIT_COOLDOWN_SECONDS = max(1, env_int("REDLIGHTNINGCLAUDE_RATE_LIMIT_COOL
 RATE_LIMIT_COOLDOWN_STEP_SECONDS = max(0, env_int("REDLIGHTNINGCLAUDE_RATE_LIMIT_COOLDOWN_STEP_SECONDS", 4))
 RATE_LIMIT_MAX_COOLDOWN_SECONDS = max(1, env_int("REDLIGHTNINGCLAUDE_RATE_LIMIT_MAX_COOLDOWN_SECONDS", 45))
 MAX_429_RETRIES = max(0, env_int("REDLIGHTNINGCLAUDE_MAX_429_RETRIES", 6))
+SERVER_ERROR_COOLDOWN_SECONDS = max(1, env_int("REDLIGHTNINGCLAUDE_SERVER_ERROR_COOLDOWN_SECONDS", 4))
+MAX_5XX_RETRIES = max(0, env_int("REDLIGHTNINGCLAUDE_MAX_5XX_RETRIES", 4))
 
 http = requests.Session()
 http.headers.update({"Accept": "application/json"})
@@ -150,6 +152,10 @@ class LightningKeyPool:
             penalty = RATE_LIMIT_COOLDOWN_SECONDS + max(0, item["consecutive_429"] - 1) * RATE_LIMIT_COOLDOWN_STEP_SECONDS
             penalty = min(RATE_LIMIT_MAX_COOLDOWN_SECONDS, penalty)
             item["cooldown_until"] = max(item["cooldown_until"], time.monotonic() + penalty)
+
+    def on_5xx(self, item: dict[str, Any]) -> None:
+        with self._lock:
+            item["cooldown_until"] = max(item["cooldown_until"], time.monotonic() + SERVER_ERROR_COOLDOWN_SECONDS)
 
 
 def configured_lightning_keys() -> list[str]:
@@ -545,7 +551,8 @@ def proxy_openai_chat_with_context_retry(
     current_payload = apply_context_guard(payload, input_tokens=input_tokens, context_window=context_window)
     extra_margin = 0
     rate_retries_left = MAX_429_RETRIES
-    for _attempt in range(MAX_CONTEXT_RETRIES + MAX_429_RETRIES + 1):
+    server_retries_left = MAX_5XX_RETRIES
+    for _attempt in range(MAX_CONTEXT_RETRIES + MAX_429_RETRIES + MAX_5XX_RETRIES + 1):
         pool_item = KEY_POOL.acquire()
         if pool_item is None:
             raise RuntimeError("lightning api key not configured")
@@ -562,6 +569,12 @@ def proxy_openai_chat_with_context_retry(
             if rate_retries_left <= 0:
                 return response
             rate_retries_left -= 1
+            continue
+        if response.status_code >= 500:
+            KEY_POOL.on_5xx(pool_item)
+            if server_retries_left <= 0:
+                return response
+            server_retries_left -= 1
             continue
         if not is_context_error(response.status_code, body_text):
             return response
