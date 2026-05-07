@@ -42,8 +42,8 @@ body {
     radial-gradient(ellipse at 50% 50%, rgba(10,0,0,1) 0%, rgba(5,0,0,1) 100%);
   position: relative;
 }
-/* Subtle grid overlay for depth */
-body::before {
+/* Subtle grid overlay for depth — DISABLED for performance testing */
+/* body::before {
   content: '';
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -53,7 +53,7 @@ body::before {
   background-size: 60px 60px;
   pointer-events: none;
   z-index: 0;
-}
+} */
 /* Ambient glow orbs */
 body::after {
   content: '';
