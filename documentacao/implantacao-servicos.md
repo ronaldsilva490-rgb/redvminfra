@@ -342,6 +342,69 @@ curl -sS http://127.0.0.1:8096/healthz
 curl -sS http://127.0.0.1:8096/v1/models -H 'Authorization: Bearer red'
 ```
 
+## 2D. RED Lightning Claude
+
+Servico: `servicos/redlightningclaude`
+
+Responsabilidade:
+
+- expor API Anthropic-compatible para Claude Desktop e Claude Code;
+- falar direto com `https://lightning.ai/api/v1`;
+- publicar apenas modelos que passaram em texto, stream e tool calling;
+- servir TLS direto na porta publica `5051`, sem nginx.
+
+Instalacao:
+
+```bash
+mkdir -p /opt/redlightningclaude /var/lib/redlightningclaude
+rsync -av servicos/redlightningclaude/ /opt/redlightningclaude/
+cd /opt/redlightningclaude
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
+```
+
+Ambiente em `/etc/redlightningclaude.env`:
+
+```env
+REDLIGHTNINGCLAUDE_HOST=0.0.0.0
+REDLIGHTNINGCLAUDE_PORT=5051
+REDLIGHTNINGCLAUDE_BASE_URL=https://lightning.ai/api/v1
+REDLIGHTNINGCLAUDE_API_KEY=
+LIGHTNING_API_KEY=
+REDLIGHTNINGCLAUDE_REQUIRE_AUTH=1
+REDLIGHTNINGCLAUDE_AUTH_TOKENS=red
+REDLIGHTNINGCLAUDE_DEFAULT_MODEL=anthropic/claude-sonnet-4-6
+REDLIGHTNINGCLAUDE_TLS_CERT=/etc/letsencrypt/live/redsystems.ddns.net/fullchain.pem
+REDLIGHTNINGCLAUDE_TLS_KEY=/etc/letsencrypt/live/redsystems.ddns.net/privkey.pem
+```
+
+Firewall:
+
+```bash
+ufw allow 5051/tcp
+```
+
+Systemd:
+
+```bash
+cp infraestrutura/systemd/redlightningclaude.service /etc/systemd/system/redlightningclaude.service
+systemctl daemon-reload
+systemctl enable --now redlightningclaude
+systemctl status redlightningclaude --no-pager
+```
+
+Health checks:
+
+```bash
+curl -sk https://127.0.0.1:5051/healthz
+curl -sk https://127.0.0.1:5051/v1/models -H 'Authorization: Bearer red' | python3 -m json.tool
+curl -sk https://127.0.0.1:5051/v1/messages \
+  -H 'Authorization: Bearer red' \
+  -H 'Anthropic-Version: 2023-06-01' \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"anthropic/claude-sonnet-4-6","max_tokens":32,"messages":[{"role":"user","content":"responda OK"}]}'
+```
+
 ## 2C. RED Search / SearXNG
 
 Servico: `servicos/searxng`

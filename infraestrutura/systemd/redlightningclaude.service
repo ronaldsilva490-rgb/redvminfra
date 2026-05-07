@@ -1,0 +1,21 @@
+[Unit]
+Description=RED Lightning Claude Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/redlightningclaude
+Environment=REDLIGHTNINGCLAUDE_HOST=0.0.0.0
+Environment=REDLIGHTNINGCLAUDE_PORT=5051
+EnvironmentFile=-/etc/redlightningclaude.env
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/opt/redlightningclaude/.venv/bin/python /opt/redlightningclaude/app.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/redlightningclaude.log
+StandardError=append:/var/log/redlightningclaude.log
+
+[Install]
+WantedBy=multi-user.target
