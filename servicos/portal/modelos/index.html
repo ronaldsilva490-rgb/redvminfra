@@ -278,6 +278,41 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
 @media (min-width: 760px) { .grid { grid-template-columns: 1fr 1fr; } }
 @media (min-width: 1180px) { .grid { grid-template-columns: 1fr 1fr 1fr 1fr; } }
+
+/* Pagination controls */
+.pagination {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin-top: 40px; padding: 16px 0;
+}
+.page-btn {
+  width: 40px; height: 40px; border-radius: 10px;
+  font-size: 14px; font-weight: 600; color: var(--text-dim);
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex; align-items: center; justify-content: center;
+}
+.page-btn:hover {
+  color: var(--text-strong);
+  border-color: var(--accent-strong);
+  background: rgba(255,51,34,0.1);
+}
+.page-btn.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  border-color: var(--accent-strong);
+  box-shadow: 0 4px 16px rgba(255,51,34,0.4);
+}
+.page-btn.nav-arrow {
+  width: auto; padding: 0 16px;
+  font-size: 13px;
+}
+.page-info {
+  font-size: 12px; color: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+  margin: 0 8px;
+}
 </style>
 </head>
 <body>
@@ -827,6 +862,13 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
   </div>
 
+  <!-- Pagination controls (only visible when category is "all") -->
+  <div class="pagination" id="pagination" style="display: none;">
+    <button class="page-btn nav-arrow" id="prevBtn" onclick="changePage(-1)">&#8592; Anterior</button>
+    <div id="pageNumbers"></div>
+    <button class="page-btn nav-arrow" id="nextBtn" onclick="changePage(1)">Próximo &#8594;</button>
+  </div>
+
   <footer>
     <p>Logo, contatos e informações herdados de cada nicho. · Imagens via Unsplash. · Novos nichos serão adicionados conforme demanda.</p>
     <p class="visit-counter" id="visitCounter">--</p>
@@ -834,17 +876,100 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 </div>
 
 <script>
-// Category filter
-document.querySelectorAll('.cat-tab').forEach(btn => {
-  btn.onclick = () => {
-    document.querySelectorAll('.cat-tab').forEach(x => x.classList.remove('active'));
-    btn.classList.add('active');
-    const cat = btn.dataset.cat;
-    document.querySelectorAll('.card').forEach(card => {
-      card.style.display = (cat === 'all' || card.dataset.category === cat) ? '' : 'none';
+// Pagination state
+var ITEMS_PER_PAGE = 4;
+var currentPage = 1;
+var currentCategory = 'all';
+
+function getVisibleCards() {
+  var cards = [];
+  document.querySelectorAll('.card').forEach(function(card) {
+    if (currentCategory === 'all' || card.dataset.category === currentCategory) {
+      cards.push(card);
+    }
+  });
+  return cards;
+}
+
+function updatePagination() {
+  var allCards = document.querySelectorAll('.card');
+  var pagination = document.getElementById('pagination');
+
+  // Only show pagination when category is "all" and there are more than 4 items
+  if (currentCategory === 'all' && allCards.length > ITEMS_PER_PAGE) {
+    pagination.style.display = 'flex';
+  } else {
+    pagination.style.display = 'none';
+    // Show all cards when not paginating
+    allCards.forEach(function(card) {
+      card.style.display = '';
     });
+    return;
+  }
+
+  var totalPages = Math.ceil(allCards.length / ITEMS_PER_PAGE);
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+
+  // Hide all cards first
+  allCards.forEach(function(card) {
+    card.style.display = 'none';
+  });
+
+  // Show only cards for current page
+  var start = (currentPage - 1) * ITEMS_PER_PAGE;
+  var end = start + ITEMS_PER_PAGE;
+  for (var i = start; i < end && i < allCards.length; i++) {
+    allCards[i].style.display = '';
+  }
+
+  // Update page number buttons
+  var pageNumbers = document.getElementById('pageNumbers');
+  pageNumbers.innerHTML = '';
+  for (var p = 1; p <= totalPages; p++) {
+    var btn = document.createElement('button');
+    btn.className = 'page-btn' + (p === currentPage ? ' active' : '');
+    btn.textContent = p;
+    btn.onclick = (function(page) {
+      return function() { goToPage(page); };
+    })(p);
+    pageNumbers.appendChild(btn);
+  }
+
+  // Update prev/next buttons
+  document.getElementById('prevBtn').style.visibility = currentPage === 1 ? 'hidden' : 'visible';
+  document.getElementById('nextBtn').style.visibility = currentPage === totalPages ? 'hidden' : 'visible';
+}
+
+function goToPage(page) {
+  currentPage = page;
+  updatePagination();
+  // Scroll to top of grid
+  document.querySelector('.grid').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function changePage(delta) {
+  var allCards = document.querySelectorAll('.card');
+  var totalPages = Math.ceil(allCards.length / ITEMS_PER_PAGE);
+  var newPage = currentPage + delta;
+  if (newPage >= 1 && newPage <= totalPages) {
+    goToPage(newPage);
+  }
+}
+
+// Category filter with pagination
+document.querySelectorAll('.cat-tab').forEach(function(btn) {
+  btn.onclick = function() {
+    document.querySelectorAll('.cat-tab').forEach(function(x) { x.classList.remove('active'); });
+    btn.classList.add('active');
+    currentCategory = btn.dataset.cat;
+    currentPage = 1;
+    updatePagination();
   };
 });
+
+// Initialize pagination on load
+updatePagination();
 
 // Discreet visit counter using server-side API
 (function() {
