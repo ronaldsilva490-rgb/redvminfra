@@ -8,28 +8,31 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&display=swap');
+
 :root {
-  --bg: #0a0a0f;
-  --bg-2: #15151f;
-  --paper: #1c1c28;
-  --line: #2a2a38;
-  --line-strong: #3a3a4a;
-  --text: #d4d4dd;
-  --text-dim: #7a7a8a;
+  --bg: #1a0202;
+  --bg-2: #240303;
+  --paper: #3b0505;
+  --line: rgba(232, 68, 44, 0.18);
+  --line-strong: rgba(232, 68, 44, 0.34);
+  --text: #fff3f1;
+  --text-dim: #d9b7b3;
   --text-strong: #ffffff;
-  --accent: #6366f1;
+  --accent: #db2315;
+  --accent-strong: #ee4d31;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
   padding: 32px 16px 64px;
   -webkit-font-smoothing: antialiased;
   background-image:
-    radial-gradient(circle at 20% 0%, rgba(99,102,241,0.12), transparent 50%),
-    radial-gradient(circle at 80% 100%, rgba(255,77,141,0.08), transparent 50%);
+    radial-gradient(circle at 20% 0%, rgba(219,35,21,0.15), transparent 50%),
+    radial-gradient(circle at 80% 100%, rgba(238,77,49,0.10), transparent 50%);
 }
 .wrap { max-width: 1400px; margin: 0 auto; }
 
@@ -48,8 +51,9 @@ header p { color: var(--text-dim); font-size: 16px; max-width: 600px; }
 
 .tabs {
   display: inline-flex; align-items: center; gap: 4px;
-  background: var(--paper); border: 1px solid var(--line); border-radius: 12px;
+  background: var(--paper); border: 1px solid var(--line-strong); border-radius: 12px;
   padding: 4px; margin: 8px 0 32px;
+  box-shadow: 0 8px 32px rgba(219,35,21,0.15);
 }
 .tab {
   padding: 8px 18px; border-radius: 8px;
@@ -58,8 +62,8 @@ header p { color: var(--text-dim); font-size: 16px; max-width: 600px; }
   display: flex; align-items: center; gap: 6px;
   transition: 0.2s;
 }
-.tab.active { background: var(--accent); color: #fff; }
-.tab:not(.active):hover { color: var(--text-strong); }
+.tab.active { background: var(--accent); color: #fff; box-shadow: 0 4px 16px rgba(219,35,21,0.4); }
+.tab:not(.active):hover { color: var(--text-strong); background: rgba(232,68,44,0.08); }
 
 .grid { display: grid; grid-template-columns: 1fr; gap: 24px; }
 
@@ -73,8 +77,8 @@ header p { color: var(--text-dim); font-size: 16px; max-width: 600px; }
 }
 .card:hover {
   transform: translateY(-4px);
-  border-color: var(--accent);
-  box-shadow: 0 24px 48px rgba(0,0,0,0.4);
+  border-color: var(--accent-strong);
+  box-shadow: 0 24px 48px rgba(219,35,21,0.25);
 }
 
 .preview-mobile, .preview-desktop {
@@ -159,15 +163,15 @@ body.view-mobile .preview-mobile { display: flex; align-items: flex-start; justi
 }
 .btn-primary {
   background: var(--accent); color: #fff;
-  box-shadow: 0 4px 16px rgba(99,102,241,0.4);
+  box-shadow: 0 4px 16px rgba(219,35,21,0.4);
 }
-.btn-primary:hover { background: #4f46e5; transform: translateY(-1px); }
+.btn-primary:hover { background: var(--accent-strong); transform: translateY(-1px); }
 
 footer {
   text-align: center; margin-top: 64px; color: var(--text-dim); font-size: 13px;
-  border-top: 1px solid var(--line); padding-top: 32px;
+  border-top: 1px solid var(--line-strong); padding-top: 32px;
 }
-footer a { color: var(--accent); text-decoration: none; }
+footer a { color: var(--accent-strong); text-decoration: none; }
 
 @media (min-width: 760px) { .grid { grid-template-columns: 1fr 1fr; } }
 @media (min-width: 1180px) { .grid { grid-template-columns: 1fr 1fr 1fr 1fr; } }
@@ -176,6 +180,7 @@ footer a { color: var(--accent); text-decoration: none; }
 <body class="view-mobile">
 <div class="wrap">
   <header>
+    <img src="assets/logo.webp" alt="RED Systems" style="height: 48px; margin-bottom: 8px;">
     <span class="kicker">// 8 modelos · escolha 1 (ou misture)</span>
     <h1>Total Empresarial · novos conceitos</h1>
     <p>Cada modelo herda o logo real, menu, contatos, endereço e CNPJ do site. Tudo mobile-first com layout responsivo. Os ícones são placeholders e podem virar SVGs próprios depois.</p>
