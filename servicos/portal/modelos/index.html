@@ -115,34 +115,6 @@ header p { color: var(--text-dim); font-size: 16px; max-width: 600px; }
   transform: scale(1.05);
 }
 
-/* Preview toggle tabs - glassmorphism */
-.tabs {
-  display: inline-flex; align-items: center; gap: 4px;
-  background: var(--glass);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--glass-border);
-  border-radius: 14px;
-  padding: 4px; margin: 12px 0 16px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
-}
-.tab {
-  padding: 10px 20px; border-radius: 10px;
-  font-size: 13px; font-weight: 600; color: var(--text-dim);
-  background: transparent; border: 0; cursor: pointer;
-  display: flex; align-items: center; gap: 6px;
-  transition: all 0.25s;
-}
-.tab.active {
-  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-  color: #fff;
-  box-shadow: 0 4px 20px rgba(255,51,34,0.5), 0 0 10px rgba(255,51,34,0.3);
-}
-.tab:not(.active):hover {
-  color: var(--text-strong);
-  background: rgba(255,51,34,0.1);
-}
-
 /* Category filter tabs - glass pills */
 .category-tabs {
   display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -205,53 +177,50 @@ header p { color: var(--text-dim); font-size: 16px; max-width: 600px; }
 }
 .card:hover::before { opacity: 1; }
 
-.preview-mobile, .preview-desktop {
-  position: relative; overflow: hidden;
-  background: #000;
-  display: none;
-}
-body.view-desktop .preview-desktop { display: block; }
-body.view-mobile .preview-mobile { display: flex; align-items: flex-start; justify-content: center; }
-
-.preview-desktop {
+/* Static preview - no iframes for performance */
+.preview-static {
+  position: relative;
   aspect-ratio: 16 / 10;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s;
 }
-.preview-desktop iframe {
-  width: 1400px; height: 875px;
-  border: 0;
-  transform: scale(0.39);
-  transform-origin: 0 0;
-  pointer-events: none;
+.preview-static:hover {
+  filter: brightness(1.1);
 }
-
-.preview-mobile {
-  height: 580px;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(255,51,34,0.08), transparent 50%),
-    var(--bg-2);
-  padding: 24px 0;
+.preview-static .preview-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(0,0,0,0.3);
+  opacity: 0;
+  transition: opacity 0.3s;
 }
-.phone {
-  width: 240px; height: 520px;
-  border-radius: 32px;
-  background: #0a0a0f;
-  border: 8px solid #1a1a22;
-  box-shadow:
-    0 20px 50px rgba(0,0,0,0.5),
-    inset 0 0 0 2px #2a2a32,
-    0 0 20px rgba(255,51,34,0.1);
-  position: relative; overflow: hidden;
+.card:hover .preview-overlay {
+  opacity: 1;
 }
-.phone::before {
-  content: ''; position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
-  width: 80px; height: 18px; background: #0a0a0f; border-radius: 0 0 12px 12px; z-index: 2;
+.preview-overlay .play-icon {
+  width: 48px; height: 48px;
+  background: rgba(255,51,34,0.9);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 20px rgba(255,51,34,0.5);
 }
-.phone iframe {
-  width: 375px; height: 750px;
-  border: 0;
-  transform: scale(0.6);
-  transform-origin: 0 0;
-  pointer-events: none;
+.preview-overlay .play-icon svg {
+  width: 20px; height: 20px;
+  fill: white;
+  margin-left: 3px;
+}
+.preview-overlay span {
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .body { padding: 24px; flex: 1; display: flex; flex-direction: column; gap: 14px; }
@@ -336,7 +305,7 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 @media (min-width: 1180px) { .grid { grid-template-columns: 1fr 1fr 1fr 1fr; } }
 </style>
 </head>
-<body class="view-mobile">
+<body>
 <div class="wrap">
   <header>
     <div class="logo-container" style="display: flex; align-items: center; justify-content: center; gap: 24px; margin-bottom: 8px;">
@@ -346,10 +315,6 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
     <span class="kicker">// Galeria de modelos por nicho</span>
     <h1>Modelos · escolha seu nicho</h1>
     <p>Navegue por categoria: Empresarial, Clínicas Médicas e mais. Cada modelo é responsivo, mobile-first e pronto para personalização.</p>
-    <div class="tabs">
-      <button class="tab active" data-view="mobile">📱 Mobile (375px)</button>
-      <button class="tab" data-view="desktop">🖥 Desktop (1400px)</button>
-    </div>
     <div class="category-tabs">
       <button class="cat-tab active" data-cat="all">Todos</button>
       <button class="cat-tab" data-cat="empresarial">Empresarial</button>
@@ -363,8 +328,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M1 EDITORIAL -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-1-editorial.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-1-editorial.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-1-editorial.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #faf7f2, #d64545);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">01 / EDITORIAL</span>
@@ -388,8 +357,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M2 ESMERALDA -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-2-esmeralda.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-2-esmeralda.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-2-esmeralda.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #f5f7f4, #047857);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">02 / ESMERALDA</span>
@@ -413,8 +386,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M3 BRUTALIST -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-3-brutalist.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-3-brutalist.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-3-brutalist.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #f5f0e6, #fcd535);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">03 / BRUTALIST</span>
@@ -438,8 +415,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M4 SWISS -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-4-swiss.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-4-swiss.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-4-swiss.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #fafafa, #e63946);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">04 / SWISS</span>
@@ -463,8 +444,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M5 PASTEL -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-5-pastel.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-5-pastel.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-5-pastel.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #fef9f3, #c4b5fd);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">05 / PASTEL</span>
@@ -488,8 +473,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M6 GLASS -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-6-glass.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-6-glass.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-6-glass.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #0a0e17, #6366f1);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">06 / GLASS</span>
@@ -513,8 +502,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M7 RETRO -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-7-retro.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-7-retro.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-7-retro.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #f4ede4, #c25e3e);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">07 / RETRO</span>
@@ -538,8 +531,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M8 LUXURY -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-8-luxury.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-8-luxury.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-8-luxury.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #0a0a0a, #c9a961);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">08 / LUXURY</span>
@@ -563,8 +560,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M9 TECH -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-9-tech.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-9-tech.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-9-tech.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #0f172a, #3b82f6);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">09 / TECH</span>
@@ -588,8 +589,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M10 MINIMAL -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-10-minimal.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-10-minimal.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-10-minimal.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #ffffff, #1a1a1a);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">10 / MINIMAL</span>
@@ -613,8 +618,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M11 NEUMORPHISM -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-11-neumorphism.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-11-neumorphism.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-11-neumorphism.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #e8ecf1, #6c5ce7);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">11 / NEUMORPHISM</span>
@@ -638,8 +647,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M12 CYBERPUNK -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-12-cyberpunk.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-12-cyberpunk.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-12-cyberpunk.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #0a0a0f, #ff006e);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">12 / CYBERPUNK</span>
@@ -663,8 +676,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M13 BAUHAUS -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-13-bauhaus.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-13-bauhaus.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-13-bauhaus.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #f5f3ef, #e63946);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">13 / BAUHAUS</span>
@@ -688,8 +705,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M14 ORGANIC -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-14-organic.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-14-organic.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-14-organic.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #faf8f5, #6b7c5c);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">14 / ORGANIC</span>
@@ -713,8 +734,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M15 AURORA -->
     <div class="card" data-category="empresarial">
-      <div class="preview-desktop"><iframe src="empresarial/modelo-15-aurora.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-15-aurora.html" scrolling="no"></iframe></div></div>
+      <a href="empresarial/modelo-15-aurora.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #07070d, #6f5fff);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">15 / AURORA</span>
@@ -740,8 +765,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- C1 VIDA SAUDE -->
     <div class="card" data-category="clinicas">
-      <div class="preview-desktop"><iframe src="clinicas/modelo-clinica-01-vsaude/index.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="clinicas/modelo-clinica-01-vsaude/index.html" scrolling="no"></iframe></div></div>
+      <a href="clinicas/modelo-clinica-01-vsaude/index.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #ffffff, #10b981);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">01 / VIDA SAÚDE</span>
@@ -765,8 +794,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- C2 MEDCARE -->
     <div class="card" data-category="clinicas">
-      <div class="preview-desktop"><iframe src="clinicas/modelo-clinica-02-medcare/index.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="clinicas/modelo-clinica-02-medcare/index.html" scrolling="no"></iframe></div></div>
+      <a href="clinicas/modelo-clinica-02-medcare/index.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #ffffff, #1e40af);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">02 / MEDCARE</span>
@@ -790,8 +823,12 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- C3 ELITE MEDICAL -->
     <div class="card" data-category="clinicas">
-      <div class="preview-desktop"><iframe src="clinicas/modelo-clinica-03-elite/index.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="clinicas/modelo-clinica-03-elite/index.html" scrolling="no"></iframe></div></div>
+      <a href="clinicas/modelo-clinica-03-elite/index.html" target="_blank" class="preview-static" style="background: linear-gradient(135deg, #fafaf9, #78716c);">
+        <div class="preview-overlay">
+          <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+          <span>Ver modelo</span>
+        </div>
+      </a>
       <div class="body">
         <div class="tag-row">
           <span class="tag">03 / ELITE MEDICAL</span>
@@ -822,15 +859,6 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 </div>
 
 <script>
-// Preview toggle (mobile/desktop)
-document.querySelectorAll('.tab').forEach(t => {
-  t.onclick = () => {
-    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-    t.classList.add('active');
-    document.body.className = 'view-' + t.dataset.view;
-  };
-});
-
 // Category filter
 document.querySelectorAll('.cat-tab').forEach(btn => {
   btn.onclick = () => {
