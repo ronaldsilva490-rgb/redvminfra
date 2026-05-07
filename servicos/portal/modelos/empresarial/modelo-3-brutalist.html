@@ -25,7 +25,7 @@
   --shadow-sm: 3px 3px 0 var(--ink);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth;  overflow-x: hidden;}
 body {
   font-family: 'Archivo', sans-serif;
   background: var(--bg);
@@ -535,6 +535,9 @@ footer {
   .services-grid { grid-template-columns: repeat(4, 1fr); }
   .about-grid { display: grid; grid-template-columns: 1fr 1.3fr; gap: 64px; align-items: center; }
 }
+
+/* Mobile overflow protection */
+.page-wrapper { overflow-x: hidden; max-width: 100vw; }
 </style>
 </head>
 <body>
@@ -626,7 +629,7 @@ footer {
 </section>
 
 <section id="servicos">
-  <div class="wrap">
+  <div class="page-wrapper"><div class="wrap">
     <div class="reveal">
       <div class="section-tag">[ Serviços ]</div>
       <h2>O que <em>fazemos</em><br>de melhor.</h2>
@@ -689,7 +692,7 @@ footer {
 </section>
 
 <section class="stats">
-  <div class="wrap">
+  <div class="page-wrapper"><div class="wrap">
     <div class="reveal" style="margin-bottom:32px;">
       <div class="section-tag">[ Em números ]</div>
       <h2>Quem confia<br>em <em>nós</em>.</h2>
@@ -704,7 +707,7 @@ footer {
 </section>
 
 <section id="contato">
-  <div class="wrap">
+  <div class="page-wrapper"><div class="wrap">
     <div class="cta reveal">
       <div class="cta-inner">
         <div class="section-tag">[ Vamos lá ]</div>
@@ -720,7 +723,7 @@ footer {
 </section>
 
 <footer>
-  <div class="wrap">
+  <div class="page-wrapper"><div class="wrap">
     <div class="foot-top">
       <div class="foot-block">
         <div class="foot-brand"><img src="assets/logo.webp" alt="Total Empresarial"></div>
@@ -783,5 +786,5 @@ document.querySelectorAll('.reveal').forEach(el => io.observe(el));
 const t = document.querySelector('.ticker');
 t.innerHTML = t.innerHTML + t.innerHTML;
 </script>
-</body>
+</div></body>
 </html>

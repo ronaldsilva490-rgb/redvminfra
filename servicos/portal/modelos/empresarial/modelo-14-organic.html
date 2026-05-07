@@ -21,6 +21,7 @@
   --white: #ffffff;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
+html { overflow-x: hidden; }
 body {
   font-family: 'Nunito', sans-serif;
   background: var(--bg);
@@ -415,9 +416,12 @@ footer {
   .values { padding: 100px 48px; }
   .cta { padding: 100px 48px; }
 }
+
+/* Mobile overflow protection */
+.page-wrapper { overflow-x: hidden; max-width: 100vw; }
 </style>
 </head>
-<body>
+<body><div class="page-wrapper">
 
 <!-- Organic blob backgrounds -->
 <div class="blob blob-1"></div>
@@ -573,5 +577,5 @@ const observer = new IntersectionObserver((entries) => {
 
 document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 </script>
-</body>
+</div></body>
 </html>
