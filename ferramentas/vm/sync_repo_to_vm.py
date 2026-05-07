@@ -58,11 +58,19 @@ def main():
         if out:
             print(out)
 
-    # Copy from repo to web directory (overwrite, removing old files)
+    # Copy from repo to web directory (full sync including assets)
     stdin, stdout, stderr = ssh.exec_command(
+        # Remove old HTML files
         "rm -f /var/www/modelos/empresarial/*.html && "
+        # Copy empresarial models
         "cp /opt/redvm-repo/servicos/portal/modelos/empresarial/*.html /var/www/modelos/empresarial/ && "
-        "cp /opt/redvm-repo/servicos/portal/modelos/index.html /var/www/modelos/index.html"
+        # Copy index.html
+        "cp /opt/redvm-repo/servicos/portal/modelos/index.html /var/www/modelos/index.html && "
+        # Sync entire assets directory (including thumbnails)
+        "mkdir -p /var/www/modelos/assets/thumbnails && "
+        "cp -r /opt/redvm-repo/servicos/portal/modelos/assets/* /var/www/modelos/assets/ && "
+        # Sync clinicas directory
+        "cp -r /opt/redvm-repo/servicos/portal/modelos/clinicas /var/www/modelos/"
     )
     exit_code = stdout.channel.recv_exit_status()
     err = stderr.read().decode()
