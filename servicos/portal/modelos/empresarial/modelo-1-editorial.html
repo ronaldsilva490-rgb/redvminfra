@@ -3,494 +3,228 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Modelo 2 · Editorial · Total Empresarial</title>
+<title>Total Empresarial – Abra sua empresa Grátis!</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800;9..144,900&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg: #faf7f2;
-  --bg-2: #f0ebe1;
-  --paper: #ffffff;
   --ink: #14110f;
-  --ink-2: #4a423a;
-  --ink-3: #847865;
-  --line: #e6dfd1;
-  --accent: #d64545;       /* terracotta */
-  --accent-2: #1a3d3d;     /* deep teal */
-  --accent-3: #d4a843;     /* mustard */
-  --hl: #fef3c7;           /* highlight */
+  --ink-2: #3a3530;
+  --accent: #d64545;
+  --accent-2: #1a3d3d;
+  --accent-3: #d4a843;
+  --line: rgba(20,17,15,0.1);
 }
-* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html { scroll-behavior: smooth;  overflow-x: hidden;}
-body {
-  font-family: 'DM Sans', sans-serif;
-  background: var(--bg);
-  color: var(--ink-2);
-  line-height: 1.6; font-size: 16px;
-  -webkit-font-smoothing: antialiased;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { overflow-x: hidden; scroll-behavior: smooth; }
+body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--ink); line-height: 1.6; overflow-x: hidden; }
 img { max-width: 100%; display: block; }
-a { color: inherit; text-decoration: none; }
-button { font: inherit; border: 0; background: 0; cursor: pointer; color: inherit; }
-
 .wrap { width: 100%; max-width: 1280px; margin: 0 auto; padding: 0 20px; }
 
-/* Subtle grain */
-body::before {
-  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/></svg>");
-  opacity: 0.04;
-}
-
 /* Header */
-.top-bar {
-  background: var(--ink); color: var(--bg);
-  font-size: 13px; padding: 10px 0;
-  text-align: center;
-}
-.top-bar strong { color: var(--accent-3); }
-.top-bar a { color: var(--bg); text-decoration: underline; }
-
-header {
-  background: var(--bg);
-  border-bottom: 1px solid var(--line);
-  position: sticky; top: 0; z-index: 50;
-}
-.nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 0; }
-.brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.brand img { height: 84px; width: auto; filter: invert(1); }
-.nav-desktop, .nav-cta-desktop { display: none; }
-.burger { width: 44px; height: 44px; border-radius: 999px; border: 1.5px solid var(--ink);
-  display: flex; align-items: center; justify-content: center; }
-.burger span {
-  width: 18px; height: 2px; background: var(--ink); position: relative;
-}
-.burger span::before, .burger span::after {
-  content: ''; position: absolute; left: 0; width: 100%; height: 2px; background: var(--ink);
-}
-.burger span::before { top: -6px; }
-.burger span::after { top: 6px; }
-
-/* Mobile menu */
-.menu-mobile {
-  position: fixed; inset: 0; z-index: 100;
-  background: var(--bg); padding: 80px 24px 32px;
-  transform: translateX(100%); transition: transform 0.4s cubic-bezier(.4,0,.2,1);
-  display: flex; flex-direction: column;
-}
-.menu-mobile.open { transform: translateX(0); }
-.menu-mobile .close {
-  position: absolute; top: 18px; right: 18px;
-  width: 44px; height: 44px; border: 1.5px solid var(--ink); border-radius: 999px;
-  font-size: 20px;
-}
-.menu-mobile ul { list-style: none; flex: 1; }
-.menu-mobile li {
-  border-bottom: 1px solid var(--line);
-}
-.menu-mobile li a {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 24px 0;
-  font-family: 'Fraunces', serif;
-  font-size: 32px; font-weight: 600;
-  color: var(--ink); letter-spacing: -1px;
-}
-.menu-mobile li a::after { content: '→'; opacity: 0.3; transition: 0.2s; }
-.menu-mobile li a:hover::after, .menu-mobile li a:active::after { transform: translateX(8px); opacity: 1; }
-.menu-mobile .actions { padding-top: 24px; display: flex; flex-direction: column; gap: 12px; }
-
-/* Buttons */
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 14px 24px; border-radius: 999px;
-  font-family: 'DM Sans', sans-serif;
-  font-weight: 600; font-size: 15px;
-  border: 1.5px solid transparent;
-  transition: transform 0.2s, background 0.2s, border-color 0.2s, color 0.2s;
-  white-space: nowrap;
-}
-.btn:active { transform: scale(0.97); }
-.btn-primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
-.btn-primary:hover { background: var(--accent); border-color: var(--accent); }
-.btn-outline { background: transparent; color: var(--ink); border-color: var(--ink); }
+header { position: sticky; top: 0; z-index: 100; background: rgba(250,247,242,0.95); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; }
+.brand img { height: 76px; width: auto; }
+.nav-links { display: none; gap: 24px; list-style: none; }
+.nav-links a { text-decoration: none; color: var(--ink-2); font-weight: 500; font-size: 15px; transition: color 0.2s; }
+.nav-links a:hover { color: var(--accent); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 24px; border-radius: 8px; font-weight: 600; font-size: 14px; text-decoration: none; transition: all 0.25s; cursor: pointer; border: none; }
+.btn-primary { background: var(--accent); color: white; }
+.btn-primary:hover { background: #c03a3a; transform: translateY(-2px); }
+.btn-outline { border: 2px solid var(--ink); color: var(--ink); background: transparent; }
 .btn-outline:hover { background: var(--ink); color: var(--bg); }
-.btn-wa { background: #25d366; color: #fff; border-color: #25d366; }
+.btn-sm { padding: 8px 16px; font-size: 13px; }
+.hamburger { display: flex; flex-direction: column; gap: 4px; background: none; border: none; cursor: pointer; padding: 8px; }
+.hamburger span { width: 24px; height: 2px; background: var(--ink); transition: 0.3s; }
 
 /* Hero */
-.hero { padding: 32px 0 64px; }
-.hero-eyebrow {
-  display: flex; align-items: center; gap: 12px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 13px; font-weight: 600;
-  color: var(--ink-3); text-transform: uppercase; letter-spacing: 2px;
-  margin-bottom: 24px;
-}
-.hero-eyebrow::before {
-  content: ''; width: 32px; height: 1.5px; background: var(--ink);
-}
+.hero { padding: 80px 0 64px; position: relative; overflow: hidden; }
+.hero-grid { display: grid; gap: 48px; align-items: center; }
+.hero-tag { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 99px; background: rgba(214,69,69,0.1); color: var(--accent); font-size: 13px; font-weight: 600; margin-bottom: 24px; }
+.hero h1 { font-family: 'Fraunces', serif; font-size: clamp(36px, 6vw, 56px); line-height: 1.1; letter-spacing: -1.5px; margin-bottom: 24px; }
+.hero h1 em { color: var(--accent); font-style: italic; }
+.hero p { font-size: 18px; color: var(--ink-2); max-width: 540px; margin-bottom: 32px; }
+.hero-cta { display: flex; flex-direction: column; gap: 12px; }
+.hero-image { position: relative; aspect-ratio: 1.2 / 1; max-width: 500px; margin: 0 auto; }
+.hero-image img { width: 100%; height: 100%; object-fit: cover; border-radius: 24px; }
+.hero-trust { display: flex; gap: 24px; margin-top: 32px; font-size: 14px; color: var(--ink-2); }
 
-h1.hero-title {
-  font-family: 'Fraunces', serif;
-  font-weight: 800;
-  font-size: clamp(48px, 13vw, 140px);
-  line-height: 0.95;
-  letter-spacing: -0.04em;
-  color: var(--ink);
-  margin-bottom: 28px;
-  font-variation-settings: 'opsz' 144;
-}
-h1.hero-title em {
-  font-style: italic; color: var(--accent);
-  font-weight: 400;
-  font-variation-settings: 'opsz' 144;
-}
-h1.hero-title .underline {
-  background: linear-gradient(180deg, transparent 65%, var(--hl) 65%, var(--hl) 95%, transparent 95%);
-  display: inline;
-}
+/* Sections */
+section { padding: 80px 0; }
+.section-head { text-align: center; margin-bottom: 48px; }
+.section-tag { display: inline-block; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 2px; color: var(--accent); margin-bottom: 12px; }
+h2 { font-family: 'Fraunces', serif; font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.5px; margin-bottom: 16px; }
+h2 em { color: var(--accent); font-style: italic; }
+.section-head p { color: var(--ink-2); font-size: 17px; max-width: 540px; margin: 0 auto; }
 
-.hero-lead {
-  font-size: clamp(16px, 4.5vw, 22px);
-  line-height: 1.5;
-  color: var(--ink-2);
-  max-width: 540px;
-  margin-bottom: 32px;
-  font-weight: 400;
-}
-.hero-lead strong { color: var(--ink); }
+/* Services */
+.services { display: grid; gap: 24px; }
+.service { background: white; border: 1px solid var(--line); border-radius: 16px; padding: 32px 28px; transition: all 0.3s; }
+.service:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,0.08); border-color: var(--accent); }
+.service-num { font-family: 'Fraunces', serif; font-size: 48px; font-weight: 700; color: rgba(214,69,69,0.15); margin-bottom: 16px; }
+.service-body h3 { font-family: 'Fraunces', serif; font-size: 22px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; }
+.ic-circle { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: white; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; }
+.service-body p { color: var(--ink-2); font-size: 15px; margin-bottom: 16px; }
+.service-link { color: var(--accent); font-weight: 600; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+.service-link:hover { gap: 8px; }
 
-.hero-cta { display: flex; flex-direction: column; gap: 12px; margin-bottom: 48px; }
-.hero-cta .btn { width: 100%; }
-
-.hero-image {
-  position: relative;
-  border-radius: 24px; overflow: hidden;
-  aspect-ratio: 1.2 / 1;
-  margin-bottom: 24px;
-  box-shadow: 0 30px 60px rgba(20,17,15,0.15);
-}
-.hero-image img { width: 100%; height: 100%; object-fit: cover; }
-.hero-image::after {
-  content: ''; position: absolute; inset: 0;
-  background: linear-gradient(135deg, transparent 50%, rgba(214,69,69,0.15));
-}
-.hero-tag {
-  position: absolute; bottom: 16px; left: 16px;
-  background: var(--paper);
-  padding: 14px 18px; border-radius: 16px;
-  display: flex; align-items: center; gap: 12px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
-  max-width: calc(100% - 32px);
-}
-.hero-tag .ic {
-  width: 40px; height: 40px; border-radius: 12px;
-  background: var(--accent-2); color: var(--bg);
-  display: flex; align-items: center; justify-content: center; font-size: 20px;
-  flex-shrink: 0;
-}
-.hero-tag .small { font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
-.hero-tag strong { color: var(--ink); font-size: 15px; line-height: 1.3; display: block; }
-
-.hero-meta {
-  display: flex; flex-wrap: wrap; gap: 16px 32px;
-  padding-top: 32px; border-top: 1px solid var(--line);
-  font-size: 14px; color: var(--ink-3);
-}
-.hero-meta div { display: flex; align-items: center; gap: 8px; }
-.hero-meta strong { color: var(--ink); font-family: 'Fraunces', serif; font-size: 18px; font-weight: 700; }
-
-/* Section base */
-section { padding: 64px 0; }
-.section-head { margin-bottom: 48px; }
-.section-tag {
-  display: inline-flex; align-items: center; gap: 10px;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 12px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 2.5px;
-  color: var(--accent); margin-bottom: 16px;
-}
-.section-tag::before { content: '✦'; }
-h2 {
-  font-family: 'Fraunces', serif;
-  font-weight: 800;
-  font-size: clamp(36px, 9vw, 72px);
-  line-height: 0.98; letter-spacing: -0.03em;
-  color: var(--ink); margin-bottom: 16px;
-  font-variation-settings: 'opsz' 144;
-}
-h2 em { font-style: italic; color: var(--accent); font-weight: 400; }
-.section-head p { color: var(--ink-2); font-size: 17px; max-width: 540px; }
-
-/* Services list — magazine style */
-.services {
-  display: flex; flex-direction: column;
-  border-top: 1px solid var(--ink);
-}
-.service {
-  display: grid;
-  grid-template-columns: 40px 1fr;
-  gap: 16px;
-  padding: 28px 0;
-  border-bottom: 1px solid var(--ink);
-  position: relative;
-  transition: padding 0.3s;
-}
-.service:hover { padding-left: 12px; }
-.service-num {
-  font-family: 'Fraunces', serif;
-  font-size: 18px; font-weight: 600;
-  color: var(--ink-3);
-}
-.service-body { display: flex; flex-direction: column; gap: 8px; }
-.service-body h3 {
-  font-family: 'Fraunces', serif;
-  font-size: clamp(28px, 7vw, 44px);
-  font-weight: 700; color: var(--ink);
-  line-height: 1; letter-spacing: -0.02em;
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-}
-.service-body h3 .ic-circle {
-  display: inline-flex; width: 56px; height: 56px; border-radius: 50%;
-  background: var(--accent); color: var(--bg);
-  align-items: center; justify-content: center; font-size: 24px;
-  flex-shrink: 0;
-}
-.service:nth-child(2) h3 .ic-circle { background: var(--accent-2); }
-.service:nth-child(3) h3 .ic-circle { background: var(--accent-3); color: var(--ink); }
-.service:nth-child(4) h3 .ic-circle { background: var(--ink); }
-.service-body p { color: var(--ink-2); font-size: 15px; max-width: 600px; }
-.service-link {
-  font-family: 'DM Sans', sans-serif;
-  font-size: 13px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 1.5px;
-  color: var(--ink); display: inline-flex; align-items: center; gap: 6px;
-  margin-top: 4px;
-  border-bottom: 1.5px solid var(--ink); padding-bottom: 2px;
-  align-self: flex-start;
-}
-.service-link::after { content: '→'; transition: transform 0.2s; }
-.service:hover .service-link::after { transform: translateX(4px); }
-
-/* About — split with big number */
-.about-section { background: var(--bg-2); }
-.about-grid { display: flex; flex-direction: column; gap: 40px; }
-.about-big-num {
-  font-family: 'Fraunces', serif;
-  font-size: clamp(120px, 32vw, 280px);
-  font-weight: 900; color: var(--accent);
-  line-height: 0.85; letter-spacing: -0.05em;
-  font-variation-settings: 'opsz' 144;
-}
-.about-big-num span { display: block; font-size: 0.3em; color: var(--ink-3); font-weight: 400;
-  letter-spacing: 0.05em; text-transform: uppercase; margin-top: 12px; }
-.about-text p { font-size: 17px; color: var(--ink-2); margin-bottom: 16px; }
-.about-img-2 {
-  border-radius: 24px; overflow: hidden;
-  aspect-ratio: 4 / 3;
-  box-shadow: 0 30px 60px rgba(0,0,0,0.12);
-}
-.about-img-2 img { width: 100%; height: 100%; object-fit: cover; filter: contrast(1.05); }
-.about-quote {
-  font-family: 'Fraunces', serif;
-  font-size: 24px; line-height: 1.4;
-  color: var(--ink); font-style: italic;
-  border-left: 3px solid var(--accent);
-  padding-left: 20px; margin: 24px 0;
-}
+/* About */
+.about-section { background: white; }
+.about-grid { display: grid; gap: 48px; align-items: start; }
+.about-img-2 img { width: 100%; border-radius: 20px; }
+.about-big-num { font-family: 'Fraunces', serif; font-size: 72px; font-weight: 700; color: var(--accent); line-height: 1; }
+.about-big-num span { display: block; font-size: 18px; color: var(--ink-2); font-weight: 400; }
+.about-text p { color: var(--ink-2); font-size: 16px; margin-bottom: 16px; }
+.about-quote { border-left: 4px solid var(--accent); padding-left: 20px; font-style: italic; color: var(--ink); font-size: 18px; margin: 24px 0; }
 
 /* Stats */
-.stats { background: var(--ink); color: var(--bg); }
-.stats h2 { color: var(--bg); }
-.stats h2 em { color: var(--accent-3); }
-.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 32px; }
-.stat-item { border-top: 1px solid rgba(255,255,255,0.2); padding-top: 16px; }
-.stat-num {
-  font-family: 'Fraunces', serif;
-  font-size: clamp(48px, 12vw, 88px);
-  font-weight: 800; color: var(--bg); line-height: 0.9;
-  font-variation-settings: 'opsz' 144;
-}
-.stat-num small { font-size: 0.4em; color: var(--accent-3); }
-.stat-lbl { font-size: 13px; color: rgba(255,255,255,0.6); margin-top: 8px;
-  text-transform: uppercase; letter-spacing: 1.5px; }
+.stats { background: var(--ink); color: white; }
+.stats .section-tag { color: var(--accent-3); }
+.stats h2 { color: white; }
+.stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 32px; margin-top: 48px; }
+.stat-item { text-align: center; }
+.stat-num { font-family: 'Fraunces', serif; font-size: 48px; font-weight: 700; color: var(--accent-3); }
+.stat-num small { font-size: 24px; }
+.stat-lbl { font-size: 14px; color: rgba(255,255,255,0.7); margin-top: 8px; }
 
 /* Testimonial */
-.testimonial { background: var(--paper); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.testimonial-quote {
-  font-family: 'Fraunces', serif;
-  font-size: clamp(24px, 6vw, 40px);
-  line-height: 1.25;
-  color: var(--ink); font-weight: 400;
-  font-variation-settings: 'opsz' 144;
-}
-.testimonial-quote::before { content: '"'; font-size: 1.5em; color: var(--accent); line-height: 0; vertical-align: -0.4em; margin-right: 0.1em; }
-.testimonial-author {
-  display: flex; align-items: center; gap: 12px;
-  margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line);
-}
-.author-img { width: 48px; height: 48px; border-radius: 50%; overflow: hidden; }
-.author-img img { width: 100%; height: 100%; object-fit: cover; }
-.author-name { font-weight: 700; color: var(--ink); font-size: 15px; }
-.author-role { font-size: 13px; color: var(--ink-3); }
+.testimonial { background: linear-gradient(135deg, var(--accent-2), var(--ink)); color: white; padding: 80px 0; }
+.testimonial-card { background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); border-radius: 20px; padding: 40px; max-width: 700px; margin: 0 auto; text-align: center; }
+.testimonial-stars { color: var(--accent-3); font-size: 24px; margin-bottom: 20px; }
+.testimonial-text { font-size: 20px; line-height: 1.6; margin-bottom: 24px; font-style: italic; }
+.testimonial-author { display: flex; align-items: center; justify-content: center; gap: 16px; }
+.testimonial-author img { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; }
+.author-info { text-align: left; }
+.author-name { font-weight: 600; font-size: 16px; }
+.author-role { font-size: 14px; color: rgba(255,255,255,0.7); }
 
-/* CTA */
-.cta-box {
-  background: var(--accent); color: var(--bg);
-  border-radius: 32px; padding: 48px 28px;
-  position: relative; overflow: hidden;
-}
-.cta-box::before {
-  content: ''; position: absolute; right: -60px; top: -60px;
-  width: 240px; height: 240px; border-radius: 50%;
-  background: rgba(255,255,255,0.08);
-}
-.cta-box::after {
-  content: '☞'; position: absolute; bottom: -40px; right: -20px;
-  font-size: 200px; color: rgba(255,255,255,0.06); font-family: serif;
-  transform: rotate(-15deg);
-}
-.cta-box > * { position: relative; z-index: 1; }
-.cta-box h2 { color: var(--bg); }
-.cta-box h2 em { color: rgba(255,255,255,0.8); }
-.cta-box p { color: rgba(255,255,255,0.85); font-size: 17px; margin: 16px 0 28px; max-width: 480px; }
-.cta-box .buttons { display: flex; flex-direction: column; gap: 12px; }
-.cta-box .btn-primary { background: var(--bg); color: var(--ink); border-color: var(--bg); }
-.cta-box .btn-primary:hover { background: var(--ink); color: var(--bg); border-color: var(--ink); }
-.cta-box .btn-outline { color: var(--bg); border-color: var(--bg); }
-.cta-box .btn-outline:hover { background: var(--bg); color: var(--accent); }
+/* CTA Section */
+.cta { background: var(--accent); color: white; padding: 80px 0; text-align: center; }
+.cta h2 { color: white; font-size: clamp(28px, 4vw, 40px); }
+.cta p { font-size: 18px; opacity: 0.9; max-width: 600px; margin: 16px auto 32px; }
+.cta-buttons { display: flex; flex-direction: column; gap: 12px; justify-content: center; }
+.cta .btn-white { background: white; color: var(--accent); }
+.cta .btn-white:hover { background: var(--bg); }
 
 /* Footer */
-footer { background: var(--ink); color: rgba(255,255,255,0.65); padding: 80px 0 24px; }
-.foot-top {
-  display: flex; flex-direction: column; gap: 40px;
-  padding-bottom: 40px; border-bottom: 1px solid rgba(255,255,255,0.1);
-  margin-bottom: 32px;
-}
-.foot-brand img { height: 96px; margin-bottom: 16px; filter: brightness(0) invert(1); }
-.foot-brand p { font-size: 14px; max-width: 320px; }
-.foot-links { display: grid; grid-template-columns: 1fr 1fr; gap: 32px 24px; }
-.foot-col h4 {
-  font-family: 'Fraunces', serif;
-  color: var(--bg); font-size: 18px; font-weight: 600;
-  margin-bottom: 14px;
-}
-.foot-col ul { list-style: none; }
-.foot-col li { padding: 4px 0; }
-.foot-col a, .foot-col span { color: rgba(255,255,255,0.6); font-size: 14px; line-height: 1.7; }
-.foot-col a:hover { color: var(--accent-3); }
-.foot-info { font-size: 13px; line-height: 1.7; }
-.foot-info strong { color: var(--bg); display: block; margin-top: 8px; }
-.foot-bottom {
-  display: flex; flex-direction: column; gap: 12px;
-  font-size: 12px;
-}
+footer { background: var(--ink); color: rgba(255,255,255,0.7); padding: 64px 0 24px; }
+.footer-grid { display: grid; gap: 40px; margin-bottom: 40px; }
+.footer-brand img { height: 64px; filter: brightness(0) invert(1); margin-bottom: 16px; }
+.footer-brand p { font-size: 14px; max-width: 320px; }
+.footer-col h4 { color: white; font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+.footer-col ul { list-style: none; }
+.footer-col li { margin-bottom: 8px; }
+.footer-col a { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 14px; transition: color 0.2s; }
+.footer-col a:hover { color: var(--accent-3); }
+.footer-bottom { border-top: 1px solid rgba(255,255,255,0.1); padding-top: 24px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
 
-.wa-float {
-  position: fixed; bottom: 20px; right: 20px; z-index: 90;
-  width: 60px; height: 60px; border-radius: 50%;
-  background: #25d366; color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 30px; box-shadow: 0 8px 24px rgba(37,211,102,0.4);
-}
+/* WhatsApp Float */
+.whatsapp-float { position: fixed; bottom: 24px; right: 24px; z-index: 1000; width: 60px; height: 60px; background: #25D366; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 20px rgba(37,211,102,0.4); transition: all 0.3s; text-decoration: none; }
+.whatsapp-float:hover { transform: scale(1.1); box-shadow: 0 6px 28px rgba(37,211,102,0.5); }
+.whatsapp-float svg { width: 32px; height: 32px; fill: white; }
 
-.reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.8s, transform 0.8s; }
-.reveal.in { opacity: 1; transform: translateY(0); }
+/* Modal */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 2000; display: none; align-items: center; justify-content: center; padding: 20px; }
+.modal-overlay.active { display: flex; }
+.modal { background: white; border-radius: 20px; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 40px; position: relative; }
+.modal-close { position: absolute; top: 16px; right: 16px; width: 36px; height: 36px; border-radius: 50%; border: none; background: var(--line); cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; }
+.modal-close:hover { background: var(--accent); color: white; }
+.modal h3 { font-family: 'Fraunces', serif; font-size: 28px; margin-bottom: 24px; color: var(--ink); }
+.vantagens-list { list-style: none; }
+.vantagens-list li { padding: 12px 0; border-bottom: 1px solid var(--line); display: flex; align-items: start; gap: 12px; font-size: 15px; color: var(--ink-2); }
+.vantagens-list li:last-child { border-bottom: none; }
+.vantagens-list li::before { content: '✓'; color: var(--accent); font-weight: 700; flex-shrink: 0; }
 
+/* Form Section - Abra Empresa */
+.form-section { background: white; padding: 80px 0; }
+.form-grid { display: grid; gap: 48px; align-items: start; }
+.form-info h2 { margin-bottom: 16px; }
+.form-info p { color: var(--ink-2); font-size: 16px; margin-bottom: 24px; }
+.form-checklist { list-style: none; }
+.form-checklist li { padding: 8px 0; display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--ink-2); }
+.form-checklist li::before { content: '✓'; color: var(--accent); font-weight: 700; }
+.form-container { background: var(--bg); border: 1px solid var(--line); border-radius: 20px; padding: 40px; }
+.form-group { margin-bottom: 20px; }
+.form-group label { display: block; font-weight: 600; font-size: 14px; margin-bottom: 8px; color: var(--ink); }
+.form-group input, .form-group select, .form-group textarea { width: 100%; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; font-size: 15px; font-family: inherit; transition: border-color 0.2s; }
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: var(--accent); }
+.form-group textarea { resize: vertical; min-height: 100px; }
+
+/* MEI Section */
+.mei-section { background: linear-gradient(135deg, var(--accent-2), var(--ink)); color: white; padding: 80px 0; }
+.mei-grid { display: grid; gap: 48px; align-items: center; }
+.mei-content h2 { color: white; }
+.mei-content p { font-size: 16px; opacity: 0.9; margin-bottom: 24px; }
+.mei-benefits { list-style: none; margin-bottom: 32px; }
+.mei-benefits li { padding: 8px 0; display: flex; align-items: center; gap: 12px; font-size: 15px; }
+.mei-benefits li::before { content: '★'; color: var(--accent-3); }
+.mei-price { background: rgba(255,255,255,0.1); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); border-radius: 16px; padding: 32px; text-align: center; }
+.mei-price .price { font-family: 'Fraunces', serif; font-size: 48px; font-weight: 700; color: var(--accent-3); }
+.mei-price .price-period { font-size: 16px; opacity: 0.8; }
+
+/* Responsive */
 @media (min-width: 700px) {
+  .nav-links { display: flex; }
+  .hamburger { display: none; }
+  .hero-grid { grid-template-columns: 1fr 1fr; }
   .hero-cta { flex-direction: row; }
-  .hero-cta .btn { width: auto; }
+  .services { grid-template-columns: repeat(2, 1fr); }
+  .about-grid { grid-template-columns: 1fr 1.2fr; }
   .stats-grid { grid-template-columns: repeat(4, 1fr); }
-  .foot-top { flex-direction: row; gap: 64px; }
-  .foot-brand { flex: 1; }
-  .foot-links { flex: 2; grid-template-columns: repeat(3, 1fr); }
-  .foot-bottom { flex-direction: row; justify-content: space-between; }
-  .cta-box { padding: 64px 48px; }
-  .cta-box .buttons { flex-direction: row; }
-  .about-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; }
+  .footer-grid { grid-template-columns: 2fr 1fr 1fr 1fr; }
+  .form-grid { grid-template-columns: 1fr 1fr; }
+  .mei-grid { grid-template-columns: 1fr 1fr; }
+  .cta-buttons { flex-direction: row; }
 }
 @media (min-width: 980px) {
-  .nav-desktop { display: flex; gap: 32px; list-style: none; flex: 1; justify-content: center; }
-  .nav-desktop a { font-size: 15px; font-weight: 500; color: var(--ink-2); transition: color 0.2s; }
-  .nav-desktop a:hover { color: var(--ink); }
-  .nav-cta-desktop { display: inline-flex; }
-  .burger { display: none; }
-  .hero-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 48px; align-items: end; }
-  .hero { padding: 48px 0 96px; }
-  section { padding: 96px 0; }
-  .service { grid-template-columns: 80px 1fr 200px; align-items: center; }
+  .services { grid-template-columns: repeat(4, 1fr); }
 }
-
-/* Mobile overflow protection */
-.page-wrapper { overflow-x: hidden; max-width: 100vw; }
 </style>
 </head>
 <body>
 
-<div class="top-bar">
-  <strong>📞 (11) 98105-0614</strong> · contato@totalempresarial.com.br · <a href="#">Abra sua empresa GRÁTIS →</a>
-</div>
-
 <header>
-  <div class="wrap nav">
-    <a href="#" class="brand"><img src="assets/logo.webp" alt="Total Empresarial"></a>
-    <ul class="nav-desktop">
-      <li><a href="#">Início</a></li>
-      <li><a href="#servicos">Serviços</a></li>
-      <li><a href="#">Contabilidade MEI</a></li>
-      <li><a href="#sobre">Sobre</a></li>
-      <li><a href="#contato">Contato</a></li>
-    </ul>
-    <a href="#" class="btn btn-primary nav-cta-desktop">Abrir empresa →</a>
-    <button class="burger" id="openMenu" aria-label="Menu"><span></span></button>
+  <div class="wrap">
+    <nav class="nav">
+      <a href="#" class="brand">
+        <img src="assets/logo-red.webp" alt="Total Empresarial">
+      </a>
+      <ul class="nav-links">
+        <li><a href="#servicos">Serviços</a></li>
+        <li><a href="#sobre">Sobre</a></li>
+        <li><a href="#abra-empresa">Abra sua Empresa</a></li>
+        <li><a href="#mei">MEI</a></li>
+      </ul>
+      <a href="https://wa.me/5511981050614" target="_blank" class="btn btn-primary btn-sm">Contato</a>
+      <button class="hamburger" onclick="toggleMenu()">
+        <span></span><span></span><span></span>
+      </button>
+    </nav>
   </div>
 </header>
 
-<div class="menu-mobile" id="menuMobile">
-  <button class="close" id="closeMenu" aria-label="Fechar">✕</button>
-  <ul>
-    <li><a href="#">Início</a></li>
-    <li><a href="#servicos">Serviços</a></li>
-    <li><a href="#">Contabilidade MEI</a></li>
-    <li><a href="#sobre">Sobre</a></li>
-    <li><a href="#contato">Contato</a></li>
-  </ul>
-  <div class="actions">
-    <a href="#" class="btn btn-primary">Abrir empresa grátis</a>
-    <a href="https://wa.me/5511981050614" class="btn btn-wa">💬 WhatsApp</a>
-  </div>
-</div>
-
 <section class="hero">
-  <div class="page-wrapper"><div class="wrap">
+  <div class="wrap">
     <div class="hero-grid">
-      <div class="reveal">
-        <div class="hero-eyebrow">Contabilidade · Estabelecida em 2009</div>
-        <h1>A linha tênue entre performance e contabilidade para sua empresa!</h1>
-        <p class="hero-lead">
-          Apoiamos a sua empresa com um jeito prático, seguro e moderno de fazer assessoria contábil. Contribuímos com o sonho de ampliação do seu negócio, ajudando você a quebrar barreiras, de forma segura e eficiente.
-        </p>
+      <div>
+        <div class="hero-tag"><span>✦</span> Contabilidade Premium</div>
+        <h1>A linha tênue entre <em>performance</em> e contabilidade para sua empresa!</h1>
+        <p>Apoiamos a sua empresa com um jeito prático, seguro e moderno de fazer assessoria contábil. Contribuímos com o sonho de ampliação do seu negócio.</p>
         <div class="hero-cta">
-          <a href="#" class="btn btn-primary">Abrir empresa agora →</a>
-          <a href="https://wa.me/5511981050614" class="btn btn-outline">💬 WhatsApp direto</a>
+          <a href="#abra-empresa" class="btn btn-primary">Abra sua Empresa Grátis →</a>
+          <a href="#servicos" class="btn btn-outline">Conhecer Serviços</a>
         </div>
-        <div class="hero-meta">
+        <div class="hero-trust">
           <div><strong>500+</strong> empresas</div>
-          <div><strong>15</strong> anos</div>
           <div><strong>4,9★</strong> Google</div>
           <div><strong>24h</strong> resposta</div>
         </div>
       </div>
-      <div class="reveal">
+      <div>
         <div class="hero-image">
           <img src="https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=900&q=80" alt="Profissional contábil brasileiro">
-          <div class="hero-tag">
-            <div class="ic">✓</div>
-            <div>
-              <div class="small">Resultado real</div>
-              <strong>R$ 1.840 / mês economizados em média</strong>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -498,43 +232,43 @@ footer { background: var(--ink); color: rgba(255,255,255,0.65); padding: 80px 0 
 </section>
 
 <section id="servicos">
-  <div class="page-wrapper"><div class="wrap">
-    <div class="section-head reveal">
+  <div class="wrap">
+    <div class="section-head">
       <div class="section-tag">Serviços</div>
       <h2>Nossos Serviços</h2>
       <p>Soluções completas para o seu negócio, da abertura à expansão.</p>
     </div>
     <div class="services">
-      <div class="service reveal">
+      <div class="service">
         <div class="service-num">01</div>
         <div class="service-body">
           <h3><span class="ic-circle">⚡</span>Consultoria</h3>
           <p>Tenha as melhores soluções nas áreas tributária, financeira e contábil através da análise dos nossos experts.</p>
-          <a href="#" class="service-link">Ver vantagens</a>
+          <a href="#" class="service-link" onclick="openModal('modal-consultoria'); return false;">Ver vantagens →</a>
         </div>
       </div>
-      <div class="service reveal">
+      <div class="service">
         <div class="service-num">02</div>
         <div class="service-body">
-          <h3><span class="ic-circle">📋</span>Legalização de Empresas</h3>
+          <h3><span class="ic-circle">📋</span>Legalização</h3>
           <p>Abra sua empresa, sem sair de casa! Resolvemos toda a parte burocrática sem custo para clientes da assessoria mensal.</p>
-          <a href="#" class="service-link">Ver vantagens</a>
+          <a href="#" class="service-link" onclick="openModal('modal-legalizacao'); return false;">Ver vantagens →</a>
         </div>
       </div>
-      <div class="service reveal">
+      <div class="service">
         <div class="service-num">03</div>
         <div class="service-body">
           <h3><span class="ic-circle">🛡</span>Assessoria</h3>
           <p>Tenha uma contabilidade consultiva que entende do seu dia a dia! Soluções eficientes para gestão operacional.</p>
-          <a href="#" class="service-link">Ver vantagens</a>
+          <a href="#" class="service-link" onclick="openModal('modal-assessoria'); return false;">Ver vantagens →</a>
         </div>
       </div>
-      <div class="service reveal">
+      <div class="service">
         <div class="service-num">04</div>
         <div class="service-body">
-          <h3><span class="ic-circle">⚖</span>Perícia Contábil e Financeira</h3>
+          <h3><span class="ic-circle">⚖</span>Perícia</h3>
           <p>Realizamos cálculos para processos judiciais com revisão de contratos e avaliação de empresas.</p>
-          <a href="#" class="service-link">Ver vantagens</a>
+          <a href="#" class="service-link" onclick="openModal('modal-pericia'); return false;">Ver vantagens →</a>
         </div>
       </div>
     </div>
@@ -543,14 +277,14 @@ footer { background: var(--ink); color: rgba(255,255,255,0.65); padding: 80px 0 
 
 <section id="sobre" class="about-section">
   <div class="wrap about-grid">
-    <div class="reveal">
+    <div>
       <div class="section-tag">Sobre Nós</div>
       <h2>Sobre Nós</h2>
       <div class="about-img-2" style="margin-top:32px;">
         <img src="https://images.unsplash.com/photo-1553877522-43269d4ea984?w=1000&q=80" alt="Equipe de contabilidade">
       </div>
     </div>
-    <div class="reveal about-text">
+    <div class="about-text">
       <div class="about-big-num">15<span>anos no mercado</span></div>
       <p style="margin-top:24px;">A Total Empresarial é um escritório de contabilidade reconhecido pelo atendimento personalizado. Com serviços especializados nas áreas contábil, tributária, trabalhista e societária, a Total sempre procura superar as expectativas das empresas.</p>
       <div class="about-quote">"Nossa missão é se tornar referência em qualidade de serviços e atendimento personalizado ao cliente."</div>
@@ -560,12 +294,12 @@ footer { background: var(--ink); color: rgba(255,255,255,0.65); padding: 80px 0 
 </section>
 
 <section class="stats">
-  <div class="page-wrapper"><div class="wrap">
-    <div class="reveal">
-      <div class="section-tag" style="color:var(--accent-3);">Números que importam</div>
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-tag">Números que importam</div>
       <h2>Quem confia em <em>nós</em>.</h2>
     </div>
-    <div class="stats-grid reveal">
+    <div class="stats-grid">
       <div class="stat-item"><div class="stat-num">500<small>+</small></div><div class="stat-lbl">Empresas atendidas</div></div>
       <div class="stat-item"><div class="stat-num">15<small>a</small></div><div class="stat-lbl">No mercado</div></div>
       <div class="stat-item"><div class="stat-num">98<small>%</small></div><div class="stat-lbl">Retenção</div></div>
@@ -574,93 +308,247 @@ footer { background: var(--ink); color: rgba(255,255,255,0.65); padding: 80px 0 
   </div>
 </section>
 
-<section class="testimonial">
-  <div class="wrap reveal">
-    <div class="section-tag">Quem confia</div>
-    <div class="testimonial-quote">
-      Migrar para a Total foi a melhor decisão. Pela primeira vez tenho clareza dos números e tempo para focar no que importa: meu negócio.
+<!-- SEÇÃO ABRIR EMPRESA -->
+<section id="abra-empresa" class="form-section">
+  <div class="wrap form-grid">
+    <div class="form-info">
+      <div class="section-tag">Comece Agora</div>
+      <h2>Abra sua Empresa <em>Grátis</em></h2>
+      <p>Preencha o formulário e nossa equipe entrará em contato em até 24 horas para iniciar o processo de abertura da sua empresa sem custo.</p>
+      <ul class="form-checklist">
+        <li>Abertura 100% online</li>
+        <li>Sem taxa de abertura para clientes mensais</li>
+        <li>CNPJ em até 5 dias úteis</li>
+        <li>Alvará e inscrições incluídos</li>
+        <li>Contador dedicado</li>
+      </ul>
     </div>
-    <div class="testimonial-author">
-      <div class="author-img"><img src="https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=200&q=80" alt="Marina Costa"></div>
-      <div>
-        <div class="author-name">Marina Costa</div>
-        <div class="author-role">CEO · Studio Marina · cliente desde 2022</div>
+    <div class="form-container">
+      <form onsubmit="event.preventDefault(); alert('Formulário enviado! Entraremos em contato em breve.');">
+        <div class="form-group">
+          <label for="nome">Nome Completo *</label>
+          <input type="text" id="nome" required placeholder="Seu nome completo">
+        </div>
+        <div class="form-group">
+          <label for="email">E-mail *</label>
+          <input type="email" id="email" required placeholder="seu@email.com">
+        </div>
+        <div class="form-group">
+          <label for="telefone">WhatsApp *</label>
+          <input type="tel" id="telefone" required placeholder="(11) 99999-9999">
+        </div>
+        <div class="form-group">
+          <label for="atividade">Atividade Principal</label>
+          <select id="atividade">
+            <option value="">Selecione...</option>
+            <option>Comércio</option>
+            <option>Serviços</option>
+            <option>Indústria</option>
+            <option>Outros</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="mensagem">Observações</label>
+          <textarea id="mensagem" placeholder="Conte-nos mais sobre seu negócio..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Solicitar Abertura Grátis →</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<!-- SEÇÃO MEI -->
+<section id="mei" class="mei-section">
+  <div class="wrap mei-grid">
+    <div class="mei-content">
+      <div class="section-tag" style="color:var(--accent-3);">Para Autônomos</div>
+      <h2>Contabilidade <em>MEI</em></h2>
+      <p>Solução completa para Microempreendedores Individuais. Regularize seu negócio e cresça com segurança.</p>
+      <ul class="mei-benefits">
+        <li>DAS mensal pago automaticamente</li>
+        <li>Emissão de notas fiscais</li>
+        <li>Relatório anual (RAIS)</li>
+        <li>Alteração de dados cadastrais</li>
+        <li>Orientação tributária</li>
+        <li>App exclusivo MEI</li>
+      </ul>
+      <a href="https://wa.me/5511981050614?text=Olá, gostaria de saber sobre contabilidade MEI" target="_blank" class="btn btn-primary">Contratar MEI →</a>
+    </div>
+    <div class="mei-price">
+      <div style="font-size:14px;opacity:0.8;margin-bottom:8px;">A partir de</div>
+      <div class="price">R$ 49</div>
+      <div class="price-period">/mês</div>
+      <div style="margin-top:24px;font-size:14px;opacity:0.8;">Inclui todas as obrigações acessórias</div>
+    </div>
+  </div>
+</section>
+
+<section class="testimonial">
+  <div class="wrap">
+    <div class="testimonial-card">
+      <div class="testimonial-stars">★★★★★</div>
+      <p class="testimonial-text">"A Total Empresarial transformou a gestão da minha empresa. Atendimento rápido, profissional e sempre disponível para tirar dúvidas. Recomendo demais!"</p>
+      <div class="testimonial-author">
+        <img src="https://images.unsplash.com/photo-1554224155-6726b3ff858f?w=200&q=80" alt="Cliente">
+        <div class="author-info">
+          <div class="author-name">Marina Costa</div>
+          <div class="author-role">CEO, TechStart Brasil</div>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<section id="contato">
-  <div class="page-wrapper"><div class="wrap">
-    <div class="cta-box reveal">
-      <div class="section-tag" style="color:rgba(255,255,255,0.7);">Vamos conversar</div>
-      <h2>Vamos abrir a sua,<br>ou <em>cuidar</em> da que existe?</h2>
-      <p>Comente sobre a necessidade do seu negócio. Nossa equipe responde em até 24 horas, dias úteis.</p>
-      <div class="buttons">
-        <a href="#" class="btn btn-primary">Solicitar proposta →</a>
-        <a href="https://wa.me/5511981050614" class="btn btn-outline">💬 WhatsApp direto</a>
-      </div>
+<section class="cta">
+  <div class="wrap">
+    <h2>Pronto para transformar sua gestão contábil?</h2>
+    <p>Fale com nossos especialistas e descubra como podemos ajudar seu negócio a crescer com segurança.</p>
+    <div class="cta-buttons">
+      <a href="https://wa.me/5511981050614" target="_blank" class="btn btn-white">Falar no WhatsApp →</a>
+      <a href="#abra-empresa" class="btn btn-outline" style="border-color:white;color:white;">Abrir Empresa Grátis</a>
     </div>
   </div>
 </section>
 
 <footer>
-  <div class="page-wrapper"><div class="wrap">
-    <div class="foot-top">
-      <div class="foot-brand">
-        <img src="assets/logo.webp" alt="Total Empresarial">
-        <p>Contabilidade especializada em performance empresarial. Tradição, tecnologia e atendimento humano para todo o Brasil.</p>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <img src="assets/logo-red.webp" alt="Total Empresarial">
+        <p>A linha tênue entre performance e contabilidade. Há 15 anos ajudando empresas a crescerem com segurança.</p>
       </div>
-      <div class="foot-links">
-        <div class="foot-col">
-          <h4>Serviços</h4>
-          <ul>
-            <li><a href="#">Abrir Empresa Grátis</a></li>
-            <li><a href="#">Consultoria</a></li>
-            <li><a href="#">Assessoria Mensal</a></li>
-            <li><a href="#">Perícia Contábil</a></li>
-            <li><a href="#">Contabilidade MEI</a></li>
-          </ul>
-        </div>
-        <div class="foot-col">
-          <h4>Empresa</h4>
-          <ul>
-            <li><a href="#">Sobre</a></li>
-            <li><a href="#">Contato</a></li>
-            <li><a href="#">Política de Cookies</a></li>
-            <li><a href="#">Termos e Condições</a></li>
-            <li><a href="#">Política de Privacidade</a></li>
-          </ul>
-        </div>
-        <div class="foot-col">
-          <h4>Contato</h4>
-          <div class="foot-info">
-            <strong>📞 (11) 98105-0614</strong>
-            contato@totalempresarial.com.br
-            <strong>📍 Endereço</strong>
-            Rua Lidia Lisfei, 83, Casa 2<br>
-            Helena Maria — Osasco/SP<br>
-            CEP 06.253-080
-          </div>
-        </div>
+      <div class="footer-col">
+        <h4>Serviços</h4>
+        <ul>
+          <li><a href="#servicos">Consultoria</a></li>
+          <li><a href="#servicos">Legalização</a></li>
+          <li><a href="#servicos">Assessoria</a></li>
+          <li><a href="#servicos">Perícia Contábil</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Empresa</h4>
+        <ul>
+          <li><a href="#sobre">Sobre Nós</a></li>
+          <li><a href="#">Blog</a></li>
+          <li><a href="#">Carreiras</a></li>
+          <li><a href="#">Contato</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Legal</h4>
+        <ul>
+          <li><a href="#">Política de Privacidade</a></li>
+          <li><a href="#">Termos de Uso</a></li>
+          <li><a href="#">Cookies</a></li>
+        </ul>
       </div>
     </div>
-    <div class="foot-bottom">
-      <span>© 2026 Total Empresarial · CNPJ 44.847.547/0001-00 · Razão social: 44.847.547 HENRIQUE FELIZ DOS SANTOS MORAES</span>
-      <span>Todos os direitos reservados</span>
+    <div class="footer-bottom">
+      <div>© 2026 Total Empresarial. Todos os direitos reservados.</div>
+      <div>CNPJ: 00.000.000/0001-00 | São Paulo, SP</div>
     </div>
   </div>
 </footer>
 
-<a href="https://wa.me/5511981050614" class="wa-float" aria-label="WhatsApp">💬</a>
+<!-- WhatsApp Float -->
+<a href="https://wa.me/5511981050614" target="_blank" class="whatsapp-float" aria-label="WhatsApp">
+  <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+</a>
+
+<!-- MODAIS DE VANTAGENS -->
+<div id="modal-consultoria" class="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <h3>Vantagens da Consultoria</h3>
+    <ul class="vantagens-list">
+      <li>Análise tributária personalizada para redução legal de impostos</li>
+      <li>Planejamento financeiro estratégico para crescimento sustentável</li>
+      <li>Relatórios gerenciais mensais com indicadores-chave</li>
+      <li>Acesso a especialistas em direito tributário e societário</li>
+      <li>Reuniões trimestrais de acompanhamento estratégico</li>
+      <li>Suporte ilimitado via WhatsApp e e-mail</li>
+      <li>Dashboard online com visão em tempo real</li>
+    </ul>
+  </div>
+</div>
+
+<div id="modal-legalizacao" class="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <h3>Vantagens da Legalização</h3>
+    <ul class="vantagens-list">
+      <li>Abertura 100% online sem necessidade de deslocamento</li>
+      <li>Sem taxa de abertura para clientes de assessoria mensal</li>
+      <li>CNPJ emitido em até 5 dias úteis</li>
+      <li>Inscrições estadual e municipal incluídas</li>
+      <li>Alvará de funcionamento regularizado</li>
+      <li>Contrato social elaborado por especialistas</li>
+      <li>Enquadramento tributário otimizado desde o início</li>
+      <li>Acompanhamento completo até a emissão do CNPJ</li>
+    </ul>
+  </div>
+</div>
+
+<div id="modal-assessoria" class="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <h3>Vantagens da Assessoria</h3>
+    <ul class="vantagens-list">
+      <li>Contabilidade consultiva focada no seu negócio</li>
+      <li>Gestão completa de obrigações fiscais e trabalhistas</li>
+      <li>Folha de pagamento processada com precisão</li>
+      <li>Escrituração contábil e fiscal em dia</li>
+      <li>Sped Fiscal, Sped Contábil e DCTF entregues no prazo</li>
+      <li>Relatórios mensais de desempenho</li>
+      <li>Contador dedicado disponível para dúvidas</li>
+      <li>App exclusivo para envio de documentos</li>
+    </ul>
+  </div>
+</div>
+
+<div id="modal-pericia" class="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <h3>Vantagens da Perícia Contábil</h3>
+    <ul class="vantagens-list">
+      <li>Cálculos judiciais precisos e fundamentados</li>
+      <li>Revisão contratual detalhada com identificação de riscos</li>
+      <li>Avaliação de empresas para fusões e aquisições</li>
+      <li>Laudos periciais aceitos em tribunais</li>
+      <li>Expertise em direito empresarial e societário</li>
+      <li>Atuação em processos trabalhistas e cíveis</li>
+      <li>Relatórios técnicos completos e claros</li>
+      <li>Sigilo absoluto em todas as informações</li>
+    </ul>
+  </div>
+</div>
 
 <script>
-const menu = document.getElementById('menuMobile');
-document.getElementById('openMenu').onclick = () => menu.classList.add('open');
-document.getElementById('closeMenu').onclick = () => menu.classList.remove('open');
-menu.querySelectorAll('a').forEach(a => a.onclick = () => menu.classList.remove('open'));
-const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && e.target.classList.add('in')), { threshold: 0.1 });
-document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+// Mobile menu toggle
+function toggleMenu() {
+  const nav = document.querySelector('.nav-links');
+  nav.style.display = nav.style.display === 'flex' ? 'none' : 'flex';
+}
+
+// Modal functions
+function openModal(id) {
+  document.getElementById(id).classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal(e) {
+  if (!e || e.target.classList.contains('modal-overlay') || e.target.classList.contains('modal-close')) {
+    document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
+    document.body.style.overflow = '';
+  }
+}
+
+// Close modal on Escape key
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeModal();
+});
 </script>
-</div></body>
+
+</body>
 </html>
