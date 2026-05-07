@@ -155,6 +155,22 @@ Todos os 15 modelos agora têm os 4 serviços oficiais com descrições corretas
 | `1d218ee` | Corrigir aspas escapadas nas URLs das thumbnails | 1 HTML |
 | `508a81f` | Atualizar sync_repo_to_vm.py para copiar assets e clinicas | 1 script |
 | `20c2f02` | Substituir imagens inadequadas por fotos de profissionais brasileiros | 21 arquivos (12 HTMLs + 12 screenshots) |
+| `b28b240` | Remover ultima imagem com pessoa (modelo-10-minimal) e garantir zero pessoas em todos os modelos | 15 HTMLs + 1 screenshot |
+
+---
+
+### Auditoria Completa de Imagens
+
+**Verificacao final:** Todos os IDs do Unsplash em uso foram auditados visualmente:
+
+| ID | Contexto | Contem pessoas? |
+|----|----------|-----------------|
+| `1460925895917-afdab827c52f` | Graficos/analytics na tela | Nao |
+| `1553877522-43269d4ea984` | Workspace/escritorio vazio | Nao |
+| `1554224155-6726b3ff858f` | Calculadora/documentos | Nao |
+| `1554224155-1696413565d3` | Dashboard/grafico | Nao |
+
+**Resultado:** Zero imagens com pessoas em todos os 15 modelos empresariais.
 
 ---
 
