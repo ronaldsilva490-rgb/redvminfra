@@ -58,6 +58,19 @@ def main():
         if out:
             print(out)
 
+    # Copy from repo to web directory (overwrite, removing old files)
+    stdin, stdout, stderr = ssh.exec_command(
+        "rm -f /var/www/modelos/empresarial/*.html && "
+        "cp /opt/redvm-repo/servicos/portal/modelos/empresarial/*.html /var/www/modelos/empresarial/ && "
+        "cp /opt/redvm-repo/servicos/portal/modelos/index.html /var/www/modelos/index.html"
+    )
+    exit_code = stdout.channel.recv_exit_status()
+    err = stderr.read().decode()
+    if exit_code != 0:
+        print(f"Copy error: {err}")
+    else:
+        print("Copied to /var/www/modelos/")
+
     # Cleanup
     ssh.exec_command(f"rm -f {remote_tar}")
     ssh.close()
