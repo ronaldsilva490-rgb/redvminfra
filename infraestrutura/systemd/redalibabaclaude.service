@@ -1,0 +1,21 @@
+[Unit]
+Description=RED Alibaba Claude Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/redalibabaclaude
+Environment=REDALIBABACLAUDE_HOST=0.0.0.0
+Environment=REDALIBABACLAUDE_PORT=5052
+EnvironmentFile=-/etc/redalibabaclaude.env
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/opt/redalibabaclaude/.venv/bin/python /opt/redalibabaclaude/app.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/redalibabaclaude.log
+StandardError=append:/var/log/redalibabaclaude.log
+
+[Install]
+WantedBy=multi-user.target

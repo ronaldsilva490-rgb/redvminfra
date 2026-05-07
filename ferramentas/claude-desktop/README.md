@@ -11,6 +11,8 @@ Ferramentas Windows para apontar o Claude Desktop para os gateways RED.
 - `Iniciar-Claude-RED-NIM5050-Sem-VMP.cmd`: aplica o preparo do gateway NIM direto e abre o Claude RED portatil.
 - `Preparar-Claude-RED-Lightning5051.ps1`: grava a configuracao 3P/gateway do Claude Desktop com `https://redsystems.ddns.net:5051`, usando somente os modelos validados do `redlightningclaude`.
 - `Iniciar-Claude-RED-Lightning5051-Sem-VMP.cmd`: aplica o preparo do gateway Lightning direto e abre o Claude RED portatil.
+- `Preparar-Claude-RED-Alibaba5052.ps1`: grava a configuracao 3P/gateway do Claude Desktop com `https://redsystems.ddns.net:5052`, usando somente os modelos curados do `redalibabaclaude`.
+- `Iniciar-Claude-RED-Alibaba5052-Sem-VMP.cmd`: aplica o preparo do gateway Alibaba multi-regiao e abre o Claude RED portatil.
 - `Preparar-Claude-RED-ClaudeProxy.ps1`: grava a configuracao 3P/gateway do Claude Desktop com `https://redsystems.ddns.net/redclaudeproxy`.
 - `Iniciar-Claude-RED-ClaudeProxy-Sem-VMP.cmd`: aplica o preparo da ponte Claude para o proxy normal e abre o Claude RED portatil.
 - `Ativar-VMP-para-Claude-Desktop.cmd`: tenta ativar Virtual Machine Platform em Windows completo.
@@ -27,6 +29,7 @@ C:\Users\Ronyd\Desktop\Claude RED Proxy Normal.cmd
 C:\Users\Ronyd\Desktop\Claude RED ClaudeProxy.cmd
 C:\Users\Ronyd\Desktop\Claude RED NIM 5050.cmd
 C:\Users\Ronyd\Desktop\Claude RED Lightning 5051.cmd
+C:\Users\Ronyd\Desktop\Claude RED Alibaba 5052.cmd
 ```
 
 Esse modo serve para chat/modelos customizados pelo RED Proxy Pro ou pelo proxy normal. Ele nao entrega workspace/Code real do Claude Desktop, porque essa parte depende do backend local/sandbox que exige VMP.
@@ -44,5 +47,7 @@ A lista da ponte Claude vem de `/redclaudeproxy/v1/models`, que importa dinamica
 A lista do gateway NIM direto vem de `https://redsystems.ddns.net:5050/v1/models`, sem passar por nginx nem pelo proxy normal.
 
 A lista do gateway Lightning direto vem de `https://redsystems.ddns.net:5051/v1/models`, sem passar por nginx e publicada apenas com os modelos que passaram em texto, stream e tool calling.
+
+A lista do gateway Alibaba direto vem de `https://redsystems.ddns.net:5052/v1/models`, publicada com aliases `ALI-SG/*` e `ALI-US/*` e filtrando `reasoning_content` para manter a UI do Claude limpa.
 
 Sempre que atualizar modelos fixos, revise `Preparar-Claude-RED-Chat.ps1`, `Configurar-Claude-RED-ProxyPro.cmd` e os fallbacks dos scripts do proxy normal. O `Preparar-Claude-RED-ClaudeProxy.ps1` prefere o catalogo vivo de `/redclaudeproxy/v1/models`.

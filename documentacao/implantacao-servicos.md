@@ -218,6 +218,57 @@ Systemd:
 cp infraestrutura/systemd/redproxypro.service /etc/systemd/system/redproxypro.service
 systemctl daemon-reload
 systemctl enable --now redproxypro
+
+## 2B. RED Alibaba Claude
+
+Servico: `servicos/redalibabaclaude`
+
+Responsabilidade:
+
+- expor `/v1/models`, `/v1/messages`, `/v1/messages/count_tokens` e `/v1/chat/completions`;
+- adaptar Claude Desktop/Claude Code para a Alibaba Model Studio;
+- usar **Singapura** para Qwen e **US Virginia** para DeepSeek/Kimi;
+- filtrar `reasoning_content` e desativar thinking em aliases Qwen selecionados para manter a UI do Claude limpa.
+
+Instalacao:
+
+```bash
+mkdir -p /opt/redalibabaclaude /var/lib/redalibabaclaude
+rsync -av servicos/redalibabaclaude/ /opt/redalibabaclaude/
+cd /opt/redalibabaclaude
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
+```
+
+Ambiente em `/etc/redalibabaclaude.env`:
+
+```env
+REDALIBABACLAUDE_HOST=0.0.0.0
+REDALIBABACLAUDE_PORT=5052
+REDALIBABACLAUDE_SG_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+REDALIBABACLAUDE_US_BASE_URL=https://dashscope-us.aliyuncs.com/compatible-mode/v1
+REDALIBABACLAUDE_SG_API_KEY=
+REDALIBABACLAUDE_US_API_KEY=
+REDALIBABACLAUDE_REQUIRE_AUTH=1
+REDALIBABACLAUDE_AUTH_TOKENS=red
+REDALIBABACLAUDE_DEFAULT_MODEL=ALI-SG/qwen-coder-plus
+```
+
+Systemd:
+
+```bash
+cp infraestrutura/systemd/redalibabaclaude.service /etc/systemd/system/redalibabaclaude.service
+systemctl daemon-reload
+systemctl enable --now redalibabaclaude
+systemctl status redalibabaclaude --no-pager
+```
+
+Health check:
+
+```bash
+curl -s https://127.0.0.1:5052/healthz -k | python3 -m json.tool
+curl -s https://127.0.0.1:5052/v1/models -k -H 'Authorization: Bearer red' | python3 -m json.tool
+```
 systemctl status redproxypro --no-pager
 ```
 
