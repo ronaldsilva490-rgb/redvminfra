@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>8 Modelos · Total Empresarial</title>
+<title>Galeria de Modelos · RED Systems</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
@@ -49,10 +49,11 @@ h1 { font-size: clamp(28px, 6vw, 44px); color: var(--text-strong); font-weight: 
   letter-spacing: -1.5px; line-height: 1.1; max-width: 800px; }
 header p { color: var(--text-dim); font-size: 16px; max-width: 600px; }
 
+/* Preview toggle tabs */
 .tabs {
   display: inline-flex; align-items: center; gap: 4px;
   background: var(--paper); border: 1px solid var(--line-strong); border-radius: 12px;
-  padding: 4px; margin: 8px 0 32px;
+  padding: 4px; margin: 8px 0 16px;
   box-shadow: 0 8px 32px rgba(219,35,21,0.15);
 }
 .tab {
@@ -64,6 +65,28 @@ header p { color: var(--text-dim); font-size: 16px; max-width: 600px; }
 }
 .tab.active { background: var(--accent); color: #fff; box-shadow: 0 4px 16px rgba(219,35,21,0.4); }
 .tab:not(.active):hover { color: var(--text-strong); background: rgba(232,68,44,0.08); }
+
+/* Category filter tabs */
+.category-tabs {
+  display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  justify-content: center; margin-bottom: 32px;
+}
+.cat-tab {
+  padding: 8px 20px; border-radius: 99px;
+  font-size: 13px; font-weight: 600; color: var(--text-dim);
+  background: var(--paper); border: 1px solid var(--line);
+  cursor: pointer; transition: 0.2s;
+}
+.cat-tab.active {
+  background: var(--accent); color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 4px 16px rgba(219,35,21,0.4);
+}
+.cat-tab:not(.active):hover {
+  color: var(--text-strong);
+  border-color: var(--accent-strong);
+  background: rgba(232,68,44,0.08);
+}
 
 .grid { display: grid; grid-template-columns: 1fr; gap: 24px; }
 
@@ -181,21 +204,28 @@ footer a { color: var(--accent-strong); text-decoration: none; }
 <div class="wrap">
   <header>
     <img src="assets/logo.webp" alt="RED Systems" style="height: 48px; margin-bottom: 8px;">
-    <span class="kicker">// 16 modelos · escolha 1 (ou misture)</span>
-    <h1>Total Empresarial · galeria completa</h1>
-    <p>Cada modelo herda o logo real, menu, contatos, endereço e CNPJ do site. Tudo mobile-first com layout responsivo. Dos 8 originais aos 8 novos — do luxury gold ao cyberpunk neon.</p>
+    <span class="kicker">// Galeria de modelos por nicho</span>
+    <h1>Modelos · escolha seu nicho</h1>
+    <p>Navegue por categoria: Empresarial, Clínicas Médicas e mais. Cada modelo é responsivo, mobile-first e pronto para personalização.</p>
     <div class="tabs">
       <button class="tab active" data-view="mobile">📱 Mobile (375px)</button>
       <button class="tab" data-view="desktop">🖥 Desktop (1400px)</button>
+    </div>
+    <div class="category-tabs">
+      <button class="cat-tab active" data-cat="all">Todos</button>
+      <button class="cat-tab" data-cat="empresarial">Empresarial</button>
+      <button class="cat-tab" data-cat="clinicas">Clínicas Médicas</button>
     </div>
   </header>
 
   <div class="grid">
 
+    <!-- ==================== EMPRESARIAL MODELS ==================== -->
+
     <!-- M1 AURORA -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-1-aurora.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-1-aurora.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-1-aurora.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-1-aurora.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">01 / AURORA</span>
@@ -213,14 +243,14 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">Sora</span><span class="label-tag">Glassmorphism</span><span class="label-tag">Aurora mesh</span>
         </div>
-        <a href="modelo-1-aurora.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-1-aurora.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
     <!-- M2 EDITORIAL -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-2-editorial.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-2-editorial.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-2-editorial.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-2-editorial.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">02 / EDITORIAL</span>
@@ -238,14 +268,14 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">Fraunces</span><span class="label-tag">DM Sans</span><span class="label-tag">Italic accents</span>
         </div>
-        <a href="modelo-2-editorial.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-2-editorial.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
     <!-- M3 ESMERALDA -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-3-esmeralda.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-3-esmeralda.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-3-esmeralda.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-3-esmeralda.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">03 / ESMERALDA</span>
@@ -263,14 +293,14 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">Plus Jakarta</span><span class="label-tag">Instrument Serif</span><span class="label-tag">Dashboard</span>
         </div>
-        <a href="modelo-3-esmeralda.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-3-esmeralda.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
     <!-- M4 BRUTALIST -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-4-brutalist.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-4-brutalist.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-4-brutalist.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-4-brutalist.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">04 / BRUTALIST</span>
@@ -288,14 +318,14 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">Archivo Black</span><span class="label-tag">Hard shadows</span><span class="label-tag">Ticker</span>
         </div>
-        <a href="modelo-4-brutalist.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-4-brutalist.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
     <!-- M5 SWISS -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-5-swiss.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-5-swiss.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-5-swiss.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-5-swiss.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">05 / SWISS</span>
@@ -313,14 +343,14 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">Space Grotesk</span><span class="label-tag">Inter</span><span class="label-tag">Grid system</span>
         </div>
-        <a href="modelo-5-swiss.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-5-swiss.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
     <!-- M6 PASTEL -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-6-pastel.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-6-pastel.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-6-pastel.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-6-pastel.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">06 / PASTEL</span>
@@ -338,14 +368,14 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">Syne</span><span class="label-tag">DM Sans</span><span class="label-tag">Pastel blocks</span>
         </div>
-        <a href="modelo-6-pastel.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-6-pastel.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
     <!-- M7 GLASS -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-7-glass.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-7-glass.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-7-glass.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-7-glass.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">07 / GLASS</span>
@@ -363,14 +393,14 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">Plus Jakarta</span><span class="label-tag">Glassmorphism</span><span class="label-tag">Gradient glow</span>
         </div>
-        <a href="modelo-7-glass.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-7-glass.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
     <!-- M8 RETRO -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-8-retro.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-8-retro.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-8-retro.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-8-retro.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">08 / RETRO</span>
@@ -388,14 +418,14 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">Playfair Display</span><span class="label-tag">Work Sans</span><span class="label-tag">Earth tones</span>
         </div>
-        <a href="modelo-8-retro.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-8-retro.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
     <!-- M9 LUXURY -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-9-luxury.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-9-luxury.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-9-luxury.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-9-luxury.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">09 / LUXURY</span>
@@ -413,14 +443,14 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">Cormorant Garamond</span><span class="label-tag">Montserrat</span><span class="label-tag">Gold accents</span>
         </div>
-        <a href="modelo-9-luxury.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-9-luxury.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
     <!-- M10 TECH -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-10-tech.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-10-tech.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-10-tech.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-10-tech.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">10 / TECH</span>
@@ -438,14 +468,14 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">Plus Jakarta</span><span class="label-tag">Glassmorphism</span><span class="label-tag">Gradient mesh</span>
         </div>
-        <a href="modelo-10-tech.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-10-tech.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
     <!-- M11 MINIMAL -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-11-minimal.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-11-minimal.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-11-minimal.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-11-minimal.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">11 / MINIMAL</span>
@@ -463,14 +493,14 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">Inter</span><span class="label-tag">Playfair Display</span><span class="label-tag">Whitespace</span>
         </div>
-        <a href="modelo-11-minimal.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-11-minimal.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
     <!-- M13 NEUMORPHISM -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-13-neumorphism.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-13-neumorphism.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-13-neumorphism.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-13-neumorphism.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">13 / NEUMORPHISM</span>
@@ -488,14 +518,14 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">Nunito</span><span class="label-tag">Poppins</span><span class="label-tag">Soft shadows</span>
         </div>
-        <a href="modelo-13-neumorphism.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-13-neumorphism.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
     <!-- M14 CYBERPUNK -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-14-cyberpunk.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-14-cyberpunk.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-14-cyberpunk.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-14-cyberpunk.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">14 / CYBERPUNK</span>
@@ -513,14 +543,14 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">Orbitron</span><span class="label-tag">Rajdhani</span><span class="label-tag">Neon glow</span>
         </div>
-        <a href="modelo-14-cyberpunk.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-14-cyberpunk.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
     <!-- M15 BAUHAUS -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-15-bauhaus.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-15-bauhaus.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-15-bauhaus.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-15-bauhaus.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">15 / BAUHAUS</span>
@@ -538,14 +568,14 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">DM Sans</span><span class="label-tag">Space Grotesk</span><span class="label-tag">Primary colors</span>
         </div>
-        <a href="modelo-15-bauhaus.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-15-bauhaus.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
     <!-- M16 ORGANIC -->
-    <div class="card">
-      <div class="preview-desktop"><iframe src="modelo-16-organic.html" scrolling="no"></iframe></div>
-      <div class="preview-mobile"><div class="phone"><iframe src="modelo-16-organic.html" scrolling="no"></iframe></div></div>
+    <div class="card" data-category="empresarial">
+      <div class="preview-desktop"><iframe src="empresarial/modelo-16-organic.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="empresarial/modelo-16-organic.html" scrolling="no"></iframe></div></div>
       <div class="body">
         <div class="tag-row">
           <span class="tag">16 / ORGANIC</span>
@@ -563,23 +593,113 @@ footer a { color: var(--accent-strong); text-decoration: none; }
         <div class="label-tags">
           <span class="label-tag">Lora</span><span class="label-tag">Nunito</span><span class="label-tag">Earth tones</span>
         </div>
-        <a href="modelo-16-organic.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+        <a href="empresarial/modelo-16-organic.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+      </div>
+    </div>
+
+    <!-- ==================== CLINICAS MODELS ==================== -->
+
+    <!-- C1 VIDA SAUDE -->
+    <div class="card" data-category="clinicas">
+      <div class="preview-desktop"><iframe src="clinicas/modelo-clinica-01-vsaude/index.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="clinicas/modelo-clinica-01-vsaude/index.html" scrolling="no"></iframe></div></div>
+      <div class="body">
+        <div class="tag-row">
+          <span class="tag">01 / VIDA SAÚDE</span>
+          <span class="tag">CLÍNICA MÉDICA</span>
+        </div>
+        <h2>Vida Saúde — cuidado premium</h2>
+        <p>Design clean e acolhedor para clínicas médicas. Inter + Poppins, paleta verde saúde, agendamento integrado e seção de especialidades.</p>
+        <div class="swatches">
+          <div class="swatch" style="background:#ffffff"></div>
+          <div class="swatch" style="background:#10b981"></div>
+          <div class="swatch" style="background:#059669"></div>
+          <div class="swatch" style="background:#f0fdf4"></div>
+          <div class="swatch" style="background:#1f2937"></div>
+        </div>
+        <div class="label-tags">
+          <span class="label-tag">Inter</span><span class="label-tag">Poppins</span><span class="label-tag">Medical</span>
+        </div>
+        <a href="clinicas/modelo-clinica-01-vsaude/index.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+      </div>
+    </div>
+
+    <!-- C2 MEDCARE -->
+    <div class="card" data-category="clinicas">
+      <div class="preview-desktop"><iframe src="clinicas/modelo-clinica-02-medcare/index.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="clinicas/modelo-clinica-02-medcare/index.html" scrolling="no"></iframe></div></div>
+      <div class="body">
+        <div class="tag-row">
+          <span class="tag">02 / MEDCARE</span>
+          <span class="tag">PREMIUM HEALTH</span>
+        </div>
+        <h2>MedCare Premium — excelência médica</h2>
+        <p>Plus Jakarta Sans + Playfair Display, visual sofisticado para clínicas de alto padrão. Seções de equipe, depoimentos e contato.</p>
+        <div class="swatches">
+          <div class="swatch" style="background:#ffffff"></div>
+          <div class="swatch" style="background:#1e40af"></div>
+          <div class="swatch" style="background:#3b82f6"></div>
+          <div class="swatch" style="background:#dbeafe"></div>
+          <div class="swatch" style="background:#1e293b"></div>
+        </div>
+        <div class="label-tags">
+          <span class="label-tag">Plus Jakarta</span><span class="label-tag">Playfair</span><span class="label-tag">Premium</span>
+        </div>
+        <a href="clinicas/modelo-clinica-02-medcare/index.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
+      </div>
+    </div>
+
+    <!-- C3 ELITE MEDICAL -->
+    <div class="card" data-category="clinicas">
+      <div class="preview-desktop"><iframe src="clinicas/modelo-clinica-03-elite/index.html" scrolling="no"></iframe></div>
+      <div class="preview-mobile"><div class="phone"><iframe src="clinicas/modelo-clinica-03-elite/index.html" scrolling="no"></iframe></div></div>
+      <div class="body">
+        <div class="tag-row">
+          <span class="tag">03 / ELITE MEDICAL</span>
+          <span class="tag">EXCLUSIVE CARE</span>
+        </div>
+        <h2>Elite Medical — atendimento exclusivo</h2>
+        <p>DM Sans + Cormorant Garamond, design elegante para centros médicos de elite. Foco em exclusividade, tecnologia e conforto.</p>
+        <div class="swatches">
+          <div class="swatch" style="background:#fafaf9"></div>
+          <div class="swatch" style="background:#78716c"></div>
+          <div class="swatch" style="background:#44403c"></div>
+          <div class="swatch" style="background:#a8a29e"></div>
+          <div class="swatch" style="background:#292524"></div>
+        </div>
+        <div class="label-tags">
+          <span class="label-tag">DM Sans</span><span class="label-tag">Cormorant</span><span class="label-tag">Elegant</span>
+        </div>
+        <a href="clinicas/modelo-clinica-03-elite/index.html" target="_blank" class="btn btn-primary">Abrir em tela cheia →</a>
       </div>
     </div>
 
   </div>
 
   <footer>
-    <p>Logo, contatos, endereço e CNPJ herdados do site real. · Imagens via Unsplash. · Após a sua escolha, eu replico o estilo nas páginas Elementor.</p>
+    <p>Logo, contatos e informações herdados de cada nicho. · Imagens via Unsplash. · Novos nichos serão adicionados conforme demanda.</p>
   </footer>
 </div>
 
 <script>
+// Preview toggle (mobile/desktop)
 document.querySelectorAll('.tab').forEach(t => {
   t.onclick = () => {
     document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
     t.classList.add('active');
     document.body.className = 'view-' + t.dataset.view;
+  };
+});
+
+// Category filter
+document.querySelectorAll('.cat-tab').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.cat-tab').forEach(x => x.classList.remove('active'));
+    btn.classList.add('active');
+    const cat = btn.dataset.cat;
+    document.querySelectorAll('.card').forEach(card => {
+      card.style.display = (cat === 'all' || card.dataset.category === cat) ? '' : 'none';
+    });
   };
 });
 </script>

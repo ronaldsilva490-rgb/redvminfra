@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clínica Vida Saúde | Cuidado Médico Premium</title>
+    <meta name="description" content="Clínica médica especializada com atendimento humanizado, profissionais especializados e estrutura moderna. Agende sua consulta hoje.">
+    <meta name="keywords" content="clínica médica, saúde, consulta médica, especialistas, atendimento">
+    <meta name="author" content="Clínica Vida Saúde">
+    <meta property="og:title" content="Clínica Vida Saúde | Cuidado Médico Premium">
+    <meta property="og:description" content="Atendimento humanizado com profissionais especializados. Agende sua consulta.">
+    <meta property="og:type" content="website">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header" id="header">
+        <div class="container">
+            <nav class="nav">
+                <a href="#" class="logo">
+                    <span class="logo-icon">+</span>
+                    <span class="logo-text">Vida Saúde</span>
+                </a>
+                <ul class="nav-menu" id="navMenu">
+                    <li><a href="#home" class="nav-link">Início</a></li>
+                    <li><a href="#sobre" class="nav-link">Sobre</a></li>
+                    <li><a href="#servicos" class="nav-link">Serviços</a></li>
+                    <li><a href="#depoimentos" class="nav-link">Depoimentos</a></li>
+                    <li><a href="#contato" class="nav-link">Contato</a></li>
+                </ul>
+                <a href="https://wa.me/5511999999999" class="btn btn-primary btn-sm" target="_blank">
+                    Agendar
+                </a>
+                <button class="menu-toggle" id="menuToggle" aria-label="Menu">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero" id="home">
+        <div class="hero-bg"></div>
+        <div class="container">
+            <div class="hero-content">
+                <div class="hero-text">
+                    <span class="hero-badge fade-in">Cuidado Premium</span>
+                    <h1 class="hero-title fade-in">Cuide da sua saúde com quem entende</h1>
+                    <p class="hero-subtitle fade-in">Atendimento médico especializado com foco no seu bem-estar. Equipe qualificada, estrutura moderna e um ambiente acolhedor para você e sua família.</p>
+                    <div class="hero-buttons fade-in">
+                        <a href="https://wa.me/5511999999999" class="btn btn-whatsapp" target="_blank">
+                            <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.006c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413"/>
+                            </svg>
+                            Agendar Consulta pelo WhatsApp
+                        </a>
+                        <a href="#servicos" class="btn btn-secondary">Conhecer Especialidades</a>
+                    </div>
+                    <div class="hero-stats fade-in">
+                        <div class="stat">
+                            <span class="stat-number">15+</span>
+                            <span class="stat-label">Anos de Experiência</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-number">50+</span>
+                            <span class="stat-label">Especialistas</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-number">10k+</span>
+                            <span class="stat-label">Pacientes Atendidos</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="hero-image">
+                    <img src="https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=800&q=80" alt="Médico sorrindo em consultório moderno" loading="lazy">
+                    <div class="hero-float-card">
+                        <div class="float-card-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                <polyline points="22 4 12 14.01 9 11.01"/>
+                            </svg>
+                        </div>
+                        <div class="float-card-text">
+                            <span class="float-card-title">Agendamento Online</span>
+                            <span class="float-card-desc">Rápido e prático</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Sobre Section -->
+    <section class="sobre" id="sobre">
+        <div class="container">
+            <div class="sobre-content">
+                <div class="sobre-image slide-in-left">
+                    <img src="https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=600&q=80" alt="Fachada da clínica" loading="lazy">
+                    <div class="sobre-experience">
+                        <span class="experience-number">15</span>
+                        <span class="experience-text">anos de<br>excelência</span>
+                    </div>
+                </div>
+                <div class="sobre-text slide-in-right">
+                    <span class="section-badge">Sobre Nós</span>
+                    <h2 class="section-title">Uma clínica pensada para o seu bem-estar</h2>
+                    <p class="section-description">A Clínica Vida Saúde nasceu da vontade de oferecer um atendimento médico diferenciado, onde o paciente é tratado com atenção, respeito e dedicação. Nossa estrutura moderna e nossa equipe especializada garantem o melhor cuidado para você e sua família.</p>
+                    <p class="section-description">Acreditamos que a saúde vai além do tratamento de doenças. Por isso, trabalhamos com prevenção, acompanhamento contínuo e um relacionamento de confiança entre médico e paciente.</p>
+                    <div class="sobre-diferenciais">
+                        <div class="diferencial-item">
+                            <div class="diferencial-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+                                </svg>
+                            </div>
+                            <div class="diferencial-text">
+                                <h4>Atendimento Humanizado</h4>
+                                <p>Cuidado individualizado e acolhedor</p>
+                            </div>
+                        </div>
+                        <div class="diferencial-item">
+                            <div class="diferencial-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                                </svg>
+                            </div>
+                            <div class="diferencial-text">
+                                <h4>Profissionais Especializados</h4>
+                                <p>Equipe médica altamente qualificada</p>
+                            </div>
+                        </div>
+                        <div class="diferencial-item">
+                            <div class="diferencial-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+                                    <path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/>
+                                </svg>
+                            </div>
+                            <div class="diferencial-text">
+                                <h4>Estrutura Moderna</h4>
+                                <p>Instalações equipadas com tecnologia</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Serviços Section -->
+    <section class="servicos" id="servicos">
+        <div class="container">
+            <div class="section-header fade-in">
+                <span class="section-badge">Nossas Especialidades</span>
+                <h2 class="section-title">Serviços médicos completos para você</h2>
+                <p class="section-description">Oferecemos uma ampla gama de especialidades médicas para cuidar da sua saúde em todas as fases da vida.</p>
+            </div>
+            <div class="servicos-grid">
+                <div class="servico-card fade-in">
+                    <div class="servico-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+                        </svg>
+                    </div>
+                    <h3 class="servico-title">Cardiologia</h3>
+                    <p class="servico-desc">Avaliação completa da saúde do coração, exames preventivos e tratamento de doenças cardiovasculares.</p>
+                </div>
+                <div class="servico-card fade-in">
+                    <div class="servico-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+                            <line x1="9" y1="9" x2="9.01" y2="9"/>
+                            <line x1="15" y1="9" x2="15.01" y2="9"/>
+                        </svg>
+                    </div>
+                    <h3 class="servico-title">Dermatologia</h3>
+                    <p class="servico-desc">Cuidados com a pele, cabelo e unhas. Tratamentos estéticos e clínicos para todos os tipos de pele.</p>
+                </div>
+                <div class="servico-card fade-in">
+                    <div class="servico-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2a10 10 0 1010 10A10 10 0 0012 2zm0 18a8 8 0 118-8 8 8 0 01-8 8z"/>
+                            <path d="M12 6v6l4 2"/>
+                        </svg>
+                    </div>
+                    <h3 class="servico-title">Ginecologia</h3>
+                    <p class="servico-desc">Saúde da mulher em todas as fases da vida, com atendimento acolhedor e preventivo.</p>
+                </div>
+                <div class="servico-card fade-in">
+                    <div class="servico-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                        </svg>
+                    </div>
+                    <h3 class="servico-title">Ortopedia</h3>
+                    <p class="servico-desc">Tratamento de problemas nos ossos, músculos e articulações. Reabilitação e cirurgia quando necessário.</p>
+                </div>
+                <div class="servico-card fade-in">
+                    <div class="servico-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/>
+                            <path d="M12 6v6l4 2"/>
+                        </svg>
+                    </div>
+                    <h3 class="servico-title">Pediatria</h3>
+                    <p class="servico-desc">Acompanhamento do desenvolvimento infantil, vacinação e tratamento de doenças pediátricas.</p>
+                </div>
+                <div class="servico-card fade-in">
+                    <div class="servico-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 12l2 2 4-4"/>
+                            <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/>
+                        </svg>
+                    </div>
+                    <h3 class="servico-title">Clínica Geral</h3>
+                    <p class="servico-desc">Atendimento primário de saúde, check-ups completos e acompanhamento médico contínuo.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Diferenciais Section -->
+    <section class="diferenciais" id="diferenciais">
+        <div class="container">
+            <div class="diferenciais-content">
+                <div class="diferenciais-text fade-in">
+                    <span class="section-badge light">Por que nos escolher</span>
+                    <h2 class="section-title light">Diferenciais que fazem a diferença</h2>
+                    <p class="section-description light">Nosso compromisso é oferecer o melhor atendimento médico, combinando expertise técnica com um cuidado genuíno por cada paciente.</p>
+                </div>
+                <div class="diferenciais-grid">
+                    <div class="diferencial-card fade-in">
+                        <div class="diferencial-card-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                        </div>
+                        <h3>Atendimento Rápido</h3>
+                        <p>Agendamento facilitado e atendimento pontual, respeitando seu tempo.</p>
+                    </div>
+                    <div class="diferencial-card fade-in">
+                        <div class="diferencial-card-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                            </svg>
+                        </div>
+                        <h3>Ambiente Seguro</h3>
+                        <p>Protocolos rigorosos de higiene e segurança para sua tranquilidade.</p>
+                    </div>
+                    <div class="diferencial-card fade-in">
+                        <div class="diferencial-card-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                                <circle cx="9" cy="7" r="4"/>
+                                <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+                            </svg>
+                        </div>
+                        <h3>Equipe Multidisciplinar</h3>
+                        <p>Profissionais de diversas especialidades trabalhando em conjunto.</p>
+                    </div>
+                    <div class="diferencial-card fade-in">
+                        <div class="diferencial-card-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                <line x1="16" y1="2" x2="16" y2="6"/>
+                                <line x1="8" y1="2" x2="8" y2="6"/>
+                                <line x1="3" y1="10" x2="21" y2="10"/>
+                            </svg>
+                        </div>
+                        <h3>Horários Flexíveis</h3>
+                        <p>Atendimento em horários estendidos para se adequar à sua rotina.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Depoimentos Section -->
+    <section class="depoimentos" id="depoimentos">
+        <div class="container">
+            <div class="section-header fade-in">
+                <span class="section-badge">Depoimentos</span>
+                <h2 class="section-title">O que nossos pacientes dizem</h2>
+                <p class="section-description">A satisfação dos nossos pacientes é o nosso maior orgulho. Confira algumas histórias de quem já passou por aqui.</p>
+            </div>
+            <div class="depoimentos-grid">
+                <div class="depoimento-card fade-in">
+                    <div class="depoimento-stars">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                    </div>
+                    <p class="depoimento-text">"Atendimento excelente! Os médicos são muito atenciosos e a clínica é linda. Me senti muito bem cuidada desde o primeiro momento."</p>
+                    <div class="depoimento-author">
+                        <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&q=80" alt="Maria Silva" class="depoimento-avatar">
+                        <div class="depoimento-info">
+                            <span class="depoimento-name">Maria Silva</span>
+                            <span class="depoimento-role">Paciente desde 2022</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="depoimento-card fade-in">
+                    <div class="depoimento-stars">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                    </div>
+                    <p class="depoimento-text">"Levo minha família inteira para a Clínica Vida Saúde. A estrutura é moderna, o atendimento é humanizado e os resultados são sempre positivos."</p>
+                    <div class="depoimento-author">
+                        <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80" alt="Carlos Mendes" class="depoimento-avatar">
+                        <div class="depoimento-info">
+                            <span class="depoimento-name">Carlos Mendes</span>
+                            <span class="depoimento-role">Paciente desde 2021</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="depoimento-card fade-in">
+                    <div class="depoimento-stars">
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                    </div>
+                    <p class="depoimento-text">"Profissionais extremamente competentes e atenciosos. O sistema de agendamento online facilitou muito minha vida. Recomendo a todos!"</p>
+                    <div class="depoimento-author">
+                        <img src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&q=80" alt="Ana Paula Costa" class="depoimento-avatar">
+                        <div class="depoimento-info">
+                            <span class="depoimento-name">Ana Paula Costa</span>
+                            <span class="depoimento-role">Paciente desde 2023</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Localização Section -->
+    <section class="localizacao" id="localizacao">
+        <div class="container">
+            <div class="localizacao-content">
+                <div class="localizacao-info fade-in">
+                    <span class="section-badge">Localização</span>
+                    <h2 class="section-title">Venha nos conhecer</h2>
+                    <p class="section-description">Estamos em uma localização privilegiada, de fácil acesso e com estacionamento próprio.</p>
+                    <div class="localizacao-detalhes">
+                        <div class="localizacao-item">
+                            <div class="localizacao-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
+                                    <circle cx="12" cy="10" r="3"/>
+                                </svg>
+                            </div>
+                            <div class="localizacao-text">
+                                <h4>Endereço</h4>
+                                <p>Av. Paulista, 1000 - Bela Vista<br>São Paulo - SP, 01310-100</p>
+                            </div>
+                        </div>
+                        <div class="localizacao-item">
+                            <div class="localizacao-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <polyline points="12 6 12 12 16 14"/>
+                                </svg>
+                            </div>
+                            <div class="localizacao-text">
+                                <h4>Horário de Funcionamento</h4>
+                                <p>Segunda a Sexta: 7h - 20h<br>Sábado: 8h - 14h</p>
+                            </div>
+                        </div>
+                        <div class="localizacao-item">
+                            <div class="localizacao-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
+                                </svg>
+                            </div>
+                            <div class="localizacao-text">
+                                <h4>Telefone</h4>
+                                <p>(11) 99999-9999<br>(11) 3333-3333</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="localizacao-mapa fade-in">
+                    <iframe
+                        src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3657.097735256028!2d-46.65390548447564!3d-23.56491028468189!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x94ce59c8da0aa315%3A0xd59f9431f2c9776a!2sAv.%20Paulista%2C%201000%20-%20Bela%20Vista%2C%20S%C3%A3o%20Paulo%20-%20SP%2C%2001310-100!5e0!3m2!1spt-BR!2sbr!4v1620000000000!5m2!1spt-BR!2sbr"
+                        width="100%"
+                        height="100%"
+                        style="border:0;"
+                        allowfullscreen=""
+                        loading="lazy"
+                        referrerpolicy="no-referrer-when-downgrade">
+                    </iframe>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contato Section -->
+    <section class="contato" id="contato">
+        <div class="container">
+            <div class="contato-content">
+                <div class="contato-text fade-in">
+                    <span class="section-badge">Agendamento</span>
+                    <h2 class="section-title">Agende sua consulta hoje</h2>
+                    <p class="section-description">Preencha o formulário ou entre em contato pelo WhatsApp. Nossa equipe está pronta para atender você e encontrar o melhor horário.</p>
+                    <div class="contato-cta">
+                        <a href="https://wa.me/5511999999999" class="btn btn-whatsapp-large" target="_blank">
+                            <svg class="icon" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.006c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413"/>
+                            </svg>
+                            Agendar pelo WhatsApp
+                        </a>
+                    </div>
+                </div>
+                <div class="contato-form-wrapper fade-in">
+                    <form class="contato-form" id="contatoForm">
+                        <div class="form-group">
+                            <label for="nome">Nome completo</label>
+                            <input type="text" id="nome" name="nome" placeholder="Digite seu nome" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="telefone">Telefone</label>
+                            <input type="tel" id="telefone" name="telefone" placeholder="(11) 99999-9999" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="email">E-mail</label>
+                            <input type="email" id="email" name="email" placeholder="seu@email.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="especialidade">Especialidade desejada</label>
+                            <select id="especialidade" name="especialidade" required>
+                                <option value="">Selecione uma especialidade</option>
+                                <option value="cardiologia">Cardiologia</option>
+                                <option value="dermatologia">Dermatologia</option>
+                                <option value="ginecologia">Ginecologia</option>
+                                <option value="ortopedia">Ortopedia</option>
+                                <option value="pediatria">Pediatria</option>
+                                <option value="clinica-geral">Clínica Geral</option>
+                                <option value="outro">Outro</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="mensagem">Mensagem (opcional)</label>
+                            <textarea id="mensagem" name="mensagem" rows="3" placeholder="Alguma informação adicional..."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-full">Solicitar Agendamento</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <a href="#" class="footer-logo">
+                        <span class="logo-icon">+</span>
+                        <span class="logo-text">Vida Saúde</span>
+                    </a>
+                    <p class="footer-description">Cuidando da sua saúde com excelência e humanização. Sua família merece o melhor atendimento médico.</p>
+                    <div class="footer-social">
+                        <a href="#" aria-label="Facebook">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg>
+                        </a>
+                        <a href="#" aria-label="Instagram">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z" fill="none" stroke="currentColor" stroke-width="2"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5" stroke="currentColor" stroke-width="2"/></svg>
+                        </a>
+                        <a href="#" aria-label="LinkedIn">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 8a6 6 0 016 6v7h-4v-7a2 2 0 00-2-2 2 2 0 00-2 2v7h-4v-7a6 6 0 016-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>
+                        </a>
+                    </div>
+                </div>
+                <div class="footer-links">
+                    <div class="footer-links-group">
+                        <h4>Links Rápidos</h4>
+                        <ul>
+                            <li><a href="#home">Início</a></li>
+                            <li><a href="#sobre">Sobre Nós</a></li>
+                            <li><a href="#servicos">Serviços</a></li>
+                            <li><a href="#contato">Contato</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-links-group">
+                        <h4>Especialidades</h4>
+                        <ul>
+                            <li><a href="#servicos">Cardiologia</a></li>
+                            <li><a href="#servicos">Dermatologia</a></li>
+                            <li><a href="#servicos">Ginecologia</a></li>
+                            <li><a href="#servicos">Pediatria</a></li>
+                        </ul>
+                    </div>
+                    <div class="footer-links-group">
+                        <h4>Contato</h4>
+                        <ul>
+                            <li>Av. Paulista, 1000</li>
+                            <li>São Paulo - SP</li>
+                            <li>(11) 99999-9999</li>
+                            <li>contato@vidasaude.com</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2024 Clínica Vida Saúde. Todos os direitos reservados.</p>
+                <p>CRM-SP: 12345 | CNPJ: 12.345.678/0001-90</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- WhatsApp Float Button -->
+    <a href="https://wa.me/5511999999999" class="whatsapp-float" target="_blank" aria-label="WhatsApp">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.006c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413"/>
+        </svg>
+    </a>
+
+    <script src="script.js"></script>
+</body>
+</html>

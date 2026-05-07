@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elite Medical Center | Excelência em Saúde</title>
+    <meta name="description" content="Centro médico de elite com atendimento exclusivo, tecnologia de ponta e profissionais renomados.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Cormorant+Garamond:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Preloader -->
+    <div class="preloader">
+        <div class="preloader-content">
+            <div class="preloader-logo">
+                <span class="logo-icon">
+                    <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="18" stroke="currentColor" stroke-width="2"/><path d="M20 10v20M10 20h20" stroke="currentColor" stroke-width="2"/></svg>
+                </span>
+            </div>
+            <div class="preloader-text">Elite Medical</div>
+            <div class="preloader-bar"><div class="preloader-progress"></div></div>
+        </div>
+    </div>
+
+    <!-- Cursor -->
+    <div class="cursor-dot"></div>
+    <div class="cursor-outline"></div>
+
+    <!-- Navigation -->
+    <nav class="nav" id="nav">
+        <div class="nav-bg"></div>
+        <div class="container">
+            <div class="nav-inner">
+                <a href="#" class="logo">
+                    <span class="logo-mark">
+                        <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="18" stroke="currentColor" stroke-width="2"/><path d="M20 10v20M10 20h20" stroke="currentColor" stroke-width="2"/></svg>
+                    </span>
+                    <span class="logo-text">Elite<span>Medical</span></span>
+                </a>
+                <div class="nav-menu" id="navMenu">
+                    <a href="#inicio" class="nav-link active">Início</a>
+                    <a href="#sobre" class="nav-link">Sobre</a>
+                    <a href="#servicos" class="nav-link">Serviços</a>
+                    <a href="#especialistas" class="nav-link">Especialistas</a>
+                    <a href="#galeria" class="nav-link">Galeria</a>
+                    <a href="#contato" class="nav-link">Contato</a>
+                </div>
+                <div class="nav-actions">
+                    <a href="tel:+5511999999999" class="nav-phone">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg>
+                        <span>(11) 99999-9999</span>
+                    </a>
+                    <a href="#contato" class="btn btn-primary">
+                        <span>Agendar</span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </a>
+                    <button class="menu-toggle" id="menuToggle">
+                        <span class="menu-line"></span>
+                        <span class="menu-line"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero" id="inicio">
+        <div class="hero-slider">
+            <div class="hero-slide active" style="background-image: url('https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?w=1920&q=80')"></div>
+            <div class="hero-slide" style="background-image: url('https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=1920&q=80')"></div>
+            <div class="hero-slide" style="background-image: url('https://images.unsplash.com/photo-1551076805-e1869033e561?w=1920&q=80')"></div>
+        </div>
+        <div class="hero-overlay"></div>
+        <div class="hero-content">
+            <div class="container">
+                <div class="hero-text">
+                    <span class="hero-label">Centro Médico de Elite</span>
+                    <h1 class="hero-title">
+                        <span class="title-line">Excelência</span>
+                        <span class="title-line">em cada</span>
+                        <span class="title-line accent">detalhe</span>
+                    </h1>
+                    <p class="hero-desc">Atendimento exclusivo com profissionais renomados, tecnologia de ponta e um ambiente projetado para o seu máximo conforto e bem-estar.</p>
+                    <div class="hero-buttons">
+                        <a href="https://wa.me/5511999999999" class="btn btn-gold" target="_blank">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.006c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413"/></svg>
+                            <span>Agendar Consulta</span>
+                        </a>
+                        <a href="#sobre" class="btn btn-outline-light">
+                            <span>Conhecer</span>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="hero-bottom">
+            <div class="container">
+                <div class="hero-features">
+                    <div class="feature-item">
+                        <div class="feature-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        </div>
+                        <div class="feature-text">
+                            <span class="feature-title">Segurança</span>
+                            <span class="feature-desc">Protocolos rigorosos</span>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        </div>
+                        <div class="feature-text">
+                            <span class="feature-title">Pontualidade</span>
+                            <span class="feature-desc">Respeito ao seu tempo</span>
+                        </div>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+                        </div>
+                        <div class="feature-text">
+                            <span class="feature-title">Cuidado</span>
+                            <span class="feature-desc">Atendimento humanizado</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="hero-slider-dots">
+                    <button class="dot active" data-slide="0"></button>
+                    <button class="dot" data-slide="1"></button>
+                    <button class="dot" data-slide="2"></button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- About -->
+    <section class="about" id="sobre">
+        <div class="container">
+            <div class="about-grid">
+                <div class="about-images">
+                    <div class="image-main reveal-left">
+                        <img src="https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=600&q=80" alt="Médico">
+                        <div class="image-frame"></div>
+                    </div>
+                    <div class="image-secondary reveal-up">
+                        <img src="https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=400&q=80" alt="Equipamento">
+                    </div>
+                    <div class="experience-badge reveal-scale">
+                        <span class="badge-number">25</span>
+                        <span class="badge-text">anos de<br>tradição</span>
+                    </div>
+                </div>
+                <div class="about-content reveal-right">
+                    <span class="section-label">Sobre Nós</span>
+                    <h2 class="section-title">Tradição e inovação<br>ao seu <em>serviço</em></h2>
+                    <p class="section-text">Desde 1999, o Elite Medical Center tem sido referência em atendimento médico de excelência. Nossa história é construída sobre pilares sólidos: profissionais renomados, tecnologia de ponta e um compromisso inabalável com o bem-estar de nossos pacientes.</p>
+                    <p class="section-text">Cada detalhe de nossa infraestrutura foi cuidadosamente planejado para proporcionar uma experiência única, onde a medicina de precisão encontra o conforto e a humanização.</p>
+                    <div class="about-stats">
+                        <div class="stat-item">
+                            <span class="stat-value" data-count="50000">0</span>
+                            <span class="stat-label">Pacientes Atendidos</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value" data-count="85">0</span>
+                            <span class="stat-label">Profissionais</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-value" data-count="35">0</span>
+                            <span class="stat-label">Especialidades</span>
+                        </div>
+                    </div>
+                    <a href="#contato" class="btn btn-dark">
+                        <span>Conheça nossa história</span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Services -->
+    <section class="services" id="servicos">
+        <div class="services-header">
+            <div class="container">
+                <span class="section-label light">Nossos Serviços</span>
+                <h2 class="section-title light">Especialidades médicas<br>completas</h2>
+            </div>
+        </div>
+        <div class="services-grid">
+            <div class="service-card">
+                <div class="card-image">
+                    <img src="https://images.unsplash.com/photo-1628348070889-cb656235b4c9?w=600&q=80" alt="Cardiologia">
+                </div>
+                <div class="card-content">
+                    <span class="card-number">01</span>
+                    <h3>Cardiologia</h3>
+                    <p>Diagnóstico e tratamento completo das doenças cardiovasculares com tecnologia de última geração.</p>
+                    <a href="#contato" class="card-link">Agendar <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
+                </div>
+            </div>
+            <div class="service-card">
+                <div class="card-image">
+                    <img src="https://images.unsplash.com/photo-1505751172876-fa1923c5c528?w=600&q=80" alt="Dermatologia">
+                </div>
+                <div class="card-content">
+                    <span class="card-number">02</span>
+                    <h3>Dermatologia</h3>
+                    <p>Cuidados especializados para pele, cabelo e unhas com tratamentos estéticos e clínicos.</p>
+                    <a href="#contato" class="card-link">Agendar <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
+                </div>
+            </div>
+            <div class="service-card">
+                <div class="card-image">
+                    <img src="https://images.unsplash.com/photo-1559757175-5700dde675bc?w=600&q=80" alt="Ortopedia">
+                </div>
+                <div class="card-content">
+                    <span class="card-number">03</span>
+                    <h3>Ortopedia</h3>
+                    <p>Tratamento de ossos, músculos e articulações com cirurgia minimamente invasiva.</p>
+                    <a href="#contato" class="card-link">Agendar <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
+                </div>
+            </div>
+            <div class="service-card">
+                <div class="card-image">
+                    <img src="https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=600&q=80" alt="Ginecologia">
+                </div>
+                <div class="card-content">
+                    <span class="card-number">04</span>
+                    <h3>Ginecologia</h3>
+                    <p>Saúde integral da mulher com atendimento acolhedor em todas as fases da vida.</p>
+                    <a href="#contato" class="card-link">Agendar <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
+                </div>
+            </div>
+            <div class="service-card">
+                <div class="card-image">
+                    <img src="https://images.unsplash.com/photo-1581056771107-24ca5f033842?w=600&q=80" alt="Pediatria">
+                </div>
+                <div class="card-content">
+                    <span class="card-number">05</span>
+                    <h3>Pediatria</h3>
+                    <p>Acompanhamento do desenvolvimento infantil com carinho e dedicação.</p>
+                    <a href="#contato" class="card-link">Agendar <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
+                </div>
+            </div>
+            <div class="service-card">
+                <div class="card-image">
+                    <img src="https://images.unsplash.com/photo-1579684385127-1ef15d508118?w=600&q=80" alt="Clínica Geral">
+                </div>
+                <div class="card-content">
+                    <span class="card-number">06</span>
+                    <h3>Clínica Geral</h3>
+                    <p>Atendimento primário completo com check-ups preventivos personalizados.</p>
+                    <a href="#contato" class="card-link">Agendar <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg></a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Specialists -->
+    <section class="specialists" id="especialistas">
+        <div class="container">
+            <div class="section-header center">
+                <span class="section-label">Nossa Equipe</span>
+                <h2 class="section-title">Médicos <em>renomados</em></h2>
+                <p class="section-subtitle">Profissionais de excelência dedicados ao seu bem-estar</p>
+            </div>
+            <div class="specialists-grid">
+                <div class="specialist-card">
+                    <div class="card-image">
+                        <img src="https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=400&q=80" alt="Dr. Ricardo Mendes">
+                        <div class="card-overlay">
+                            <div class="social-links">
+                                <a href="#"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg></a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-info">
+                        <h3>Dr. Ricardo Mendes</h3>
+                        <span class="specialty">Cardiologia</span>
+                        <span class="crm">CRM-SP 45678</span>
+                    </div>
+                </div>
+                <div class="specialist-card">
+                    <div class="card-image">
+                        <img src="https://images.unsplash.com/photo-1594824476967-48c8b964273f?w=400&q=80" alt="Dra. Carolina Silva">
+                        <div class="card-overlay">
+                            <div class="social-links">
+                                <a href="#"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg></a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-info">
+                        <h3>Dra. Carolina Silva</h3>
+                        <span class="specialty">Dermatologia</span>
+                        <span class="crm">CRM-SP 45679</span>
+                    </div>
+                </div>
+                <div class="specialist-card">
+                    <div class="card-image">
+                        <img src="https://images.unsplash.com/photo-1622253584250-31c9b9bd7215?w=400&q=80" alt="Dr. André Souza">
+                        <div class="card-overlay">
+                            <div class="social-links">
+                                <a href="#"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg></a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-info">
+                        <h3>Dr. André Souza</h3>
+                        <span class="specialty">Ortopedia</span>
+                        <span class="crm">CRM-SP 45680</span>
+                    </div>
+                </div>
+                <div class="specialist-card">
+                    <div class="card-image">
+                        <img src="https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=400&q=80" alt="Dra. Fernanda Lima">
+                        <div class="card-overlay">
+                            <div class="social-links">
+                                <a href="#"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg></a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-info">
+                        <h3>Dra. Fernanda Lima</h3>
+                        <span class="specialty">Ginecologia</span>
+                        <span class="crm">CRM-SP 45681</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials -->
+    <section class="testimonials">
+        <div class="testimonials-bg"></div>
+        <div class="container">
+            <div class="testimonials-content">
+                <div class="testimonials-text">
+                    <span class="section-label light">Depoimentos</span>
+                    <h2 class="section-title light">O que dizem<br>nossos <em>pacientes</em></h2>
+                    <div class="testimonial-nav">
+                        <button class="nav-btn prev">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                        </button>
+                        <button class="nav-btn next">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="testimonials-slider">
+                    <div class="testimonial-slide active">
+                        <div class="quote-icon">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z"/></svg>
+                        </div>
+                        <p class="testimonial-text">"O Elite Medical transformou minha experiência com saúde. O atendimento é impecável, a estrutura é magnífica e os profissionais são extremamente qualificados. Me sinto em boas mãos."</p>
+                        <div class="testimonial-author">
+                            <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&q=80" alt="Mariana Costa">
+                            <div class="author-info">
+                                <span class="author-name">Mariana Costa</span>
+                                <span class="author-role">Empresária</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="testimonial-slide">
+                        <div class="quote-icon">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z"/></svg>
+                        </div>
+                        <p class="testimonial-text">"Levo minha família inteira para o Elite Medical há anos. A confiança que temos na equipe é total. Eles realmente se preocupam com cada paciente."</p>
+                        <div class="testimonial-author">
+                            <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&q=80" alt="Roberto Almeida">
+                            <div class="author-info">
+                                <span class="author-name">Roberto Almeida</span>
+                                <span class="author-role">Advogado</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="testimonial-slide">
+                        <div class="quote-icon">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.748-9.57 9-10.609l.996 2.151c-2.433.917-3.996 3.638-3.996 5.849h3.983v10h-9.983z"/></svg>
+                        </div>
+                        <p class="testimonial-text">"A Dra. Carolina é uma dermatologista excepcional. O tratamento que recebi mudou minha autoestima. Sou grata por ter encontrado o Elite Medical."</p>
+                        <div class="testimonial-author">
+                            <img src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100&q=80" alt="Patrícia Mendes">
+                            <div class="author-info">
+                                <span class="author-name">Patrícia Mendes</span>
+                                <span class="author-role">Arquiteta</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Contact CTA -->
+    <section class="contact-cta" id="contato">
+        <div class="container">
+            <div class="cta-grid">
+                <div class="cta-content">
+                    <span class="section-label light">Agendamento</span>
+                    <h2 class="section-title light">Cuide da sua<br>saúde <em>hoje</em></h2>
+                    <p class="section-text light">Agende sua consulta e descubra por que somos referência em atendimento médico de excelência.</p>
+                    <div class="cta-buttons">
+                        <a href="https://wa.me/5511999999999" class="btn btn-gold" target="_blank">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.006c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413"/></svg>
+                            <span>Agendar pelo WhatsApp</span>
+                        </a>
+                        <a href="tel:+5511999999999" class="btn btn-outline-gold">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg>
+                            <span>Ligar Agora</span>
+                        </a>
+                    </div>
+                </div>
+                <div class="cta-info">
+                    <div class="info-card">
+                        <div class="info-header">
+                            <span class="info-label">Horário de Funcionamento</span>
+                        </div>
+                        <div class="info-body">
+                            <div class="info-row">
+                                <span>Segunda - Sexta</span>
+                                <span>07:00 - 22:00</span>
+                            </div>
+                            <div class="info-row">
+                                <span>Sábado</span>
+                                <span>08:00 - 18:00</span>
+                            </div>
+                            <div class="info-row">
+                                <span>Domingo</span>
+                                <span>Plantão 24h</span>
+                            </div>
+                        </div>
+                        <div class="info-footer">
+                            <div class="location">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                                <span>Av. Faria Lima, 1500 - São Paulo</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <a href="#" class="footer-logo">
+                        <span class="logo-mark">
+                            <svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="18" stroke="currentColor" stroke-width="2"/><path d="M20 10v20M10 20h20" stroke="currentColor" stroke-width="2"/></svg>
+                        </span>
+                        <span class="logo-text">Elite<span>Medical</span></span>
+                    </a>
+                    <p>Excelência em saúde desde 1999. Cuidando de você com dedicação, tecnologia e humanização.</p>
+                    <div class="footer-social">
+                        <a href="#" aria-label="Instagram"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg></a>
+                        <a href="#" aria-label="Facebook"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg></a>
+                        <a href="#" aria-label="LinkedIn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg></a>
+                    </div>
+                </div>
+                <div class="footer-links">
+                    <div class="link-group">
+                        <h4>Serviços</h4>
+                        <ul>
+                            <li><a href="#">Cardiologia</a></li>
+                            <li><a href="#">Dermatologia</a></li>
+                            <li><a href="#">Ortopedia</a></li>
+                            <li><a href="#">Ginecologia</a></li>
+                        </ul>
+                    </div>
+                    <div class="link-group">
+                        <h4>Institucional</h4>
+                        <ul>
+                            <li><a href="#">Sobre Nós</a></li>
+                            <li><a href="#">Nossa Equipe</a></li>
+                            <li><a href="#">Convênios</a></li>
+                            <li><a href="#">Blog</a></li>
+                        </ul>
+                    </div>
+                    <div class="link-group">
+                        <h4>Contato</h4>
+                        <ul>
+                            <li>Av. Faria Lima, 1500</li>
+                            <li>São Paulo - SP</li>
+                            <li>(11) 99999-9999</li>
+                            <li>contato@elitemedical.com</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2024 Elite Medical Center. Todos os direitos reservados.</p>
+                <p>CRM-SP 12345 | CNPJ: 12.345.678/0001-90</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- WhatsApp Float -->
+    <a href="https://wa.me/5511999999999" class="whatsapp-float" target="_blank" aria-label="WhatsApp">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.006c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413"/></svg>
+    </a>
+
+    <script src="script.js"></script>
+</body>
+</html>
