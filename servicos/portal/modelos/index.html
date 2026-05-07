@@ -922,28 +922,38 @@ function getVisibleCards() {
   return cards;
 }
 
+function getFilteredCards() {
+  var cards = [];
+  document.querySelectorAll('.card').forEach(function(card) {
+    if (currentCategory === 'all' || card.dataset.category === currentCategory) {
+      cards.push(card);
+    }
+  });
+  return cards;
+}
+
 function updatePagination() {
-  var allCards = document.querySelectorAll('.card');
+  var filteredCards = getFilteredCards();
   var pagination = document.getElementById('pagination');
 
-  // Only show pagination when category is "all" and there are more than 4 items
-  if (currentCategory === 'all' && allCards.length > ITEMS_PER_PAGE) {
+  // Show pagination only if there are more than 4 items in the current filter
+  if (filteredCards.length > ITEMS_PER_PAGE) {
     pagination.style.display = 'flex';
 
-    var totalPages = Math.ceil(allCards.length / ITEMS_PER_PAGE);
+    var totalPages = Math.ceil(filteredCards.length / ITEMS_PER_PAGE);
     if (currentPage > totalPages) currentPage = totalPages;
     if (currentPage < 1) currentPage = 1;
 
     // Hide all cards first
-    allCards.forEach(function(card) {
+    document.querySelectorAll('.card').forEach(function(card) {
       card.style.display = 'none';
     });
 
-    // Show only cards for current page
+    // Show only cards for current page (from filtered list)
     var start = (currentPage - 1) * ITEMS_PER_PAGE;
     var end = start + ITEMS_PER_PAGE;
-    for (var i = start; i < end && i < allCards.length; i++) {
-      allCards[i].style.display = '';
+    for (var i = start; i < end && i < filteredCards.length; i++) {
+      filteredCards[i].style.display = '';
     }
 
     // Update page number buttons
@@ -964,8 +974,8 @@ function updatePagination() {
     document.getElementById('nextBtn').style.visibility = currentPage === totalPages ? 'hidden' : 'visible';
   } else {
     pagination.style.display = 'none';
-    // Show/hide cards based on category filter
-    allCards.forEach(function(card) {
+    // Show all filtered cards (no pagination needed)
+    document.querySelectorAll('.card').forEach(function(card) {
       if (currentCategory === 'all' || card.dataset.category === currentCategory) {
         card.style.display = '';
       } else {
@@ -983,8 +993,8 @@ function goToPage(page) {
 }
 
 function changePage(delta) {
-  var allCards = document.querySelectorAll('.card');
-  var totalPages = Math.ceil(allCards.length / ITEMS_PER_PAGE);
+  var filteredCards = getFilteredCards();
+  var totalPages = Math.ceil(filteredCards.length / ITEMS_PER_PAGE);
   var newPage = currentPage + delta;
   if (newPage >= 1 && newPage <= totalPages) {
     goToPage(newPage);
