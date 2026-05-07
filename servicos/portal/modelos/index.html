@@ -140,7 +140,7 @@ header p { color: var(--text-dim); font-size: 16px; max-width: 600px; }
 
 .grid { display: grid; grid-template-columns: 1fr; gap: 28px; }
 
-/* Cards — simplified glass effect (reduced blur for performance) */
+/* Cards — simplified glass effect with content-visibility for performance */
 .card {
   background: var(--paper);
   backdrop-filter: blur(8px);
@@ -151,6 +151,9 @@ header p { color: var(--text-dim); font-size: 16px; max-width: 600px; }
   display: flex; flex-direction: column;
   transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  /* Skip rendering off-screen cards */
+  content-visibility: auto;
+  contain-intrinsic-size: 0 400px;
 }
 .card:hover {
   transform: translateY(-4px);
@@ -159,16 +162,23 @@ header p { color: var(--text-dim); font-size: 16px; max-width: 600px; }
 }
 /* card::before gradient line removed for performance */
 
-/* Static preview - no iframes for performance */
+/* Static preview with lazy-loaded images */
 .preview-static {
   position: relative;
   aspect-ratio: 16 / 10;
   overflow: hidden;
   cursor: pointer;
-  transition: all 0.3s;
+  display: block;
 }
-.preview-static:hover {
+.preview-static img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: filter 0.3s, transform 0.3s;
+}
+.preview-static:hover img {
   filter: brightness(1.1);
+  transform: scale(1.02);
 }
 .preview-static .preview-overlay {
   position: absolute;
@@ -281,17 +291,26 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
 /* Pagination controls */
 .pagination {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
+  display: flex !important; flex-direction: row !important;
+  align-items: center; justify-content: center; gap: 6px;
   margin-top: 40px; padding: 16px 0;
+  flex-wrap: wrap;
+}
+#pageNumbers {
+  display: flex !important; flex-direction: row !important;
+  align-items: center; gap: 6px;
 }
 .page-btn {
-  width: 40px; height: 40px; border-radius: 10px;
+  min-width: 40px; height: 40px; border-radius: 10px;
   font-size: 14px; font-weight: 600; color: var(--text-dim);
   background: var(--glass);
   border: 1px solid var(--glass-border);
   cursor: pointer;
   transition: all 0.2s;
-  display: flex; align-items: center; justify-content: center;
+  display: inline-flex !important; align-items: center; justify-content: center;
+  padding: 0 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .page-btn:hover {
   color: var(--text-strong);
@@ -305,13 +324,7 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
   box-shadow: 0 4px 16px rgba(255,51,34,0.4);
 }
 .page-btn.nav-arrow {
-  width: auto; padding: 0 16px;
   font-size: 13px;
-}
-.page-info {
-  font-size: 12px; color: var(--text-dim);
-  font-family: 'JetBrains Mono', monospace;
-  margin: 0 8px;
 }
 </style>
 </head>
@@ -338,7 +351,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M1 EDITORIAL -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-1-editorial.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-1-editorial.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-1-editorial.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-1-editorial.webp" alt="Modelo 1 Editorial" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -367,7 +381,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M2 ESMERALDA -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-2-esmeralda.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-2-esmeralda.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-2-esmeralda.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-2-esmeralda.webp" alt="Modelo 2 Esmeralda" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -396,7 +411,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M3 BRUTALIST -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-3-brutalist.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-3-brutalist.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-3-brutalist.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-3-brutalist.webp" alt="Modelo 3 Brutalist" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -425,7 +441,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M4 SWISS -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-4-swiss.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-4-swiss.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-4-swiss.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-4-swiss.webp" alt="Modelo 4 Swiss" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -454,7 +471,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M5 PASTEL -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-5-pastel.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-5-pastel.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-5-pastel.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-5-pastel.webp" alt="Modelo 5 Pastel" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -483,7 +501,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M6 GLASS -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-6-glass.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-6-glass.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-6-glass.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-6-glass.webp" alt="Modelo 6 Glass" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -512,7 +531,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M7 RETRO -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-7-retro.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-7-retro.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-7-retro.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-7-retro.webp" alt="Modelo 7 Retro" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -541,7 +561,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M8 LUXURY -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-8-luxury.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-8-luxury.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-8-luxury.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-8-luxury.webp" alt="Modelo 8 Luxury" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -570,7 +591,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M9 TECH -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-9-tech.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-9-tech.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-9-tech.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-9-tech.webp" alt="Modelo 9 Tech" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -599,7 +621,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M10 MINIMAL -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-10-minimal.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-10-minimal.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-10-minimal.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-10-minimal.webp" alt="Modelo 10 Minimal" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -628,7 +651,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M11 NEUMORPHISM -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-11-neumorphism.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-11-neumorphism.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-11-neumorphism.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-11-neumorphism.webp" alt="Modelo 11 Neumorphism" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -657,7 +681,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M12 CYBERPUNK -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-12-cyberpunk.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-12-cyberpunk.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-12-cyberpunk.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-12-cyberpunk.webp" alt="Modelo 12 Cyberpunk" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -686,7 +711,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M13 BAUHAUS -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-13-bauhaus.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-13-bauhaus.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-13-bauhaus.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-13-bauhaus.webp" alt="Modelo 13 Bauhaus" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -715,7 +741,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M14 ORGANIC -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-14-organic.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-14-organic.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-14-organic.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-14-organic.webp" alt="Modelo 14 Organic" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -744,7 +771,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- M15 AURORA -->
     <div class="card" data-category="empresarial">
-      <a href="empresarial/modelo-15-aurora.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-15-aurora.webp') center/cover no-repeat;">
+      <a href="empresarial/modelo-15-aurora.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-15-aurora.webp" alt="Modelo 15 Aurora" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -775,7 +803,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- C1 VIDA SAUDE -->
     <div class="card" data-category="clinicas">
-      <a href="clinicas/modelo-clinica-01-vsaude/index.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-clinica-01-vsaude.webp') center/cover no-repeat;">
+      <a href="clinicas/modelo-clinica-01-vsaude/index.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-clinica-01-vsaude.webp" alt="Modelo Clinica 01 Vsaude" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -804,7 +833,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- C2 MEDCARE -->
     <div class="card" data-category="clinicas">
-      <a href="clinicas/modelo-clinica-02-medcare/index.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-clinica-02-medcare.webp') center/cover no-repeat;">
+      <a href="clinicas/modelo-clinica-02-medcare/index.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-clinica-02-medcare.webp" alt="Modelo Clinica 02 Medcare" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
@@ -833,7 +863,8 @@ footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
     <!-- C3 ELITE MEDICAL -->
     <div class="card" data-category="clinicas">
-      <a href="clinicas/modelo-clinica-03-elite/index.html" target="_blank" class="preview-static" style="background: url('assets/thumbnails/modelo-clinica-03-elite.webp') center/cover no-repeat;">
+      <a href="clinicas/modelo-clinica-03-elite/index.html" target="_blank" class="preview-static">
+        <img src="assets/thumbnails/modelo-clinica-03-elite.webp" alt="Modelo Clinica 03 Elite" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;display:block;">
         <div class="preview-overlay">
           <div class="play-icon"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
           <span>Ver modelo</span>
