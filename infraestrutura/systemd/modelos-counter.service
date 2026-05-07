@@ -1,0 +1,14 @@
+[Unit]
+Description=RED Systems Modelos Gallery Visit Counter
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/redvm-repo/servicos/modelos-counter
+ExecStart=/usr/bin/python3 /opt/redvm-repo/servicos/modelos-counter/server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

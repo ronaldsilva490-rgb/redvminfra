@@ -843,15 +843,21 @@ document.querySelectorAll('.cat-tab').forEach(btn => {
   };
 });
 
-// Discreet visit counter using localStorage
+// Discreet visit counter using server-side API
 (function() {
-  var key = 'redvm_gallery_visits';
-  var count = parseInt(localStorage.getItem(key) || '0', 10) + 1;
-  localStorage.setItem(key, count.toString());
-  var el = document.getElementById('visitCounter');
-  if (el) {
-    el.textContent = count.toLocaleString('pt-BR') + ' visita' + (count !== 1 ? 's' : '');
-  }
+  fetch('/api/modelos-visits')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var el = document.getElementById('visitCounter');
+      if (el && data.visits) {
+        el.textContent = data.visits.toLocaleString('pt-BR') + ' visita' + (data.visits !== 1 ? 's' : '');
+      }
+    })
+    .catch(function() {
+      // Fallback: hide counter if API fails
+      var el = document.getElementById('visitCounter');
+      if (el) el.style.display = 'none';
+    });
 })();
 </script>
 </body>
