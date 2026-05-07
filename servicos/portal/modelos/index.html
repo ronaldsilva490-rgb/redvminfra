@@ -12,16 +12,20 @@
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --bg: #1a0202;
-  --bg-2: #240303;
-  --paper: #3b0505;
+  --bg: #0a0000;
+  --bg-2: #140202;
+  --paper: rgba(30, 4, 4, 0.6);
+  --glass: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(232, 68, 44, 0.15);
   --line: rgba(232, 68, 44, 0.18);
   --line-strong: rgba(232, 68, 44, 0.34);
   --text: #fff3f1;
   --text-dim: #d9b7b3;
   --text-strong: #ffffff;
   --accent: #db2315;
-  --accent-strong: #ee4d31;
+  --accent-strong: #ff3322;
+  --neon-red: rgba(255, 51, 34, 0.6);
+  --neon-glow: 0 0 20px rgba(255, 51, 34, 0.4), 0 0 40px rgba(255, 51, 34, 0.2);
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -31,79 +35,175 @@ body {
   min-height: 100vh;
   padding: 32px 16px 64px;
   -webkit-font-smoothing: antialiased;
-  background-image:
-    radial-gradient(circle at 20% 0%, rgba(219,35,21,0.15), transparent 50%),
-    radial-gradient(circle at 80% 100%, rgba(238,77,49,0.10), transparent 50%);
+  /* Deep gradient background with cyberpunk feel */
+  background:
+    radial-gradient(ellipse at 15% 10%, rgba(219,35,21,0.12) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 90%, rgba(255,51,34,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(10,0,0,1) 0%, rgba(5,0,0,1) 100%);
+  position: relative;
 }
-.wrap { max-width: 1400px; margin: 0 auto; }
+/* Subtle grid overlay for depth */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-image:
+    linear-gradient(rgba(232,68,44,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(232,68,44,0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+  z-index: 0;
+}
+/* Ambient glow orbs */
+body::after {
+  content: '';
+  position: fixed;
+  top: -200px; right: -200px;
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, rgba(255,51,34,0.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  animation: float-orb 20s ease-in-out infinite;
+}
+@keyframes float-orb {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-40px, 30px); }
+}
+.wrap { max-width: 1400px; margin: 0 auto; position: relative; z-index: 1; }
 
 header {
-  text-align: center; margin-bottom: 32px;
-  display: flex; flex-direction: column; gap: 12px; align-items: center;
+  text-align: center; margin-bottom: 40px;
+  display: flex; flex-direction: column; gap: 14px; align-items: center;
+  position: relative;
+}
+/* Glassmorphism header backdrop */
+header::before {
+  content: '';
+  position: absolute;
+  top: -20px; left: -40px; right: -40px; bottom: -20px;
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: 24px;
+  z-index: -1;
 }
 .kicker {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12px; color: var(--accent);
-  letter-spacing: 2px; text-transform: uppercase;
+  font-size: 12px; color: var(--accent-strong);
+  letter-spacing: 3px; text-transform: uppercase;
+  text-shadow: 0 0 10px rgba(255,51,34,0.5);
 }
-h1 { font-size: clamp(28px, 6vw, 44px); color: var(--text-strong); font-weight: 800;
-  letter-spacing: -1.5px; line-height: 1.1; max-width: 800px; }
+h1 {
+  font-size: clamp(28px, 6vw, 48px);
+  color: var(--text-strong);
+  font-weight: 800;
+  letter-spacing: -1.5px;
+  line-height: 1.1;
+  max-width: 800px;
+  text-shadow: 0 0 30px rgba(255,51,34,0.3);
+}
 header p { color: var(--text-dim); font-size: 16px; max-width: 600px; }
 
-/* Preview toggle tabs */
+/* Logo container with neon glow */
+.logo-container img {
+  filter: drop-shadow(0 0 15px rgba(255,51,34,0.3));
+  transition: filter 0.3s, transform 0.3s;
+}
+.logo-container img:hover {
+  filter: drop-shadow(0 0 25px rgba(255,51,34,0.6));
+  transform: scale(1.05);
+}
+
+/* Preview toggle tabs - glassmorphism */
 .tabs {
   display: inline-flex; align-items: center; gap: 4px;
-  background: var(--paper); border: 1px solid var(--line-strong); border-radius: 12px;
-  padding: 4px; margin: 8px 0 16px;
-  box-shadow: 0 8px 32px rgba(219,35,21,0.15);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 4px; margin: 12px 0 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
 }
 .tab {
-  padding: 8px 18px; border-radius: 8px;
+  padding: 10px 20px; border-radius: 10px;
   font-size: 13px; font-weight: 600; color: var(--text-dim);
   background: transparent; border: 0; cursor: pointer;
   display: flex; align-items: center; gap: 6px;
-  transition: 0.2s;
+  transition: all 0.25s;
 }
-.tab.active { background: var(--accent); color: #fff; box-shadow: 0 4px 16px rgba(219,35,21,0.4); }
-.tab:not(.active):hover { color: var(--text-strong); background: rgba(232,68,44,0.08); }
+.tab.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(255,51,34,0.5), 0 0 10px rgba(255,51,34,0.3);
+}
+.tab:not(.active):hover {
+  color: var(--text-strong);
+  background: rgba(255,51,34,0.1);
+}
 
-/* Category filter tabs */
+/* Category filter tabs - glass pills */
 .category-tabs {
-  display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  justify-content: center; margin-bottom: 32px;
+  display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  justify-content: center; margin-bottom: 36px;
 }
 .cat-tab {
-  padding: 8px 20px; border-radius: 99px;
+  padding: 10px 24px; border-radius: 99px;
   font-size: 13px; font-weight: 600; color: var(--text-dim);
-  background: var(--paper); border: 1px solid var(--line);
-  cursor: pointer; transition: 0.2s;
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  transition: all 0.25s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 .cat-tab.active {
-  background: var(--accent); color: #fff;
-  border-color: var(--accent);
-  box-shadow: 0 4px 16px rgba(219,35,21,0.4);
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  border-color: var(--accent-strong);
+  box-shadow: 0 4px 20px rgba(255,51,34,0.5), 0 0 15px rgba(255,51,34,0.3);
 }
 .cat-tab:not(.active):hover {
   color: var(--text-strong);
   border-color: var(--accent-strong);
-  background: rgba(232,68,44,0.08);
+  background: rgba(255,51,34,0.1);
+  box-shadow: 0 4px 16px rgba(255,51,34,0.2);
 }
 
-.grid { display: grid; grid-template-columns: 1fr; gap: 24px; }
+.grid { display: grid; grid-template-columns: 1fr; gap: 28px; }
 
+/* Glassmorphism cards with neon hover */
 .card {
   background: var(--paper);
-  border: 1px solid var(--line);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
   border-radius: 20px;
   overflow: hidden;
   display: flex; flex-direction: column;
-  transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s;
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
 }
 .card:hover {
-  transform: translateY(-4px);
+  transform: translateY(-6px);
   border-color: var(--accent-strong);
-  box-shadow: 0 24px 48px rgba(219,35,21,0.25);
+  box-shadow:
+    0 24px 48px rgba(0,0,0,0.4),
+    0 0 30px rgba(255,51,34,0.15),
+    inset 0 1px 0 rgba(255,255,255,0.06);
 }
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-strong), transparent);
+  opacity: 0;
+  transition: opacity 0.35s;
+}
+.card:hover::before { opacity: 1; }
 
 .preview-mobile, .preview-desktop {
   position: relative; overflow: hidden;
@@ -127,7 +227,7 @@ body.view-mobile .preview-mobile { display: flex; align-items: flex-start; justi
 .preview-mobile {
   height: 580px;
   background:
-    radial-gradient(circle at 50% 50%, rgba(99,102,241,0.1), transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(255,51,34,0.08), transparent 50%),
     var(--bg-2);
   padding: 24px 0;
 }
@@ -136,7 +236,10 @@ body.view-mobile .preview-mobile { display: flex; align-items: flex-start; justi
   border-radius: 32px;
   background: #0a0a0f;
   border: 8px solid #1a1a22;
-  box-shadow: 0 20px 50px rgba(0,0,0,0.5), inset 0 0 0 2px #2a2a32;
+  box-shadow:
+    0 20px 50px rgba(0,0,0,0.5),
+    inset 0 0 0 2px #2a2a32,
+    0 0 20px rgba(255,51,34,0.1);
   position: relative; overflow: hidden;
 }
 .phone::before {
@@ -158,44 +261,69 @@ body.view-mobile .preview-mobile { display: flex; align-items: flex-start; justi
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px; font-weight: 500;
   padding: 4px 10px; border-radius: 99px;
-  background: var(--bg-2); color: var(--text-dim);
-  border: 1px solid var(--line);
+  background: rgba(255,51,34,0.08);
+  color: var(--text-dim);
+  border: 1px solid var(--glass-border);
 }
-.card h2 { color: var(--text-strong); font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+.card h2 {
+  color: var(--text-strong);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
 .card p { color: var(--text-dim); font-size: 14px; line-height: 1.55; }
 
 .swatches { display: flex; gap: 6px; align-items: center; }
 .swatch {
   width: 22px; height: 22px; border-radius: 6px;
   border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
 }
 .label-tags { display: flex; gap: 6px; flex-wrap: wrap; }
 .label-tag {
   font-size: 10px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 1px;
   padding: 3px 8px; border-radius: 4px;
-  background: var(--bg-2); color: var(--text-dim);
-  border: 1px solid var(--line);
+  background: rgba(255,51,34,0.06);
+  color: var(--text-dim);
+  border: 1px solid var(--glass-border);
 }
 
+/* Neon button with glow */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 12px 20px; border-radius: 10px;
   font-weight: 600; font-size: 14px;
-  text-decoration: none; transition: all 0.2s;
+  text-decoration: none;
+  transition: all 0.25s;
   margin-top: auto;
 }
 .btn-primary {
-  background: var(--accent); color: #fff;
-  box-shadow: 0 4px 16px rgba(219,35,21,0.4);
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(255,51,34,0.4), 0 0 10px rgba(255,51,34,0.2);
 }
-.btn-primary:hover { background: var(--accent-strong); transform: translateY(-1px); }
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--accent-strong), #ff5544);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(255,51,34,0.5), 0 0 20px rgba(255,51,34,0.3);
+}
 
 footer {
   text-align: center; margin-top: 64px; color: var(--text-dim); font-size: 13px;
-  border-top: 1px solid var(--line-strong); padding-top: 32px;
+  border-top: 1px solid var(--glass-border);
+  padding-top: 32px;
+  position: relative;
+}
+footer::before {
+  content: '';
+  position: absolute;
+  top: -1px; left: 50%; transform: translateX(-50%);
+  width: 200px; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-strong), transparent);
 }
 footer a { color: var(--accent-strong); text-decoration: none; }
+footer a:hover { text-shadow: 0 0 10px rgba(255,51,34,0.5); }
 
 @media (min-width: 760px) { .grid { grid-template-columns: 1fr 1fr; } }
 @media (min-width: 1180px) { .grid { grid-template-columns: 1fr 1fr 1fr 1fr; } }
@@ -204,7 +332,7 @@ footer a { color: var(--accent-strong); text-decoration: none; }
 <body class="view-mobile">
 <div class="wrap">
   <header>
-    <div style="display: flex; align-items: center; justify-content: center; gap: 24px; margin-bottom: 8px;">
+    <div class="logo-container" style="display: flex; align-items: center; justify-content: center; gap: 24px; margin-bottom: 8px;">
       <img src="assets/logo-red.webp" alt="RED Systems" style="height: 96px;">
       <img src="assets/mslogo.webp" alt="MS RED PDF" style="height: 96px;">
     </div>
