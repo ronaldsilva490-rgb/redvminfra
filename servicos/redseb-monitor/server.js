@@ -53,8 +53,8 @@ const downloadCandidates = {
 
 const portableSourceCandidates = [
   process.env.RED_SEB_PORTABLE_SOURCE_DIR,
-  path.join(repoRoot, "servicos", "redsebia", "downloads", "REDSEBPortable"),
   "/opt/redsebia/downloads/REDSEBPortable",
+  path.join(repoRoot, "servicos", "redsebia", "downloads", "REDSEBPortable"),
   path.join(__dirname, "..", "redsebia", "downloads", "REDSEBPortable")
 ].filter(Boolean);
 const portableLargeFiles = [

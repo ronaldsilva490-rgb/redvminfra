@@ -65,27 +65,27 @@ deploy-agent/           Legado
 - `rapidleech/` virou parte oficial da stack e deve ser tratado como runtime publicado por `/rapidleech/`, nao como pasta solta fora do repo.
 - `redseb-monitor/` e o painel remoto oficial do ecossistema RED SEB / Safe Exam Browser, hoje exposto em `:2580`.
 - `redsebia/` e o backend independente do novo produto REDSEBIA, com portal do cliente, admin, wallet, PIX e runtime API.
-- `openclaw/`, `redtrader/` e `extensao-iq-demo/bridge` continuam versionados, mas estao inativos na VM principal em 2026-05-06.
+- `openclaw/`, `redtrader/`, `extensao-iq-demo/bridge`, `deploy-agent/` e o webhook WhatsApp do SEB continuam versionados, mas estao inativos na VM principal em 2026-05-08.
 - `extensao-iq-motor-lab/` existe para iteracao rapida por JSON remoto antes de tocar a extensao principal.
 - `deploy-agent/` e legado; so mexa se houver motivo real.
 
-## Estado da VM principal em 2026-05-06
+## Estado da VM principal em 2026-05-08
 
 Ativos:
 
 ```text
 dashboard, proxy, redproxypro, redclaudeproxy, rednimclaude, redlightningclaude,
 redalibabaclaude, searxng, msredpdf, rapidleech, redia, redsebia, red-seb-monitor,
-proxy-lab
+proxy-lab, modelos-counter
 ```
 
 Inativos por decisao operacional:
 
 ```text
-openclaw, redtrader, iq-bridge
+openclaw, redtrader, iq-bridge, deploy-agent, red-seb-webhook
 ```
 
-Snapshot completo: [../documentacao/estado-atual-vm-2026-05-06.md](../documentacao/estado-atual-vm-2026-05-06.md)
+Snapshot completo: [../documentacao/estado-atual-vm-2026-05-08.md](../documentacao/estado-atual-vm-2026-05-08.md)
 
 ## Padrao esperado para cada servico
 

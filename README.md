@@ -40,7 +40,7 @@ Hoje a RED Systems roda com uma arquitetura de VM unica. O objetivo deste reposi
 - `/redseb/` e `/download/` -> caminhos nginx do SEB Monitor
 - `:2580` -> RED SEB Monitor
 
-Estado da VM em 2026-05-06: OpenClaw, RED Trader e IQ Bridge continuam no repo, mas estao inativos na VM principal por decisao operacional. O snapshot atual esta em [documentacao/estado-atual-vm-2026-05-06.md](documentacao/estado-atual-vm-2026-05-06.md).
+Estado da VM em 2026-05-08: OpenClaw, RED Trader, IQ Bridge, Deploy Agent e webhook SEB continuam no repo, mas estao inativos na VM principal por decisao operacional. O snapshot atual esta em [documentacao/estado-atual-vm-2026-05-08.md](documentacao/estado-atual-vm-2026-05-08.md).
 
 ### Servicos principais
 
@@ -64,7 +64,8 @@ Estado da VM em 2026-05-06: OpenClaw, RED Trader e IQ Bridge continuam no repo, 
 | RED Trader | `servicos/redtrader` | `/opt/redtrader` | `redtrader.service` | inativo nesta VM |
 | OpenClaw | `servicos/openclaw` | `/opt/red-openclaw` | `red-openclaw.service` | inativo nesta VM |
 | IQ Bridge | `servicos/extensao-iq-demo/bridge` | `/opt/red-iq-vision-bridge` | `red-iq-vision-bridge.service` | inativo nesta VM |
-| Deploy Agent | `servicos/deploy-agent` | legado | `red-webhook.service` | legado |
+| Deploy Agent | `servicos/deploy-agent` | legado | `red-webhook.service` | inativo/legado |
+| RED SEB Webhook | `servicos/redseb-monitor/webhook-whatsapp.js` | `/opt/red-seb-monitor` | `red-seb-webhook.service` | inativo nesta VM |
 
 ---
 
@@ -107,7 +108,7 @@ ferramentas/
   redclaudecode/         Launcher do Claude Code
 
 documentacao/
-  estado-atual-vm-2026-05-06.md
+  estado-atual-vm-2026-05-08.md
   arquitetura.md
   implantacao-servicos.md
   inventario-vm-antiga-2026-04-19.md

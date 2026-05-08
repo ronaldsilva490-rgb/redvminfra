@@ -44,14 +44,18 @@ Na VM principal, `infraestrutura/nginx/red-friendly-paths.nginx.conf` e publicad
 :2580         RED SEB Monitor
 ```
 
-## Units ativas na VM principal em 2026-05-06
+## Units ativas na VM principal em 2026-05-08
 
 ```text
 red-dashboard.service
 red-ollama-proxy.service
 redproxypro.service
 redclaudeproxy.service
+rednimclaude.service
+redlightningclaude.service
+redalibabaclaude.service
 red-searxng.service
+modelos-counter.service
 msredpdf.service
 rapidleech.service
 redia.service
@@ -66,6 +70,8 @@ Units versionadas, mas inativas nesta VM:
 red-openclaw.service
 redtrader.service
 red-iq-vision-bridge.service
+red-webhook.service
+red-seb-webhook.service
 ```
 
 ## Dashboard com subrotas
