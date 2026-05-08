@@ -75,6 +75,15 @@ Se a VM tambem for hospedar o monitor remoto do ecossistema SEB:
 /opt/red-seb-monitor/data/downloads
 ```
 
+- garanta que o fonte bruto do portatil exista em:
+
+```text
+/opt/redsebia/downloads/REDSEBPortable
+```
+
+A pagina `/download` detecta esse diretorio, gera `/opt/red-seb-monitor/data/downloads/REDSEBPortable.zip` sob demanda e so libera o `.bat` quando o ZIP existir.
+O `libcef.dll` fica fatiado em `.redvm-large/libcef.dll.partNNN` no repo e e reconstruido automaticamente antes do empacotamento.
+
 ## Rapidleech
 
 Se a VM tambem for hospedar o hub legado de transferencia:

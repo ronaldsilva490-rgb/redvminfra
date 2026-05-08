@@ -38,6 +38,7 @@ artefatos/**
 !artefatos/**/
 !artefatos/**/.gitkeep
 servicos/redsebia/downloads/*.zip
+servicos/redsebia/downloads/REDSEBPortable/libcef.dll
 tmp_*
 **/*_smoke_results.json
 **/redproxypro-config-backups/

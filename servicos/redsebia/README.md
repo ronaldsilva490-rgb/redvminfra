@@ -12,17 +12,23 @@ O objetivo aqui e separar o produto de cliente e monetizacao do legado:
 - autorizacao de uso do runtime futuro;
 - reserva e liquidacao de uso de IA por tokens.
 
-O ZIP do SEB continua herdado do ecossistema atual por enquanto, mas o backend aqui ja nasce pronto para receber o novo cliente modificado numa proxima rodada.
+O portable do SEB agora fica integrado neste repo como fonte bruto. O ZIP publico passa a ser artefato gerado a partir desse diretorio.
 
-Artefato obrigatorio de deploy:
+Fonte obrigatorio de deploy:
 
-- `downloads/REDSEBPortable.zip`
+- `downloads/REDSEBPortable/`
 
-Esse arquivo e grande demais para entrar no Git sem um armazenamento de artefatos dedicado. Mantenha uma copia local em `servicos/redsebia/downloads/REDSEBPortable.zip` antes do deploy. No runtime atual, quem serve o download publico ainda e o `red-seb-monitor`, portanto todo deploy precisa copiar esse zip para:
+Esse diretorio substitui o projeto local avulso `C:\Projetos\redseb\REDSEBPORTABLE\PortableBuild`. Dentro do ZIP gerado, ele deve aparecer como a pasta raiz `REDSEBPortable/`, contendo `SafeExamBrowser.exe`, `config.seb`, `PortableData/`, `locales/` e demais DLLs.
+
+O arquivo `libcef.dll` passa de 100 MB e nao pode ser enviado ao GitHub como blob normal. Por isso ele fica fatiado em `downloads/REDSEBPortable/.redvm-large/libcef.dll.partNNN`. O `red-seb-monitor` reconstrói `downloads/REDSEBPortable/libcef.dll` automaticamente antes de empacotar o ZIP. O `libcef.dll` reconstruido e artefato local e fica ignorado pelo Git.
+
+No runtime atual, quem serve o download publico ainda e o `red-seb-monitor`, portanto o deploy precisa levar esse diretorio para:
 
 ```text
-/opt/red-seb-monitor/data/downloads/REDSEBPortable.zip
+/opt/redsebia/downloads/REDSEBPortable
 ```
+
+A pagina `/download` do monitor detecta esse diretorio, empacota `/opt/red-seb-monitor/data/downloads/REDSEBPortable.zip` sob demanda e libera o `.bat` apenas depois que o ZIP existir.
 
 ## O que este servico entrega
 
@@ -133,17 +139,24 @@ cp /opt/redsebia/.env.example /etc/red-sebia.env
 mkdir -p /opt/redsebia/data
 ```
 
-4. Artefato do RED SEB Portable:
+4. Fonte do RED SEB Portable:
 
 ```bash
-mkdir -p /opt/red-seb-monitor/data/downloads
-install -m 0644 /opt/redsebia/downloads/REDSEBPortable.zip /opt/red-seb-monitor/data/downloads/REDSEBPortable.zip
+test -d /opt/redsebia/downloads/REDSEBPortable
+test -f /opt/redsebia/downloads/REDSEBPortable/SafeExamBrowser.exe
+test -f /opt/redsebia/downloads/REDSEBPortable/.redvm-large/libcef.dll.part001
 ```
 
-Depois de copiar ou atualizar esse arquivo, reinicie somente o monitor SEB para ele resolver o artefato no startup:
+Depois de copiar ou atualizar esse diretorio, reinicie somente o monitor SEB para ele usar a nova fonte:
 
 ```bash
 systemctl restart red-seb-monitor
+```
+
+O ZIP final e gerado pela pagina `/download` quando necessario. Para conferir o estado:
+
+```bash
+curl -s http://127.0.0.1:2580/api/portable/status | python3 -m json.tool
 ```
 
 5. Unit oficial:
@@ -168,6 +181,7 @@ python -m py_compile src/redsebia/*.py
 systemctl is-active red-sebia
 systemctl is-active red-seb-monitor
 curl -s http://127.0.0.1:3130/healthz
+curl -s http://127.0.0.1:2580/api/portable/status | python3 -m json.tool
 curl -I http://127.0.0.1:2580/downloads/REDSEBPortable.zip
 ```
 

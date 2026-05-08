@@ -2,6 +2,8 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const crypto = require("crypto");
+const archiverModule = require("archiver");
+const createZipArchive = archiverModule.default || archiverModule;
 const { WebSocketServer } = require("ws");
 
 const host = "0.0.0.0";
@@ -29,6 +31,7 @@ const authCookieName = "redseb_operator";
 const authCookieValue = crypto.createHash("sha256").update(`${operatorPassword}|${operatorAuthSecret}`).digest("hex");
 const sessions = new Map();
 const committeeRuns = new Map();
+let portablePackageJob = null;
 const downloadCandidates = {
   setupMsi: [
     path.join(downloadsRoot, "Setup.msi"),
@@ -47,6 +50,20 @@ const downloadCandidates = {
     "/opt/seb-remote-view/downloads/upgrade-seb.ps1"
   ]
 };
+
+const portableSourceCandidates = [
+  process.env.RED_SEB_PORTABLE_SOURCE_DIR,
+  path.join(repoRoot, "servicos", "redsebia", "downloads", "REDSEBPortable"),
+  "/opt/redsebia/downloads/REDSEBPortable",
+  path.join(__dirname, "..", "redsebia", "downloads", "REDSEBPortable")
+].filter(Boolean);
+const portableLargeFiles = [
+  {
+    relativePath: "libcef.dll",
+    partsDir: ".redvm-large",
+    partPrefix: "libcef.dll.part"
+  }
+];
 
 const assetCandidates = {
   logo: [
@@ -206,15 +223,246 @@ function resolveCandidate(candidates) {
   return null;
 }
 
+function isDirectory(candidate) {
+  try {
+    return fs.statSync(candidate).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function getPortableSourceDir() {
+  for (const candidate of portableSourceCandidates) {
+    if (isDirectory(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function getResolvedDownloads() {
+  return {
+    setupMsi: resolveCandidate(downloadCandidates.setupMsi),
+    setupBundle: resolveCandidate(downloadCandidates.setupBundle),
+    portableZip: resolveCandidate(downloadCandidates.portableZip),
+    upgradeScript: resolveCandidate(downloadCandidates.upgradeScript)
+  };
+}
+
+function inspectPortableSource(sourceDir) {
+  const summary = { files: 0, bytes: 0 };
+
+  function walk(currentDir) {
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      const fullPath = path.join(currentDir, entry.name);
+      const relativePath = path.relative(sourceDir, fullPath).replace(/\\/g, "/");
+      if (relativePath === ".redvm-large" || relativePath.startsWith(".redvm-large/")) {
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+
+      if (!entry.isFile() || entry.name.toLowerCase() === "redsebportable.zip") {
+        continue;
+      }
+
+      const stat = fs.statSync(fullPath);
+      summary.files += 1;
+      summary.bytes += stat.size;
+    }
+  }
+
+  if (sourceDir) {
+    walk(sourceDir);
+  }
+
+  return summary;
+}
+
+function listLargeFileParts(sourceDir, manifest) {
+  const partsDir = path.join(sourceDir, manifest.partsDir);
+  if (!isDirectory(partsDir)) {
+    return [];
+  }
+
+  return fs.readdirSync(partsDir)
+    .filter((name) => name.startsWith(manifest.partPrefix))
+    .sort()
+    .map((name) => path.join(partsDir, name));
+}
+
+function ensurePortableLargeFiles(sourceDir) {
+  for (const manifest of portableLargeFiles) {
+    const targetPath = path.join(sourceDir, manifest.relativePath);
+    if (fs.existsSync(targetPath)) {
+      continue;
+    }
+
+    const parts = listLargeFileParts(sourceDir, manifest);
+    if (!parts.length) {
+      const error = new Error(`Arquivo obrigatorio ausente: ${manifest.relativePath}`);
+      error.statusCode = 409;
+      throw error;
+    }
+
+    const tempPath = `${targetPath}.rebuilding-${Date.now()}.tmp`;
+    fs.writeFileSync(tempPath, Buffer.alloc(0));
+
+    for (const part of parts) {
+      const chunk = fs.readFileSync(part);
+      fs.appendFileSync(tempPath, chunk);
+    }
+
+    fs.renameSync(tempPath, targetPath);
+  }
+}
+
+function getPortableStatus() {
+  const downloads = getResolvedDownloads();
+  const sourceDir = getPortableSourceDir();
+  if (sourceDir) {
+    ensurePortableLargeFiles(sourceDir);
+  }
+  const source = sourceDir ? inspectPortableSource(sourceDir) : { files: 0, bytes: 0 };
+  const zipPath = downloads.portableZip;
+  const zip = zipPath ? fs.statSync(zipPath) : null;
+  const job = portablePackageJob
+    ? {
+        id: portablePackageJob.id,
+        state: portablePackageJob.state,
+        message: portablePackageJob.message,
+        processedBytes: portablePackageJob.processedBytes,
+        totalBytes: portablePackageJob.totalBytes,
+        processedEntries: portablePackageJob.processedEntries,
+        totalEntries: portablePackageJob.totalEntries,
+        percent: portablePackageJob.totalBytes > 0
+          ? Math.min(100, Math.round((portablePackageJob.processedBytes / portablePackageJob.totalBytes) * 100))
+          : 0,
+        error: portablePackageJob.error || ""
+      }
+    : null;
+
+  return {
+    ok: true,
+    zipExists: Boolean(zipPath),
+    zipPath: zipPath || "",
+    zipBytes: zip ? zip.size : 0,
+    sourceExists: Boolean(sourceDir),
+    sourceDir: sourceDir || "",
+    sourceFiles: source.files,
+    sourceBytes: source.bytes,
+    job
+  };
+}
+
+function packagePortableZip() {
+  if (portablePackageJob && portablePackageJob.state === "running") {
+    return portablePackageJob;
+  }
+
+  const sourceDir = getPortableSourceDir();
+  if (!sourceDir) {
+    const error = new Error("Diretorio REDSEBPortable nao foi encontrado.");
+    error.statusCode = 409;
+    throw error;
+  }
+
+  ensurePortableLargeFiles(sourceDir);
+  const source = inspectPortableSource(sourceDir);
+  if (!source.files) {
+    const error = new Error("Diretorio REDSEBPortable esta vazio.");
+    error.statusCode = 409;
+    throw error;
+  }
+
+  fs.mkdirSync(downloadsRoot, { recursive: true });
+  const targetPath = path.join(downloadsRoot, "REDSEBPortable.zip");
+  const tempPath = `${targetPath}.packaging-${Date.now()}.tmp`;
+  const job = {
+    id: crypto.randomBytes(8).toString("hex"),
+    state: "running",
+    message: "Empacotando REDSEBPortable.zip",
+    sourceDir,
+    targetPath,
+    tempPath,
+    processedBytes: 0,
+    totalBytes: source.bytes,
+    processedEntries: 0,
+    totalEntries: source.files,
+    error: ""
+  };
+
+  portablePackageJob = job;
+
+  const output = fs.createWriteStream(tempPath);
+  const archive = createZipArchive("zip", { zlib: { level: 9 } });
+
+  output.on("close", () => {
+    try {
+      if (fs.existsSync(targetPath)) {
+        fs.unlinkSync(targetPath);
+      }
+      fs.renameSync(tempPath, targetPath);
+      job.processedBytes = job.totalBytes;
+      job.processedEntries = job.totalEntries;
+      job.state = "done";
+      job.message = "ZIP pronto.";
+    } catch (error) {
+      job.state = "error";
+      job.error = error.message;
+      job.message = "Falha ao finalizar o ZIP.";
+    }
+  });
+
+  archive.on("progress", (progress) => {
+    job.processedEntries = progress.entries.processed || job.processedEntries;
+    job.totalEntries = progress.entries.total || job.totalEntries;
+    job.processedBytes = progress.fs.processedBytes || job.processedBytes;
+  });
+
+  archive.on("warning", (error) => {
+    job.message = error.message;
+  });
+
+  archive.on("error", (error) => {
+    job.state = "error";
+    job.error = error.message;
+    job.message = "Falha ao empacotar o ZIP.";
+    try {
+      output.destroy();
+      if (fs.existsSync(tempPath)) {
+        fs.unlinkSync(tempPath);
+      }
+    } catch {
+      // ignore cleanup errors
+    }
+  });
+
+  archive.pipe(output);
+  archive.glob("**/*", {
+    cwd: sourceDir,
+    dot: true,
+    nodir: false,
+    ignore: ["REDSEBPortable.zip", "**/REDSEBPortable.zip", ".redvm-large/**"]
+  }, {
+    prefix: "REDSEBPortable"
+  });
+  archive.finalize().catch((error) => {
+    job.state = "error";
+    job.error = error.message;
+    job.message = "Falha ao empacotar o ZIP.";
+  });
+
+  return job;
+}
+
 const resolvedAssets = {
   favicon: resolveAsset("favicon"),
   logo: resolveAsset("logo")
-};
-const resolvedDownloads = {
-  setupMsi: resolveCandidate(downloadCandidates.setupMsi),
-  setupBundle: resolveCandidate(downloadCandidates.setupBundle),
-  portableZip: resolveCandidate(downloadCandidates.portableZip),
-  upgradeScript: resolveCandidate(downloadCandidates.upgradeScript)
 };
 
 function readAsset(filePath) {
@@ -1343,12 +1591,15 @@ function renderLoginPage(basePath = "", errorMessage = "") {
 </html>`;
 }
 
-function renderDownloadPage(basePath = "") {
+function renderDownloadPageV2(basePath = "") {
   const logoTag = resolvedAssets.logo
     ? `<img class="brand-logo" src="${withBasePath(basePath, "/assets/logo")}" alt="RED logo">`
     : '<div class="brand-mark">R</div>';
   const faviconHref = withBasePath(basePath, "/assets/favicon");
   const formAction = withBasePath(basePath, "/api/generate-bat");
+  const statusUrl = withBasePath(basePath, "/api/portable/status");
+  const packageUrl = withBasePath(basePath, "/api/portable/package");
+  const initialStatus = getPortableStatus();
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -1369,6 +1620,8 @@ function renderDownloadPage(basePath = "") {
       --muted: #d9b7b3;
       --accent: #db2315;
       --accent-strong: #ee4d31;
+      --success: #34d399;
+      --warning: #fbbf24;
       --shadow: 0 28px 80px rgba(12, 0, 0, 0.62);
     }
     * { box-sizing: border-box; }
@@ -1387,7 +1640,7 @@ function renderDownloadPage(basePath = "") {
         linear-gradient(140deg, #140202 0%, #1f0303 52%, #100101 100%);
     }
     .card {
-      width: min(100%, 520px);
+      width: min(100%, 560px);
       border-radius: 26px;
       border: 1px solid var(--line);
       background: var(--panel);
@@ -1438,10 +1691,43 @@ function renderDownloadPage(basePath = "") {
       background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
       box-shadow: 0 16px 36px rgba(12, 0, 0, 0.28);
     }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
     .caption {
       color: var(--muted);
       font-size: 13px;
       line-height: 1.7;
+    }
+    .state {
+      margin-top: 22px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(16, 2, 2, 0.76);
+      text-align: left;
+    }
+    .state strong { display: block; margin-bottom: 6px; }
+    .state span { color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .state.ok strong { color: var(--success); }
+    .state.warn strong { color: var(--warning); }
+    .state.fail strong { color: var(--accent-strong); }
+    .progress {
+      width: 100%;
+      height: 12px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      margin-top: 14px;
+      display: none;
+    }
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+      transition: width 180ms ease;
     }
   </style>
 </head>
@@ -1451,14 +1737,121 @@ function renderDownloadPage(basePath = "") {
       ${logoTag}
       <div>
         <h1>RED SEB Universal</h1>
-        <p>Baixe o instalador universal da RED Systems. Ele roda em modo usuário, prepara o RED SEB Portable e já deixa o comando <code>red</code> pronto para uso no terminal.</p>
+        <p>Baixe o instalador universal da RED Systems. Ele roda em modo usuario, prepara o RED SEB Portable e ja deixa o comando <code>red</code> pronto para uso no terminal.</p>
       </div>
     </div>
+    <div id="state" class="state">
+      <strong>Verificando pacote...</strong>
+      <span>Aguarde.</span>
+      <div class="progress" id="progress"><div class="progress-bar" id="progressBar"></div></div>
+    </div>
     <form class="cta" method="post" action="${formAction}">
-      <button type="submit">BAIXAR INSTALADOR</button>
-      <div class="caption">Depois da primeira execução, abra um terminal novo e use <code>red 764281</code> ou <code>red sebs://...</code>.</div>
+      <button id="downloadButton" type="submit">BAIXAR INSTALADOR</button>
+      <button id="packageButton" type="button">EMPACOTAR ZIP E BAIXAR INSTALADOR</button>
+      <div class="caption">Depois da primeira execucao, abra um terminal novo e use <code>red 764281</code> ou <code>red sebs://...</code>.</div>
     </form>
   </section>
+  <script>
+    const statusUrl = ${JSON.stringify(statusUrl)};
+    const packageUrl = ${JSON.stringify(packageUrl)};
+    const initialStatus = ${JSON.stringify(initialStatus)};
+    const state = document.getElementById("state");
+    const progress = document.getElementById("progress");
+    const progressBar = document.getElementById("progressBar");
+    const downloadButton = document.getElementById("downloadButton");
+    const packageButton = document.getElementById("packageButton");
+
+    function formatBytes(bytes) {
+      if (!bytes) return "0 B";
+      const units = ["B", "KB", "MB", "GB"];
+      let value = bytes;
+      let unit = 0;
+      while (value >= 1024 && unit < units.length - 1) {
+        value = value / 1024;
+        unit += 1;
+      }
+      return value.toFixed(unit === 0 ? 0 : 1) + " " + units[unit];
+    }
+
+    function setState(kind, title, detail, percent) {
+      state.className = "state " + kind;
+      state.querySelector("strong").textContent = title;
+      state.querySelector("span").textContent = detail;
+      if (typeof percent === "number" && percent >= 0) {
+        progress.style.display = "block";
+        progressBar.style.width = Math.max(0, Math.min(100, percent)) + "%";
+      } else {
+        progress.style.display = "none";
+        progressBar.style.width = "0%";
+      }
+    }
+
+    function renderStatus(payload) {
+      const job = payload.job;
+      if (job && job.state === "running") {
+        downloadButton.style.display = "none";
+        packageButton.style.display = "inline-block";
+        packageButton.disabled = true;
+        setState("warn", "Empacotando ZIP...", job.processedEntries + "/" + job.totalEntries + " arquivos - " + formatBytes(job.processedBytes) + " de " + formatBytes(job.totalBytes), job.percent);
+        return true;
+      }
+
+      if (payload.zipExists) {
+        downloadButton.style.display = "inline-block";
+        downloadButton.disabled = false;
+        packageButton.style.display = "none";
+        setState("ok", "Pacote pronto", "REDSEBPortable.zip detectado: " + formatBytes(payload.zipBytes) + ".", null);
+        return false;
+      }
+
+      downloadButton.style.display = "none";
+
+      if (payload.sourceExists) {
+        packageButton.style.display = "inline-block";
+        packageButton.disabled = false;
+        setState("warn", "ZIP nao detectado", "Fonte bruta encontrada em REDSEBPortable com " + payload.sourceFiles + " arquivos (" + formatBytes(payload.sourceBytes) + "). Empacote antes de baixar o instalador.", null);
+        return false;
+      }
+
+      packageButton.style.display = "none";
+      setState("fail", "REDSEBPortable nao encontrado", "Nem o ZIP nem o diretorio bruto foram detectados no servidor.", null);
+      return false;
+    }
+
+    async function refreshStatus() {
+      const response = await fetch(statusUrl, { cache: "no-store" });
+      const payload = await response.json();
+      const keepPolling = renderStatus(payload);
+      if (keepPolling) {
+        setTimeout(refreshStatus, 1000);
+      }
+      return payload;
+    }
+
+    packageButton.addEventListener("click", async () => {
+      packageButton.disabled = true;
+      setState("warn", "Iniciando empacotamento...", "Preparando arquivos.", 0);
+      const response = await fetch(packageUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ error: "Falha ao empacotar." }));
+        setState("fail", "Falha ao empacotar", payload.error || "Erro desconhecido.", null);
+        packageButton.disabled = false;
+        return;
+      }
+      const poll = async () => {
+        const payload = await refreshStatus();
+        if (payload.zipExists && (!payload.job || payload.job.state !== "running")) {
+          downloadButton.click();
+          return;
+        }
+        setTimeout(poll, 1000);
+      };
+      poll();
+    });
+
+    renderStatus(initialStatus);
+    refreshStatus().catch(() => setState("fail", "Falha ao verificar pacote", "Recarregue a pagina e tente novamente.", null));
+  </script>
 </body>
 </html>`;
 }
@@ -3111,7 +3504,7 @@ const server = http.createServer((request, response) => {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store, no-cache, must-revalidate"
     });
-    response.end(renderDownloadPage(basePath));
+    response.end(renderDownloadPageV2(basePath));
     return;
   }
 
@@ -3123,6 +3516,8 @@ const server = http.createServer((request, response) => {
   const isPublicRoute =
     pathname === "/healthz" ||
     pathname === "/api/generate-bat" ||
+    pathname === "/api/portable/status" ||
+    pathname === "/api/portable/package" ||
     pathname === "/m" ||
     pathname === "/b" ||
     pathname === "/z" ||
@@ -3428,19 +3823,32 @@ const server = http.createServer((request, response) => {
   }
 
   if (pathname === "/downloads/Setup.msi" || pathname === "/m") {
-    return serveAsset(response, resolvedDownloads.setupMsi);
+    return serveAsset(response, getResolvedDownloads().setupMsi);
   }
 
   if (pathname === "/downloads/SetupBundle.exe" || pathname === "/b") {
-    return serveAsset(response, resolvedDownloads.setupBundle);
+    return serveAsset(response, getResolvedDownloads().setupBundle);
   }
 
   if (pathname === "/downloads/REDSEBPortable.zip" || pathname === "/z") {
-    return serveAsset(response, resolvedDownloads.portableZip);
+    return serveAsset(response, getResolvedDownloads().portableZip);
   }
 
   if (pathname === "/downloads/upgrade-seb.ps1" || pathname === "/u") {
-    return serveAsset(response, resolvedDownloads.upgradeScript);
+    return serveAsset(response, getResolvedDownloads().upgradeScript);
+  }
+
+  if (pathname === "/api/portable/status" && request.method === "GET") {
+    return sendJson(response, 200, getPortableStatus());
+  }
+
+  if (pathname === "/api/portable/package" && request.method === "POST") {
+    try {
+      const job = packagePortableZip();
+      return sendJson(response, 202, { ok: true, jobId: job.id, state: job.state });
+    } catch (error) {
+      return sendJson(response, error.statusCode || 500, { ok: false, error: error.message });
+    }
   }
 
   if (pathname === "/api/generate-bat" && request.method === "POST") {
@@ -3450,6 +3858,13 @@ const server = http.createServer((request, response) => {
           JSON.parse(body || "{}");
         } catch {
           return sendJson(response, 400, { ok: false, error: "Payload invalido." });
+        }
+
+        if (!getResolvedDownloads().portableZip) {
+          return sendJson(response, 409, {
+            ok: false,
+            error: "REDSEBPortable.zip nao foi detectado. Empacote o diretorio REDSEBPortable antes de baixar o instalador."
+          });
         }
 
         const content = buildPortableLauncherBat();
@@ -3503,5 +3918,5 @@ setInterval(pruneStaleSessions, Math.min(sessionStaleMs, 1000)).unref();
 server.listen(port, host, () => {
   console.log(`seb-remote-view listening on http://${host}:${port}`);
   console.log(`resolved assets: ${JSON.stringify(resolvedAssets)}`);
-  console.log(`resolved downloads: ${JSON.stringify(resolvedDownloads)}`);
+  console.log(`resolved downloads: ${JSON.stringify(getResolvedDownloads())}`);
 });

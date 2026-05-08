@@ -166,13 +166,15 @@ cp servicos/redseb-monitor/.env.example /etc/red-seb-monitor.env
 mkdir -p /opt/red-seb-monitor/data/downloads
 ```
 
-5. Copie o RED SEB Portable:
+5. Garanta o fonte bruto do RED SEB Portable:
 
 ```bash
-install -m 0644 /opt/redsebia/downloads/REDSEBPortable.zip /opt/red-seb-monitor/data/downloads/REDSEBPortable.zip
+test -d /opt/redsebia/downloads/REDSEBPortable
+test -f /opt/redsebia/downloads/REDSEBPortable/SafeExamBrowser.exe
+test -f /opt/redsebia/downloads/REDSEBPortable/.redvm-large/libcef.dll.part001
 ```
 
-O arquivo fonte oficial no repo fica em `servicos/redsebia/downloads/REDSEBPortable.zip`. Sem ele, o launcher `.bat` e a rota `/downloads/REDSEBPortable.zip` retornam `404`.
+O fonte oficial no repo fica em `servicos/redsebia/downloads/REDSEBPortable/`. A pagina `/download` detecta esse diretorio e permite gerar `/opt/red-seb-monitor/data/downloads/REDSEBPortable.zip` sob demanda. O `libcef.dll` e reconstruido automaticamente a partir de `.redvm-large/libcef.dll.partNNN` antes do empacotamento. Sem o ZIP, o `.bat` nao e liberado; sem o diretorio bruto, a pagina informa que o pacote nao foi detectado.
 
 6. Instale a unit oficial:
 
@@ -195,6 +197,7 @@ systemctl is-active red-seb-monitor
 systemctl is-active red-seb-webhook
 curl -s http://127.0.0.1:2580/healthz | python3 -m json.tool
 curl -s http://127.0.0.1:2580/api/summary | python3 -m json.tool
+curl -s http://127.0.0.1:2580/api/portable/status | python3 -m json.tool
 curl -I http://127.0.0.1:2580/downloads/REDSEBPortable.zip
 ```
 
@@ -216,7 +219,8 @@ Runtime oficial esperado:
 
 - codigo: `/opt/red-seb-monitor`
 - downloads canonicos: `/opt/red-seb-monitor/data/downloads`
-- zip fonte no repo: `servicos/redsebia/downloads/REDSEBPortable.zip`
+- fonte bruto no repo: `servicos/redsebia/downloads/REDSEBPortable/`
+- zip gerado no runtime: `/opt/red-seb-monitor/data/downloads/REDSEBPortable.zip`
 - compatibilidade legada opcional: `/opt/seb-remote-view/downloads -> /opt/red-seb-monitor/data/downloads`
 - env: `/etc/red-seb-monitor.env`
 - service: `red-seb-monitor.service`
