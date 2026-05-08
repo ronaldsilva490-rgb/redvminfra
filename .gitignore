@@ -37,6 +37,7 @@ artefatos/**
 !artefatos/.gitkeep
 !artefatos/**/
 !artefatos/**/.gitkeep
+servicos/redsebia/downloads/*.zip
 tmp_*
 **/*_smoke_results.json
 **/redproxypro-config-backups/

@@ -14,6 +14,16 @@ O objetivo aqui e separar o produto de cliente e monetizacao do legado:
 
 O ZIP do SEB continua herdado do ecossistema atual por enquanto, mas o backend aqui ja nasce pronto para receber o novo cliente modificado numa proxima rodada.
 
+Artefato obrigatorio de deploy:
+
+- `downloads/REDSEBPortable.zip`
+
+Esse arquivo e grande demais para entrar no Git sem um armazenamento de artefatos dedicado. Mantenha uma copia local em `servicos/redsebia/downloads/REDSEBPortable.zip` antes do deploy. No runtime atual, quem serve o download publico ainda e o `red-seb-monitor`, portanto todo deploy precisa copiar esse zip para:
+
+```text
+/opt/red-seb-monitor/data/downloads/REDSEBPortable.zip
+```
+
 ## O que este servico entrega
 
 - rota publica planejada: `/redsebia/`
@@ -123,7 +133,20 @@ cp /opt/redsebia/.env.example /etc/red-sebia.env
 mkdir -p /opt/redsebia/data
 ```
 
-4. Unit oficial:
+4. Artefato do RED SEB Portable:
+
+```bash
+mkdir -p /opt/red-seb-monitor/data/downloads
+install -m 0644 /opt/redsebia/downloads/REDSEBPortable.zip /opt/red-seb-monitor/data/downloads/REDSEBPortable.zip
+```
+
+Depois de copiar ou atualizar esse arquivo, reinicie somente o monitor SEB para ele resolver o artefato no startup:
+
+```bash
+systemctl restart red-seb-monitor
+```
+
+5. Unit oficial:
 
 ```bash
 cp infraestrutura/systemd/red-sebia.service /etc/systemd/system/red-sebia.service
@@ -131,11 +154,11 @@ systemctl daemon-reload
 systemctl enable --now red-sebia
 ```
 
-5. Publicacao:
+6. Publicacao:
 
 - incluir a rota `/redsebia/` no nginx usando `infraestrutura/nginx/red-friendly-paths.nginx.conf`
 
-6. Validacao:
+7. Validacao:
 
 ```bash
 cd /opt/redsebia
@@ -143,7 +166,9 @@ cd /opt/redsebia
 export PYTHONPATH=/opt/redsebia/src
 python -m py_compile src/redsebia/*.py
 systemctl is-active red-sebia
+systemctl is-active red-seb-monitor
 curl -s http://127.0.0.1:3130/healthz
+curl -I http://127.0.0.1:2580/downloads/REDSEBPortable.zip
 ```
 
 ## Endpoints principais

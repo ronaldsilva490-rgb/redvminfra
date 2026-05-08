@@ -220,6 +220,7 @@ Script-base de apoio:
 - proxy-lab: `/opt/red-proxy-lab/data`
 - rapidleech files: `/opt/rapidleech/files`
 - red seb monitor downloads: `/opt/red-seb-monitor/data/downloads`
+- red seb portable zip fonte: `servicos/redsebia/downloads/REDSEBPortable.zip`
 - redsebia: `/opt/redsebia/data`
 - iq bridge: `/opt/red-iq-vision-bridge/data`
 

@@ -695,6 +695,7 @@ Instalacao:
 ```bash
 mkdir -p "$RED_ROOT/redseb-monitor" /opt/red-seb-monitor/data/downloads
 rsync -av servicos/redseb-monitor/ "$RED_ROOT/redseb-monitor/"
+install -m 0644 servicos/redsebia/downloads/REDSEBPortable.zip /opt/red-seb-monitor/data/downloads/REDSEBPortable.zip
 cd "$RED_ROOT/redseb-monitor"
 npm install
 ```
@@ -724,13 +725,15 @@ Health check:
 ```bash
 curl -s http://127.0.0.1:2580/healthz | python3 -m json.tool
 curl -s http://127.0.0.1:2580/api/summary | python3 -m json.tool
+curl -I http://127.0.0.1:2580/downloads/REDSEBPortable.zip
 ```
 
 Observacao:
 
-- a exposicao publica e dedicada em `:2580`
-- nao depende do nginx principal
-- publique essa porta so se a operacao remota do SEB realmente precisar dela
+- o download canonico do RED SEB Portable e servido de `/opt/red-seb-monitor/data/downloads/REDSEBPortable.zip`;
+- mantenha uma copia local do artefato fonte em `servicos/redsebia/downloads/REDSEBPortable.zip` antes do deploy;
+- a URL publica preferida hoje e `https://redsystems.ddns.net/redseb`;
+- a exposicao dedicada em `:2580` continua util para operacao direta, mas deve ser publicada apenas se a operacao remota do SEB realmente precisar dela.
 
 ## 6. Rapidleech
 

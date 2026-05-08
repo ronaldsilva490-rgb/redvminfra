@@ -50,7 +50,7 @@ Este script vai:
 
 ```bash
 # 1. Conectar na VM
-ssh root@redsystems.ddns.net -p 2222
+ssh root@redsystems.ddns.net -p 22
 
 # 2. Backup do v3
 cd /root/red-deploy/smart-deploy

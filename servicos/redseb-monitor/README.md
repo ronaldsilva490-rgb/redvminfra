@@ -166,7 +166,15 @@ cp servicos/redseb-monitor/.env.example /etc/red-seb-monitor.env
 mkdir -p /opt/red-seb-monitor/data/downloads
 ```
 
-5. Instale a unit oficial:
+5. Copie o RED SEB Portable:
+
+```bash
+install -m 0644 /opt/redsebia/downloads/REDSEBPortable.zip /opt/red-seb-monitor/data/downloads/REDSEBPortable.zip
+```
+
+O arquivo fonte oficial no repo fica em `servicos/redsebia/downloads/REDSEBPortable.zip`. Sem ele, o launcher `.bat` e a rota `/downloads/REDSEBPortable.zip` retornam `404`.
+
+6. Instale a unit oficial:
 
 ```bash
 cp infraestrutura/systemd/red-seb-monitor.service /etc/systemd/system/red-seb-monitor.service
@@ -176,7 +184,7 @@ systemctl enable --now red-seb-monitor
 systemctl enable --now red-seb-webhook
 ```
 
-6. Publique a porta `2580` apenas se o monitor remoto realmente precisar ficar acessivel de fora.
+7. Publique a porta `2580` apenas se o monitor remoto realmente precisar ficar acessivel de fora.
 
 ## Validacao recomendada
 
@@ -187,6 +195,7 @@ systemctl is-active red-seb-monitor
 systemctl is-active red-seb-webhook
 curl -s http://127.0.0.1:2580/healthz | python3 -m json.tool
 curl -s http://127.0.0.1:2580/api/summary | python3 -m json.tool
+curl -I http://127.0.0.1:2580/downloads/REDSEBPortable.zip
 ```
 
 ## Runtime atual observado
@@ -194,7 +203,7 @@ curl -s http://127.0.0.1:2580/api/summary | python3 -m json.tool
 Hoje, na VM da RED, ele aparece na porta:
 
 ```text
-http://redsystems.ddns.net:2580
+https://redsystems.ddns.net/redseb
 ```
 
 e se identifica como:
@@ -207,6 +216,7 @@ Runtime oficial esperado:
 
 - codigo: `/opt/red-seb-monitor`
 - downloads canonicos: `/opt/red-seb-monitor/data/downloads`
+- zip fonte no repo: `servicos/redsebia/downloads/REDSEBPortable.zip`
 - compatibilidade legada opcional: `/opt/seb-remote-view/downloads -> /opt/red-seb-monitor/data/downloads`
 - env: `/etc/red-seb-monitor.env`
 - service: `red-seb-monitor.service`
@@ -232,6 +242,6 @@ O projeto antigo continua sendo a referencia do cliente Windows e do navegador d
 
 - `REDSEBPORTABLE/` guarda a distribuicao portavel baseada em Safe Exam Browser;
 - `seb-win-refactoring/` guarda a base Windows refatorada do navegador;
-- `deployment/windows/upgrade-seb.ps1` mostra o cliente consumindo este monitor pela URL `http://redsystems.ddns.net:2580`.
+- `deployment/windows/upgrade-seb.ps1` mostra o cliente consumindo este monitor pela URL `https://redsystems.ddns.net/redseb`.
 
 Ou seja: o **cliente SEB** continua sendo estudado e mantido no repo `redseb`, mas o **monitor remoto operacional** agora e parte oficial da stack `redvm`.
