@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ENV_FILE="/etc/redalibabaclaude.env"
+SERVICE="redalibabaclaude.service"
+MODE="both"
+KEY=""
+
+usage() {
+  cat <<USAGE
+Uso:
+  alibaba <api-key>             atualiza SG e US com a mesma key e reinicia o proxy
+  alibaba --sg <api-key>        atualiza so REDALIBABACLAUDE_SG_API_KEY
+  alibaba --us <api-key>        atualiza so REDALIBABACLAUDE_US_API_KEY
+  alibaba --show                mostra env mascarado e status do servico
+USAGE
+}
+
+mask_key() {
+  local value="${1:-}"
+  if [[ ${#value} -le 10 ]]; then
+    printf '***'
+  else
+    printf '%s***%s' "${value:0:6}" "${value: -4}"
+  fi
+}
+
+show_state() {
+  echo "Arquivo: $ENV_FILE"
+  if [[ -f "$ENV_FILE" ]]; then
+    sed -E 's/(REDALIBABACLAUDE_(SG|US)_API_KEY=).*/\1***MASKED***/' "$ENV_FILE"
+  else
+    echo "Nao existe: $ENV_FILE"
+  fi
+  echo
+  systemctl --no-pager --full status "$SERVICE" | sed -n '1,12p' || true
+}
+
+if [[ $# -lt 1 ]]; then
+  usage
+  exit 2
+fi
+
+case "$1" in
+  --show)
+    show_state
+    exit 0
+    ;;
+  --sg)
+    MODE="sg"
+    shift
+    ;;
+  --us)
+    MODE="us"
+    shift
+    ;;
+  --both)
+    MODE="both"
+    shift
+    ;;
+esac
+
+if [[ $# -ne 1 ]]; then
+  usage
+  exit 2
+fi
+
+KEY="$1"
+if [[ ! "$KEY" =~ ^sk-[A-Za-z0-9_-]{20,}$ ]]; then
+  echo "Erro: a key nao parece uma API key Alibaba valida com prefixo sk-." >&2
+  exit 2
+fi
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Erro: env nao encontrado: $ENV_FILE" >&2
+  exit 1
+fi
+
+backup="${ENV_FILE}.bak.$(date +%Y%m%d-%H%M%S)"
+cp -a "$ENV_FILE" "$backup"
+chmod 600 "$backup" || true
+
+tmp="$(mktemp)"
+cp "$ENV_FILE" "$tmp"
+
+update_var() {
+  local name="$1"
+  local value="$2"
+  if grep -q "^${name}=" "$tmp"; then
+    sed -i "s|^${name}=.*|${name}=${value}|" "$tmp"
+  else
+    printf '%s=%s\n' "$name" "$value" >> "$tmp"
+  fi
+}
+
+case "$MODE" in
+  sg)
+    update_var REDALIBABACLAUDE_SG_API_KEY "$KEY"
+    ;;
+  us)
+    update_var REDALIBABACLAUDE_US_API_KEY "$KEY"
+    ;;
+  both)
+    update_var REDALIBABACLAUDE_SG_API_KEY "$KEY"
+    update_var REDALIBABACLAUDE_US_API_KEY "$KEY"
+    ;;
+  *)
+    echo "Modo invalido: $MODE" >&2
+    exit 2
+    ;;
+esac
+
+install -m 600 -o root -g root "$tmp" "$ENV_FILE"
+rm -f "$tmp"
+
+systemctl restart "$SERVICE"
+sleep 1
+if ! systemctl is-active --quiet "$SERVICE"; then
+  echo "Erro: $SERVICE nao ficou ativo. Restaurando backup." >&2
+  cp -a "$backup" "$ENV_FILE"
+  systemctl restart "$SERVICE" || true
+  exit 1
+fi
+
+echo "Alibaba key atualizada ($MODE): $(mask_key "$KEY")"
+echo "Backup: $backup"
+echo "Servico: $(systemctl is-active "$SERVICE")"
+if command -v curl >/dev/null 2>&1; then
+  curl -ks --max-time 8 https://127.0.0.1:5052/healthz || true
+  echo
+fi

@@ -51,3 +51,35 @@ https://redsystems.ddns.net:5052
   - `ALI-US/*`
 - TLS e servido no proprio processo usando os certificados do host.
 - autenticacao publica atual: bearer token `red`.
+
+## Rotacao de API key Alibaba
+
+O comando operacional instalado na VM e:
+
+```bash
+/usr/local/bin/alibaba
+```
+
+Uso normal:
+
+```bash
+alibaba sk-nova_chave_alibaba
+```
+
+Esse comando:
+
+- atualiza `REDALIBABACLAUDE_SG_API_KEY` e `REDALIBABACLAUDE_US_API_KEY` em `/etc/redalibabaclaude.env`;
+- cria backup automatico como `/etc/redalibabaclaude.env.bak.YYYYmmdd-HHMMSS`;
+- reinicia `redalibabaclaude.service`;
+- se o servico nao voltar ativo, restaura o backup;
+- executa `https://127.0.0.1:5052/healthz` com TLS ignorado para validar o processo.
+
+Tambem e possivel trocar so uma regiao:
+
+```bash
+alibaba --sg sk-nova_chave_singapura
+alibaba --us sk-nova_chave_us
+alibaba --show
+```
+
+O script fonte fica em `ferramentas/vm/alibaba` e o deploy instala esse arquivo em `/usr/local/bin/alibaba`.

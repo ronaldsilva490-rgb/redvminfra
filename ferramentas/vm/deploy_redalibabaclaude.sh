@@ -3,6 +3,11 @@ set -euo pipefail
 
 mkdir -p /var/lib/redalibabaclaude
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/alibaba" ]]; then
+  install -m 755 -o root -g root "$SCRIPT_DIR/alibaba" /usr/local/bin/alibaba
+fi
+
 if [[ ! -d /opt/redalibabaclaude/.venv ]]; then
   /usr/bin/python3 -m venv /opt/redalibabaclaude/.venv
 fi
@@ -10,13 +15,22 @@ fi
 /opt/redalibabaclaude/.venv/bin/pip install --upgrade pip >/dev/null
 /opt/redalibabaclaude/.venv/bin/pip install -r /opt/redalibabaclaude/requirements.txt >/dev/null
 
+if [[ -f /etc/redalibabaclaude.env ]]; then
+  # Preserve live keys on redeploy. Key rotation is done with /usr/local/bin/alibaba.
+  # shellcheck disable=SC1091
+  source /etc/redalibabaclaude.env
+fi
+
+: "${REDALIBABACLAUDE_SG_API_KEY:=}"
+: "${REDALIBABACLAUDE_US_API_KEY:=}"
+
 cat > /etc/redalibabaclaude.env <<EOF
 REDALIBABACLAUDE_HOST=0.0.0.0
 REDALIBABACLAUDE_PORT=5052
 REDALIBABACLAUDE_SG_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
 REDALIBABACLAUDE_US_BASE_URL=https://dashscope-us.aliyuncs.com/compatible-mode/v1
-REDALIBABACLAUDE_SG_API_KEY=sk-9ce7df4869a044b8b4610f4fbf6f1334
-REDALIBABACLAUDE_US_API_KEY=sk-a4d21ee26d79476387fc227c2a4be676
+REDALIBABACLAUDE_SG_API_KEY=${REDALIBABACLAUDE_SG_API_KEY}
+REDALIBABACLAUDE_US_API_KEY=${REDALIBABACLAUDE_US_API_KEY}
 REDALIBABACLAUDE_REQUIRE_AUTH=1
 REDALIBABACLAUDE_AUTH_TOKENS=red
 REDALIBABACLAUDE_DEFAULT_MODEL=ALI-SG/qwen-coder-plus

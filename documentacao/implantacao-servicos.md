@@ -254,6 +254,22 @@ REDALIBABACLAUDE_AUTH_TOKENS=red
 REDALIBABACLAUDE_DEFAULT_MODEL=ALI-SG/qwen-coder-plus
 ```
 
+Rotacao de keys na VM:
+
+```bash
+# atualiza SG e US com a mesma key, reinicia o proxy e testa healthz
+alibaba sk-nova_chave_alibaba
+
+# atualiza apenas uma regiao
+alibaba --sg sk-nova_chave_singapura
+alibaba --us sk-nova_chave_us
+
+# mostra configuracao mascarada e status do systemd
+alibaba --show
+```
+
+O comando versionado fica em `ferramentas/vm/alibaba` e o deploy de `ferramentas/vm/deploy_redalibabaclaude.sh` instala em `/usr/local/bin/alibaba`. O deploy preserva as keys vivas se `/etc/redalibabaclaude.env` ja existir; a troca de credencial deve ser feita pelo comando `alibaba`, para gerar backup automatico e rollback se o servico falhar.
+
 Systemd:
 
 ```bash
