@@ -48,6 +48,6 @@ A lista do gateway NIM direto vem de `https://redsystems.ddns.net:5050/v1/models
 
 A lista do gateway Lightning direto vem de `https://redsystems.ddns.net:5051/v1/models`, sem passar por nginx e publicada apenas com os modelos que passaram em texto, stream e tool calling.
 
-A lista do gateway Alibaba direto vem de `https://redsystems.ddns.net:5052/v1/models`, publicada com aliases `ALI-SG/*` e `ALI-US/*` e filtrando `reasoning_content` para manter a UI do Claude limpa.
+A lista do gateway Alibaba direto vem de `https://redsystems.ddns.net:5052/v1/models`, publicada com os nomes reais dos modelos e filtrando `reasoning_content` para manter a UI do Claude limpa.
 
 Sempre que atualizar modelos fixos, revise `Preparar-Claude-RED-Chat.ps1`, `Configurar-Claude-RED-ProxyPro.cmd` e os fallbacks dos scripts do proxy normal. O `Preparar-Claude-RED-ClaudeProxy.ps1` prefere o catalogo vivo de `/redclaudeproxy/v1/models`.

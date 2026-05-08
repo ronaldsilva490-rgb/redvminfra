@@ -33,22 +33,20 @@ https://redsystems.ddns.net:5052
 
 ## Modelos publicados
 
-- `ALI-SG/qwen-coder-plus`
-- `ALI-SG/qwen3.6-plus`
-- `ALI-SG/qwen3.6-max-preview`
-- `ALI-SG/qwen3-coder-next`
-- `ALI-US/qwen3-coder-plus`
-- `ALI-US/deepseek-v4-pro`
-- `ALI-US/deepseek-v4-flash`
-- `ALI-US/kimi-k2.5`
+- `qwen-coder-plus`
+- `qwen3.6-plus`
+- `qwen3.6-max-preview`
+- `qwen3-coder-next`
+- `qwen3-coder-plus`
+- `deepseek-v4-pro`
+- `deepseek-v4-flash`
+- `kimi-k2.5`
 
 ## Observacoes
 
 - `qwen3.6-plus` e `qwen3.6-max-preview` sobem com `enable_thinking=false` para evitar vazamento de pensamento no stream.
 - `deepseek-v4-*`, `kimi-k2.5` e `qwen3-coder-next` podem produzir `reasoning_content` no upstream; o gateway remove isso antes de entregar ao Claude.
-- os IDs carregam a sigla da regiao no proprio nome:
-  - `ALI-SG/*`
-  - `ALI-US/*`
+- os IDs publicados sao os nomes reais dos modelos; a regiao usada fica apenas no metadata `red.backend`.
 - TLS e servido no proprio processo usando os certificados do host.
 - autenticacao publica atual: bearer token `red`.
 

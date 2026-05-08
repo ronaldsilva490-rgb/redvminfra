@@ -43,7 +43,7 @@ REQUIRE_AUTH = env_bool("REDALIBABACLAUDE_REQUIRE_AUTH", True)
 AUTH_TOKENS = set(split_values(os.getenv("REDALIBABACLAUDE_AUTH_TOKENS", "red")))
 DEFAULT_MODEL = (
     os.getenv("REDALIBABACLAUDE_DEFAULT_MODEL")
-    or "ALI-SG/qwen-coder-plus"
+    or "qwen-coder-plus"
 ).strip().lower()
 STREAM_CHUNK_SIZE = max(1, env_int("REDALIBABACLAUDE_STREAM_CHUNK_SIZE", 1))
 CONNECT_TIMEOUT = env_int("REDALIBABACLAUDE_CONNECT_TIMEOUT", 20)
@@ -82,9 +82,10 @@ http.headers.update({"Accept": "application/json"})
 
 MODELS = [
     {
-        "id": "ALI-SG/qwen-coder-plus",
+        "id": "qwen-coder-plus",
         "target": "qwen-coder-plus",
-        "display_name": "ALI-SG Qwen Coder Plus",
+        "legacy_ids": ["ALI-SG/qwen-coder-plus"],
+        "display_name": "qwen-coder-plus",
         "provider": "alibaba",
         "backend": "sg",
         "kind": "chat",
@@ -94,9 +95,10 @@ MODELS = [
         "default": True,
     },
     {
-        "id": "ALI-SG/qwen3.6-plus",
+        "id": "qwen3.6-plus",
         "target": "qwen3.6-plus",
-        "display_name": "ALI-SG Qwen 3.6 Plus",
+        "legacy_ids": ["ALI-SG/qwen3.6-plus"],
+        "display_name": "qwen3.6-plus",
         "provider": "alibaba",
         "backend": "sg",
         "kind": "chat",
@@ -107,9 +109,10 @@ MODELS = [
         "default": False,
     },
     {
-        "id": "ALI-SG/qwen3.6-max-preview",
+        "id": "qwen3.6-max-preview",
         "target": "qwen3.6-max-preview",
-        "display_name": "ALI-SG Qwen 3.6 Max Preview",
+        "legacy_ids": ["ALI-SG/qwen3.6-max-preview"],
+        "display_name": "qwen3.6-max-preview",
         "provider": "alibaba",
         "backend": "sg",
         "kind": "chat",
@@ -120,9 +123,10 @@ MODELS = [
         "default": False,
     },
     {
-        "id": "ALI-SG/qwen3-coder-next",
+        "id": "qwen3-coder-next",
         "target": "qwen3-coder-next",
-        "display_name": "ALI-SG Qwen3 Coder Next",
+        "legacy_ids": ["ALI-SG/qwen3-coder-next"],
+        "display_name": "qwen3-coder-next",
         "provider": "alibaba",
         "backend": "sg",
         "kind": "chat",
@@ -132,9 +136,10 @@ MODELS = [
         "default": False,
     },
     {
-        "id": "ALI-US/qwen3-coder-plus",
+        "id": "qwen3-coder-plus",
         "target": "qwen3-coder-plus",
-        "display_name": "ALI-US Qwen3 Coder Plus",
+        "legacy_ids": ["ALI-US/qwen3-coder-plus"],
+        "display_name": "qwen3-coder-plus",
         "provider": "alibaba",
         "backend": "us",
         "kind": "chat",
@@ -144,9 +149,10 @@ MODELS = [
         "default": False,
     },
     {
-        "id": "ALI-US/deepseek-v4-pro",
+        "id": "deepseek-v4-pro",
         "target": "deepseek-v4-pro",
-        "display_name": "ALI-US DeepSeek V4 Pro",
+        "legacy_ids": ["ALI-US/deepseek-v4-pro"],
+        "display_name": "deepseek-v4-pro",
         "provider": "alibaba",
         "backend": "us",
         "kind": "chat",
@@ -156,9 +162,10 @@ MODELS = [
         "default": False,
     },
     {
-        "id": "ALI-US/deepseek-v4-flash",
+        "id": "deepseek-v4-flash",
         "target": "deepseek-v4-flash",
-        "display_name": "ALI-US DeepSeek V4 Flash",
+        "legacy_ids": ["ALI-US/deepseek-v4-flash"],
+        "display_name": "deepseek-v4-flash",
         "provider": "alibaba",
         "backend": "us",
         "kind": "chat",
@@ -168,9 +175,10 @@ MODELS = [
         "default": False,
     },
     {
-        "id": "ALI-US/kimi-k2.5",
+        "id": "kimi-k2.5",
         "target": "kimi-k2.5",
-        "display_name": "ALI-US Kimi K2.5",
+        "legacy_ids": ["ALI-US/kimi-k2.5"],
+        "display_name": "kimi-k2.5",
         "provider": "alibaba",
         "backend": "us",
         "kind": "chat",
@@ -181,6 +189,9 @@ MODELS = [
     },
 ]
 MODEL_BY_ID = {item["id"].lower(): item for item in MODELS}
+for item in MODELS:
+    for legacy_id in item.get("legacy_ids", []):
+        MODEL_BY_ID[str(legacy_id).lower()] = item
 MODEL_BY_TARGET = {item["target"].lower(): item for item in MODELS}
 
 app = Flask(__name__)

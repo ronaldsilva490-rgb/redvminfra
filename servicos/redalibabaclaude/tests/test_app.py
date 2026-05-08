@@ -28,10 +28,15 @@ class FakeResponse:
 
 class RedAlibabaClaudeTests(unittest.TestCase):
     def test_resolve_model_accepts_raw_ids(self):
-        alias = proxy.resolve_model("ALI-SG/qwen3.6-plus")
-        raw = proxy.resolve_model("ALI-US/deepseek-v4-pro")
+        alias = proxy.resolve_model("qwen3.6-plus")
+        raw = proxy.resolve_model("deepseek-v4-pro")
         self.assertEqual(alias["target"], "qwen3.6-plus")
-        self.assertEqual(raw["id"], "ALI-US/deepseek-v4-pro")
+        self.assertEqual(raw["id"], "deepseek-v4-pro")
+
+    def test_resolve_model_accepts_legacy_aliases_without_publishing_them(self):
+        legacy = proxy.resolve_model("ALI-SG/qwen3.6-plus")
+        self.assertEqual(legacy["id"], "qwen3.6-plus")
+        self.assertEqual(legacy["target"], "qwen3.6-plus")
 
     def test_clamp_max_tokens_respects_context(self):
         clamped = proxy.clamp_max_tokens(32000, 238599, 262144)
@@ -39,7 +44,7 @@ class RedAlibabaClaudeTests(unittest.TestCase):
 
     def test_anthropic_payload_converts_tools_and_tool_results(self):
         body = {
-            "model": "ALI-SG/qwen3.6-plus",
+            "model": "qwen3.6-plus",
             "system": "Seja conciso.",
             "messages": [
                 {"role": "user", "content": [{"type": "text", "text": "Veja isso"}]},
@@ -58,7 +63,7 @@ class RedAlibabaClaudeTests(unittest.TestCase):
 
     def test_anthropic_payload_preserves_tool_result_before_followup_user_text(self):
         body = {
-            "model": "ALI-SG/qwen3.6-plus",
+            "model": "qwen3.6-plus",
             "messages": [
                 {
                     "role": "assistant",
@@ -98,7 +103,7 @@ class RedAlibabaClaudeTests(unittest.TestCase):
             ],
             "usage": {"prompt_tokens": 12, "completion_tokens": 3},
         }
-        message = proxy.anthropic_message_from_openai(payload, "ALI-SG/qwen3.6-plus")
+        message = proxy.anthropic_message_from_openai(payload, "qwen3.6-plus")
         self.assertEqual(message["stop_reason"], "tool_use")
         self.assertEqual(message["content"][0]["type"], "tool_use")
         self.assertEqual(message["content"][0]["name"], "shell")
@@ -110,7 +115,7 @@ class RedAlibabaClaudeTests(unittest.TestCase):
             b"data: [DONE]",
         ]
         response = FakeResponse(lines=lines)
-        text = "".join(proxy.anthropic_sse_from_openai_stream(response, "ALI-SG/qwen3.6-plus"))
+        text = "".join(proxy.anthropic_sse_from_openai_stream(response, "qwen3.6-plus"))
         self.assertIn('"type": "message_start"', text)
         self.assertIn('"text": "ola "', text)
         self.assertIn('"text": "mundo"', text)
@@ -123,7 +128,7 @@ class RedAlibabaClaudeTests(unittest.TestCase):
             b"data: [DONE]",
         ]
         response = FakeResponse(lines=lines)
-        text = "".join(proxy.anthropic_sse_from_openai_stream(response, "ALI-SG/qwen3.6-plus"))
+        text = "".join(proxy.anthropic_sse_from_openai_stream(response, "qwen3.6-plus"))
         self.assertIn('"type": "tool_use"', text)
         self.assertIn('"partial_json": "{\\"command\\""', text)
         self.assertIn('"stop_reason": "tool_use"', text)
@@ -139,8 +144,8 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
         ids = [item["id"] for item in data["data"]]
-        self.assertIn("ALI-SG/qwen3.6-plus", ids)
-        self.assertIn("ALI-US/deepseek-v4-pro", ids)
+        self.assertIn("qwen3.6-plus", ids)
+        self.assertIn("deepseek-v4-pro", ids)
 
     def test_messages_endpoint_forwards_to_alibaba(self):
         fake = FakeResponse(
@@ -155,11 +160,11 @@ class RedAlibabaClaudeTests(unittest.TestCase):
                 response = client.post(
                     "/v1/messages",
                     headers={"Authorization": "Bearer red"},
-                    json={"model": "ALI-SG/qwen3.6-plus", "messages": [{"role": "user", "content": "oi"}]},
+                    json={"model": "qwen3.6-plus", "messages": [{"role": "user", "content": "oi"}]},
                 )
         self.assertEqual(response.status_code, 200)
         body = response.get_json()
-        self.assertEqual(body["model"], "ALI-SG/qwen3.6-plus")
+        self.assertEqual(body["model"], "qwen3.6-plus")
         self.assertEqual(body["content"][0]["text"], "OK")
 
     def test_rate_limit_rotates_to_next_key(self):
@@ -186,8 +191,8 @@ class RedAlibabaClaudeTests(unittest.TestCase):
              patch.object(proxy.POOL_BY_BACKEND["sg"], "on_429", return_value=None) as on_429, \
              patch.object(proxy.POOL_BY_BACKEND["sg"], "on_success", return_value=None) as on_success:
             response = proxy.proxy_openai_chat_with_context_retry(
-                {"model": "ALI-SG/qwen3.6-plus", "messages": [{"role": "user", "content": "oi"}], "max_tokens": 64},
-                alias=proxy.resolve_model("ALI-SG/qwen3.6-plus"),
+                {"model": "qwen3.6-plus", "messages": [{"role": "user", "content": "oi"}], "max_tokens": 64},
+                alias=proxy.resolve_model("qwen3.6-plus"),
                 stream=False,
                 context_window=200000,
                 input_tokens=1000,
@@ -221,8 +226,8 @@ class RedAlibabaClaudeTests(unittest.TestCase):
              patch.object(proxy.POOL_BY_BACKEND["sg"], "on_5xx", return_value=None) as on_5xx, \
              patch.object(proxy.POOL_BY_BACKEND["sg"], "on_success", return_value=None) as on_success:
             response = proxy.proxy_openai_chat_with_context_retry(
-                {"model": "ALI-SG/qwen3.6-plus", "messages": [{"role": "user", "content": "oi"}], "max_tokens": 64},
-                alias=proxy.resolve_model("ALI-SG/qwen3.6-plus"),
+                {"model": "qwen3.6-plus", "messages": [{"role": "user", "content": "oi"}], "max_tokens": 64},
+                alias=proxy.resolve_model("qwen3.6-plus"),
                 stream=False,
                 context_window=200000,
                 input_tokens=1000,
@@ -259,8 +264,8 @@ class RedAlibabaClaudeTests(unittest.TestCase):
              patch.object(proxy.POOL_BY_BACKEND["sg"], "acquire", return_value={"token": "key1"}), \
              patch.object(proxy.POOL_BY_BACKEND["sg"], "on_success", return_value=None):
             response = proxy.proxy_openai_chat_with_context_retry(
-                {"model": "ALI-SG/qwen3.6-plus", "messages": [{"role": "user", "content": "oi"}], "max_tokens": 23546},
-                alias=proxy.resolve_model("ALI-SG/qwen3.6-plus"),
+                {"model": "qwen3.6-plus", "messages": [{"role": "user", "content": "oi"}], "max_tokens": 23546},
+                alias=proxy.resolve_model("qwen3.6-plus"),
                 stream=False,
                 context_window=262144,
                 input_tokens=238599,
