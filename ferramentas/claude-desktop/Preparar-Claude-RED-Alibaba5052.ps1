@@ -8,14 +8,14 @@ $profileName = "RED Alibaba Claude 5052"
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 
 $fallbackModels = @(
-  "qwen-coder-plus",
-  "qwen3.6-plus",
-  "qwen3.6-max-preview",
-  "qwen3-coder-next",
-  "qwen3-coder-plus",
-  "deepseek-v4-pro",
-  "deepseek-v4-flash",
-  "kimi-k2.5"
+  "Qwen Coder Plus",
+  "Qwen 3.6 Plus",
+  "Qwen 3.6 Max Preview",
+  "Qwen3 Coder Next",
+  "Qwen3 Coder Plus",
+  "DeepSeek V4 Pro",
+  "DeepSeek V4 Flash",
+  "Kimi K2.5"
 )
 
 function Write-Info($message) { Write-Host "[RED] $message" -ForegroundColor Cyan }
