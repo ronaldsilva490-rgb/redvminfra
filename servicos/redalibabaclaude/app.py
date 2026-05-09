@@ -79,6 +79,7 @@ WEBSEARCH_FALLBACK_TIMEOUT = max(1, env_int("REDALIBABACLAUDE_WEBSEARCH_FALLBACK
 WEBSEARCH_FALLBACK_LANGUAGE = os.getenv("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_LANGUAGE", "pt-BR").strip() or "pt-BR"
 WEBSEARCH_INTERNAL_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_WEBSEARCH_INTERNAL_MAX_ROUNDS", 2))
 TOOL_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_TOOL_REPAIR_MAX_ROUNDS", 3))
+EMPTY_OUTPUT_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_EMPTY_OUTPUT_REPAIR_MAX_ROUNDS", 2))
 WEBFETCH_FALLBACK_TIMEOUT = max(1, env_int("REDALIBABACLAUDE_WEBFETCH_FALLBACK_TIMEOUT", 12))
 WEBFETCH_FALLBACK_MAX_CHARS = max(1000, env_int("REDALIBABACLAUDE_WEBFETCH_FALLBACK_MAX_CHARS", 24000))
 DATA_DIR = Path(os.getenv("REDALIBABACLAUDE_DATA_DIR", "/var/lib/redalibabaclaude")).expanduser()
@@ -1451,7 +1452,7 @@ def proxy_anthropic_payload_with_internal_tools(
         )
         return upstream, True
 
-    max_internal_rounds = max(WEBSEARCH_INTERNAL_MAX_ROUNDS, TOOL_REPAIR_MAX_ROUNDS)
+    max_internal_rounds = max(WEBSEARCH_INTERNAL_MAX_ROUNDS, TOOL_REPAIR_MAX_ROUNDS, EMPTY_OUTPUT_REPAIR_MAX_ROUNDS)
     for round_index in range(max_internal_rounds + 1):
         request_payload = deepcopy(current_payload)
         if WEBSEARCH_FALLBACK_ENABLED:
@@ -1480,6 +1481,12 @@ def proxy_anthropic_payload_with_internal_tools(
             return synthetic_tool_validation_response(current_payload, invalids), False
         calls = internal_tool_calls_from_openai(data)
         if not calls:
+            if not openai_has_visible_output(data):
+                if round_index < EMPTY_OUTPUT_REPAIR_MAX_ROUNDS:
+                    current_payload = append_empty_output_repair(current_payload)
+                    input_tokens = estimate_openai_tokens(current_payload)
+                    continue
+                return synthetic_empty_output_response(current_payload), False
             return upstream, False
         if round_index >= WEBSEARCH_INTERNAL_MAX_ROUNDS:
             return upstream, False
@@ -1722,6 +1729,41 @@ def append_invalid_tool_results(payload: dict[str, Any], data: dict[str, Any], i
     return next_payload
 
 
+def openai_has_visible_output(data: dict[str, Any]) -> bool:
+    choice = ((data.get("choices") or [{}]) or [{}])[0]
+    message = choice.get("message") or {}
+    if message.get("tool_calls"):
+        return True
+    content = message.get("content")
+    if isinstance(content, str):
+        return bool(content.strip())
+    if isinstance(content, list):
+        return any(text_from_content(item).strip() for item in content)
+    return False
+
+
+def append_empty_output_repair(payload: dict[str, Any]) -> dict[str, Any]:
+    next_payload = deepcopy(payload)
+    messages = next_payload.setdefault("messages", [])
+    if not isinstance(messages, list):
+        messages = []
+        next_payload["messages"] = messages
+    messages.append({"role": "assistant", "content": ""})
+    messages.append(
+        {
+            "role": "user",
+            "content": (
+                "Your previous assistant turn produced only hidden reasoning and no visible answer or tool call. "
+                "Continue now by either calling the appropriate tool with valid JSON input or answering visibly. "
+                "If the user asked to create or update an artifact, you must call the file tool before marking the task complete. "
+                "Do not return another reasoning-only response."
+            ),
+        }
+    )
+    next_payload["stream"] = bool(payload.get("stream"))
+    return next_payload
+
+
 def synthetic_tool_validation_response(payload: dict[str, Any], invalids: list[dict[str, Any]]) -> "JsonResponseShim":
     details = "; ".join(format_invalid_tool_result(item).splitlines()[0] for item in invalids)
     return JsonResponseShim(
@@ -1733,6 +1775,24 @@ def synthetic_tool_validation_response(payload: dict[str, Any], invalids: list[d
                     "message": {
                         "role": "assistant",
                         "content": f"A chamada de ferramenta veio invalida repetidas vezes e foi bloqueada pelo proxy para evitar loop. {details}",
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": estimate_openai_tokens(payload), "completion_tokens": 0},
+        }
+    )
+
+
+def synthetic_empty_output_response(payload: dict[str, Any]) -> "JsonResponseShim":
+    return JsonResponseShim(
+        {
+            "id": f"chatcmpl_{uuid.uuid4().hex}",
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "A resposta do modelo veio vazia depois das tentativas internas de reparo. O proxy bloqueou a conclusao silenciosa para evitar marcar a tarefa como pronta sem entregar nada.",
                     },
                 }
             ],
@@ -1854,7 +1914,7 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
     metrics_has_completion_tokens = False
     metrics_text_parts: list[str] = []
 
-    max_internal_rounds = max(WEBSEARCH_INTERNAL_MAX_ROUNDS, TOOL_REPAIR_MAX_ROUNDS)
+    max_internal_rounds = max(WEBSEARCH_INTERNAL_MAX_ROUNDS, TOOL_REPAIR_MAX_ROUNDS, EMPTY_OUTPUT_REPAIR_MAX_ROUNDS)
     for round_index in range(max_internal_rounds + 1):
         thinking_open = False
         thinking_parts: list[str] = []
@@ -2086,6 +2146,38 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
                     )
                 yield sse_event("content_block_stop", {"type": "content_block_stop", "index": block_index + offset})
             final_stop_reason = "tool_use"
+            break
+
+        visible_text = "".join(text_parts).strip()
+        empty_visible_output = not visible_text and not tool_state and finish_reason != "length"
+        if empty_visible_output:
+            if round_index < EMPTY_OUTPUT_REPAIR_MAX_ROUNDS:
+                current_payload = append_empty_output_repair(current_payload)
+                current_payload["stream"] = True
+                input_tokens = estimate_openai_tokens(current_payload)
+                current_response = proxy_openai_chat_with_context_retry(
+                    current_payload,
+                    alias=alias,
+                    stream=True,
+                    context_window=context_window,
+                    input_tokens=input_tokens,
+                )
+                if current_response.status_code >= 400:
+                    final_stop_reason = "end_turn"
+                    break
+                continue
+            warning = "A resposta do modelo veio vazia depois das tentativas internas de reparo. O proxy bloqueou a conclusao silenciosa."
+            metrics_text_parts.append(warning)
+            yield sse_event(
+                "content_block_start",
+                {"type": "content_block_start", "index": block_index, "content_block": {"type": "text", "text": ""}},
+            )
+            yield sse_event(
+                "content_block_delta",
+                {"type": "content_block_delta", "index": block_index, "delta": {"type": "text_delta", "text": warning}},
+            )
+            yield sse_event("content_block_stop", {"type": "content_block_stop", "index": block_index})
+            final_stop_reason = "end_turn"
             break
 
         if finish_reason == "length":
