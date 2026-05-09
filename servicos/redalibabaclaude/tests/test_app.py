@@ -576,6 +576,51 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertIn('\\"file_path\\":\\"portfolio.html\\"', text)
         self.assertIn('"stop_reason": "tool_use"', text)
 
+    def test_stream_thinking_only_repair_failure_is_visible(self):
+        first = FakeResponse(
+            lines=[
+                b'data: {"choices":[{"delta":{"reasoning_content":"planejei, mas nao entreguei"},"finish_reason":"tool_calls"}]}',
+                b"data: [DONE]",
+            ]
+        )
+        failed = FakeResponse(status_code=400, payload={"error": {"message": "context too large"}})
+
+        with patch.object(proxy, "EXPERIMENTAL_THINKING_BLOCKS", True), \
+             patch.object(proxy, "EMPTY_OUTPUT_REPAIR_MAX_ROUNDS", 2), \
+             patch.object(proxy, "proxy_openai_chat_with_context_retry", return_value=failed):
+            text = "".join(
+                proxy.anthropic_sse_from_openai_stream_with_internal_tools(
+                    first,
+                    payload={
+                        "model": "qwen3.6-plus",
+                        "messages": [{"role": "user", "content": "crie outro portfolio"}],
+                        "tools": [
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "Write",
+                                    "parameters": {
+                                        "type": "object",
+                                        "properties": {"file_path": {"type": "string"}, "content": {"type": "string"}},
+                                        "required": ["file_path", "content"],
+                                    },
+                                },
+                            }
+                        ],
+                        "stream": True,
+                        "max_tokens": 1024,
+                    },
+                    alias=proxy.resolve_model("Qwen 3.6 Plus"),
+                    model_name="Qwen 3.6 Plus",
+                    context_window=262144,
+                    input_tokens=100,
+                )
+            )
+        self.assertIn('"type": "thinking_delta"', text)
+        self.assertIn("O proxy bloqueou a conclusao silenciosa", text)
+        self.assertIn("Upstream status: 400", text)
+        self.assertIn('"stop_reason": "end_turn"', text)
+
     def test_json_to_sse_tool_use_emits_input_delta(self):
         payload = {
             "id": "chatcmpl_json_tool",

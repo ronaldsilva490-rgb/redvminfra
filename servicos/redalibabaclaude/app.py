@@ -1756,6 +1756,7 @@ def append_empty_output_repair(payload: dict[str, Any]) -> dict[str, Any]:
                 "Your previous assistant turn produced only hidden reasoning and no visible answer or tool call. "
                 "Continue now by either calling the appropriate tool with valid JSON input or answering visibly. "
                 "If the user asked to create or update an artifact, you must call the file tool before marking the task complete. "
+                "Todo updates alone are not a deliverable. "
                 "Do not return another reasoning-only response."
             ),
         }
@@ -1798,6 +1799,15 @@ def synthetic_empty_output_response(payload: dict[str, Any]) -> "JsonResponseShi
             ],
             "usage": {"prompt_tokens": estimate_openai_tokens(payload), "completion_tokens": 0},
         }
+    )
+
+
+def empty_output_warning_text(status_code: int | None = None) -> str:
+    suffix = f" Upstream status: {status_code}." if status_code else ""
+    return (
+        "A resposta do modelo veio sem resultado visivel nem chamada de ferramenta. "
+        "O proxy bloqueou a conclusao silenciosa para evitar marcar a tarefa como pronta sem entregar nada."
+        f"{suffix}"
     )
 
 
@@ -2106,6 +2116,7 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
             current_payload = append_internal_tool_results(current_payload, data, internal_calls)
             current_payload["stream"] = True
             input_tokens = estimate_openai_tokens(current_payload)
+            print(f"[redalibabaclaude] internal-tool-repair round={round_index + 1} calls={len(internal_calls)}", flush=True)
             current_response = proxy_openai_chat_with_context_retry(
                 current_payload,
                 alias=alias,
@@ -2114,6 +2125,17 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
                 input_tokens=input_tokens,
             )
             if current_response.status_code >= 400:
+                warning = empty_output_warning_text(current_response.status_code)
+                metrics_text_parts.append(warning)
+                yield sse_event(
+                    "content_block_start",
+                    {"type": "content_block_start", "index": block_index, "content_block": {"type": "text", "text": ""}},
+                )
+                yield sse_event(
+                    "content_block_delta",
+                    {"type": "content_block_delta", "index": block_index, "delta": {"type": "text_delta", "text": warning}},
+                )
+                yield sse_event("content_block_stop", {"type": "content_block_stop", "index": block_index})
                 final_stop_reason = "end_turn"
                 break
             continue
@@ -2155,6 +2177,7 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
                 current_payload = append_empty_output_repair(current_payload)
                 current_payload["stream"] = True
                 input_tokens = estimate_openai_tokens(current_payload)
+                print(f"[redalibabaclaude] empty-output-repair round={round_index + 1} finish_reason={finish_reason or 'none'}", flush=True)
                 current_response = proxy_openai_chat_with_context_retry(
                     current_payload,
                     alias=alias,
@@ -2163,10 +2186,21 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
                     input_tokens=input_tokens,
                 )
                 if current_response.status_code >= 400:
+                    warning = empty_output_warning_text(current_response.status_code)
+                    metrics_text_parts.append(warning)
+                    yield sse_event(
+                        "content_block_start",
+                        {"type": "content_block_start", "index": block_index, "content_block": {"type": "text", "text": ""}},
+                    )
+                    yield sse_event(
+                        "content_block_delta",
+                        {"type": "content_block_delta", "index": block_index, "delta": {"type": "text_delta", "text": warning}},
+                    )
+                    yield sse_event("content_block_stop", {"type": "content_block_stop", "index": block_index})
                     final_stop_reason = "end_turn"
                     break
                 continue
-            warning = "A resposta do modelo veio vazia depois das tentativas internas de reparo. O proxy bloqueou a conclusao silenciosa."
+            warning = empty_output_warning_text()
             metrics_text_parts.append(warning)
             yield sse_event(
                 "content_block_start",
