@@ -1,5 +1,6 @@
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -424,6 +425,99 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertEqual(payloads[0]["messages"][-1]["role"], "tool")
         self.assertIn("RED Search/SearXNG fallback results", payloads[0]["messages"][-1]["content"])
 
+    def test_detects_missing_required_tool_arguments(self):
+        payload = {
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "Write",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"file_path": {"type": "string"}, "content": {"type": "string"}},
+                            "required": ["file_path", "content"],
+                        },
+                    },
+                }
+            ]
+        }
+        data = {
+            "choices": [
+                {
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "tool_calls": [
+                            {
+                                "id": "call_write",
+                                "type": "function",
+                                "function": {"name": "Write", "arguments": "{}"},
+                            }
+                        ]
+                    },
+                }
+            ]
+        }
+        invalids = proxy.invalid_tool_calls_from_openai(data, payload)
+        self.assertEqual(len(invalids), 1)
+        self.assertEqual(invalids[0]["name"], "Write")
+        self.assertEqual(invalids[0]["missing"], ["file_path", "content"])
+
+    def test_stream_tool_repair_retries_empty_write_before_client_tool_use(self):
+        first = FakeResponse(
+            lines=[
+                b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_write","type":"function","function":{"name":"Write","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}',
+                b"data: [DONE]",
+            ]
+        )
+        second = FakeResponse(
+            lines=[
+                b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_write2","type":"function","function":{"name":"Write","arguments":"{\\"file_path\\":\\"portfolio.html\\",\\"content\\":\\"ok\\"}"}}]},"finish_reason":"tool_calls"}]}',
+                b"data: [DONE]",
+            ]
+        )
+        repaired_payloads = []
+
+        def fake_retry(payload, *, alias, stream, context_window, input_tokens):
+            repaired_payloads.append(json.loads(json.dumps(payload)))
+            return second
+
+        with patch.object(proxy, "TOOL_REPAIR_MAX_ROUNDS", 2), \
+             patch.object(proxy, "proxy_openai_chat_with_context_retry", side_effect=fake_retry):
+            text = "".join(
+                proxy.anthropic_sse_from_openai_stream_with_internal_tools(
+                    first,
+                    payload={
+                        "model": "qwen3.6-plus",
+                        "messages": [{"role": "user", "content": "crie um arquivo"}],
+                        "tools": [
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "Write",
+                                    "parameters": {
+                                        "type": "object",
+                                        "properties": {"file_path": {"type": "string"}, "content": {"type": "string"}},
+                                        "required": ["file_path", "content"],
+                                    },
+                                },
+                            }
+                        ],
+                        "stream": True,
+                        "max_tokens": 1024,
+                    },
+                    alias=proxy.resolve_model("Qwen 3.6 Plus"),
+                    model_name="Qwen 3.6 Plus",
+                    context_window=262144,
+                    input_tokens=100,
+                )
+            )
+        self.assertEqual(len(repaired_payloads), 1)
+        self.assertEqual(repaired_payloads[0]["messages"][-1]["role"], "tool")
+        self.assertIn("missing required fields", repaired_payloads[0]["messages"][-1]["content"])
+        self.assertNotIn('"partial_json": "{}"', text)
+        self.assertIn('\\"file_path\\":\\"portfolio.html\\"', text)
+        self.assertIn('"stop_reason": "tool_use"', text)
+
     def test_json_to_sse_tool_use_emits_input_delta(self):
         payload = {
             "id": "chatcmpl_json_tool",
@@ -742,6 +836,150 @@ class RedAlibabaClaudeTests(unittest.TestCase):
             message = proxy.anthropic_message_from_openai(data, "Qwen 3.6 Plus")
         self.assertEqual(message["content"][0]["type"], "thinking")
         self.assertEqual(message["content"][1]["type"], "text")
+
+    def test_token_metrics_store_records_sqlite_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = proxy.TokenMetricsStore(
+                enabled=True,
+                db_path=Path(tmp) / "token_usage.sqlite3",
+                queue_size=10,
+            )
+            store.record(
+                {
+                    "ts": 1778200000.0,
+                    "request_id": "req_test",
+                    "endpoint": "/v1/messages",
+                    "client_ip": "127.0.0.1",
+                    "model": "Qwen 3.6 Plus",
+                    "provider": "alibaba",
+                    "backend": "sg",
+                    "target": "qwen3.6-plus",
+                    "status_code": 200,
+                    "success": True,
+                    "stream": True,
+                    "input_tokens": 10,
+                    "output_tokens": 5,
+                    "total_tokens": 15,
+                    "input_estimated": False,
+                    "output_estimated": False,
+                    "duration_ms": 123,
+                    "stop_reason": "end_turn",
+                    "error_type": "",
+                }
+            )
+            store.flush()
+            summary = store.summary()
+            store.close()
+        self.assertTrue(summary["enabled"])
+        self.assertEqual(summary["summary"]["requests"], 1)
+        self.assertEqual(summary["summary"]["input_tokens"], 10)
+        self.assertEqual(summary["summary"]["output_tokens"], 5)
+        self.assertEqual(summary["summary"]["total_tokens"], 15)
+        self.assertEqual(summary["models"][0]["model"], "Qwen 3.6 Plus")
+
+    def test_record_token_usage_uses_estimates_when_usage_is_missing(self):
+        events = []
+        context = {
+            "ts": 1778200000.0,
+            "request_id": "req_test",
+            "endpoint": "/v1/chat/completions",
+            "client_ip": "127.0.0.1",
+            "model": "Qwen 3.6 Plus",
+            "provider": "alibaba",
+            "backend": "sg",
+            "target": "qwen3.6-plus",
+            "stream": False,
+            "input_tokens_estimate": 12,
+            "started_at": 1778199999.0,
+        }
+        with patch.object(proxy.token_metrics_store, "record", side_effect=events.append):
+            proxy.record_token_usage(context, usage={}, output_tokens_estimate=4, stop_reason="end_turn")
+        self.assertEqual(events[0]["input_tokens"], 12)
+        self.assertEqual(events[0]["output_tokens"], 4)
+        self.assertTrue(events[0]["input_estimated"])
+        self.assertTrue(events[0]["output_estimated"])
+
+    def test_admin_tokens_endpoint_returns_metrics_payload(self):
+        with proxy.app.test_client() as client:
+            with patch.object(
+                proxy.token_metrics_store,
+                "summary",
+                return_value={
+                    "enabled": True,
+                    "db_path": "/tmp/token_usage.sqlite3",
+                    "queue_depth": 0,
+                    "dropped_events": 0,
+                    "last_error": "",
+                    "summary": {"requests": 1, "input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+                    "models": [],
+                    "endpoints": [],
+                    "recent": [],
+                    "timeseries": [],
+                },
+            ):
+                response = client.get("/admin/tokens", headers={"Authorization": "Bearer red"})
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["service"], "redalibabaclaude")
+        self.assertEqual(body["summary"]["total_tokens"], 15)
+
+    def test_anthropic_stream_records_token_usage_once(self):
+        lines = [
+            b'data: {"choices":[{"delta":{"content":"Oi"},"finish_reason":null}]}',
+            b'data: {"choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}',
+            b"data: [DONE]",
+        ]
+        context = {
+            "ts": 1778200000.0,
+            "request_id": "req_stream",
+            "endpoint": "/v1/messages",
+            "client_ip": "127.0.0.1",
+            "model": "Qwen 3.6 Plus",
+            "provider": "alibaba",
+            "backend": "sg",
+            "target": "qwen3.6-plus",
+            "stream": True,
+            "input_tokens_estimate": 99,
+            "started_at": 1778199999.0,
+        }
+        events = []
+        with patch.object(proxy.token_metrics_store, "record", side_effect=events.append):
+            text = "".join(proxy.anthropic_sse_from_openai_stream(FakeResponse(lines=lines), "Qwen 3.6 Plus", metrics=context))
+        self.assertIn('"type": "message_stop"', text)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["input_tokens"], 7)
+        self.assertEqual(events[0]["output_tokens"], 3)
+        self.assertEqual(events[0]["total_tokens"], 10)
+        self.assertFalse(events[0]["input_estimated"])
+        self.assertFalse(events[0]["output_estimated"])
+
+    def test_openai_stream_records_token_usage_once(self):
+        lines = [
+            b'data: {"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}',
+            b'data: {"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":4,"total_tokens":15}}',
+            b"data: [DONE]",
+        ]
+        context = {
+            "ts": 1778200000.0,
+            "request_id": "req_openai_stream",
+            "endpoint": "/v1/chat/completions",
+            "client_ip": "127.0.0.1",
+            "model": "Qwen 3.6 Plus",
+            "provider": "alibaba",
+            "backend": "sg",
+            "target": "qwen3.6-plus",
+            "stream": True,
+            "input_tokens_estimate": 99,
+            "started_at": 1778199999.0,
+        }
+        events = []
+        with patch.object(proxy.token_metrics_store, "record", side_effect=events.append):
+            chunks = list(proxy.sanitized_openai_stream_chunks(FakeResponse(lines=lines), metrics=context))
+        self.assertTrue(chunks[-1].startswith(b"data: [DONE]"))
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["input_tokens"], 11)
+        self.assertEqual(events[0]["output_tokens"], 4)
+        self.assertEqual(events[0]["total_tokens"], 15)
 
 
 if __name__ == "__main__":

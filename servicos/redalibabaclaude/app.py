@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
 import hashlib
 import html
+import sqlite3
 import threading
 import time
 import uuid
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -75,8 +78,14 @@ WEBSEARCH_FALLBACK_MAX_QUERIES = max(1, env_int("REDALIBABACLAUDE_WEBSEARCH_FALL
 WEBSEARCH_FALLBACK_TIMEOUT = max(1, env_int("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_TIMEOUT", 8))
 WEBSEARCH_FALLBACK_LANGUAGE = os.getenv("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_LANGUAGE", "pt-BR").strip() or "pt-BR"
 WEBSEARCH_INTERNAL_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_WEBSEARCH_INTERNAL_MAX_ROUNDS", 2))
+TOOL_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_TOOL_REPAIR_MAX_ROUNDS", 3))
 WEBFETCH_FALLBACK_TIMEOUT = max(1, env_int("REDALIBABACLAUDE_WEBFETCH_FALLBACK_TIMEOUT", 12))
 WEBFETCH_FALLBACK_MAX_CHARS = max(1000, env_int("REDALIBABACLAUDE_WEBFETCH_FALLBACK_MAX_CHARS", 24000))
+DATA_DIR = Path(os.getenv("REDALIBABACLAUDE_DATA_DIR", "/var/lib/redalibabaclaude")).expanduser()
+TOKEN_METRICS_ENABLED = env_bool("REDALIBABACLAUDE_TOKEN_METRICS_ENABLED", False)
+TOKEN_METRICS_DB = Path(os.getenv("REDALIBABACLAUDE_TOKEN_METRICS_DB", str(DATA_DIR / "token_usage.sqlite3"))).expanduser()
+TOKEN_METRICS_QUEUE_SIZE = max(100, env_int("REDALIBABACLAUDE_TOKEN_METRICS_QUEUE_SIZE", 10000))
+TOKEN_METRICS_RECENT_LIMIT = max(10, env_int("REDALIBABACLAUDE_TOKEN_METRICS_RECENT_LIMIT", 80))
 
 ALIBABA_SG_BASE_URL = os.getenv("REDALIBABACLAUDE_SG_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").rstrip("/")
 ALIBABA_US_BASE_URL = os.getenv("REDALIBABACLAUDE_US_BASE_URL", "https://dashscope-us.aliyuncs.com/compatible-mode/v1").rstrip("/")
@@ -100,6 +109,323 @@ http.headers.update(
         "Accept": "application/json",
         "User-Agent": "Mozilla/5.0 (compatible; REDSystemsBot/1.0; +https://redsystems.ddns.net)",
     }
+)
+
+
+class JsonResponseShim:
+    def __init__(self, payload: dict[str, Any], status_code: int = 200):
+        self.status_code = status_code
+        self._payload = payload
+        self.content = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.text = self.content.decode("utf-8", "replace")
+
+    def json(self) -> dict[str, Any]:
+        return self._payload
+
+
+def safe_int(value: Any, default: int = 0) -> int:
+    try:
+        if value is None:
+            return default
+        return int(value)
+    except Exception:
+        return default
+
+
+def first_positive_int(*values: Any) -> tuple[int, bool]:
+    for value in values:
+        number = safe_int(value, 0)
+        if number > 0:
+            return number, True
+    return 0, False
+
+
+def estimate_output_tokens_from_text(text: str) -> int:
+    cleaned = str(text or "")
+    if not cleaned:
+        return 0
+    return max(1, len(cleaned) // 4)
+
+
+class TokenMetricsStore:
+    def __init__(self, *, enabled: bool, db_path: Path, queue_size: int = 10000) -> None:
+        self.enabled = enabled
+        self.db_path = db_path
+        self.queue: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=queue_size)
+        self.lock = threading.Lock()
+        self.thread: threading.Thread | None = None
+        self.dropped_events = 0
+        self.last_error = ""
+
+    def start(self) -> None:
+        if not self.enabled:
+            return
+        with self.lock:
+            if self.thread and self.thread.is_alive():
+                return
+            self.thread = threading.Thread(target=self._writer_loop, name="redalibabaclaude-token-metrics", daemon=True)
+            self.thread.start()
+
+    def record(self, event: dict[str, Any]) -> None:
+        if not self.enabled:
+            return
+        self.start()
+        try:
+            self.queue.put_nowait(dict(event))
+        except queue.Full:
+            self.dropped_events += 1
+
+    def flush(self) -> None:
+        if not self.enabled:
+            return
+        self.queue.join()
+
+    def close(self) -> None:
+        if not self.enabled:
+            return
+        thread = self.thread
+        if not thread or not thread.is_alive():
+            return
+        try:
+            self.queue.put(None, timeout=1.0)
+        except Exception:
+            return
+        thread.join(timeout=2.0)
+
+    def _writer_loop(self) -> None:
+        try:
+            self._init_db()
+        except Exception as exc:
+            self.last_error = str(exc)[:240]
+            self.enabled = False
+            return
+        while True:
+            item = self.queue.get()
+            try:
+                if item is None:
+                    return
+                self._write_event(item)
+            except Exception as exc:
+                self.last_error = str(exc)[:240]
+            finally:
+                self.queue.task_done()
+
+    def _connect(self) -> sqlite3.Connection:
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(self.db_path), timeout=1.0)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=1000")
+        return conn
+
+    def _init_db(self) -> None:
+        conn = self._connect()
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS usage_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts REAL NOT NULL,
+                    request_id TEXT,
+                    endpoint TEXT,
+                    client_ip TEXT,
+                    model TEXT,
+                    provider TEXT,
+                    backend TEXT,
+                    target TEXT,
+                    status_code INTEGER,
+                    success INTEGER,
+                    stream INTEGER,
+                    input_tokens INTEGER,
+                    output_tokens INTEGER,
+                    total_tokens INTEGER,
+                    input_estimated INTEGER,
+                    output_estimated INTEGER,
+                    duration_ms INTEGER,
+                    stop_reason TEXT,
+                    error_type TEXT
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_events_ts ON usage_events(ts)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_events_model ON usage_events(model)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_events_endpoint ON usage_events(endpoint)")
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _write_event(self, event: dict[str, Any]) -> None:
+        row = {
+            "ts": float(event.get("ts") or time.time()),
+            "request_id": str(event.get("request_id") or ""),
+            "endpoint": str(event.get("endpoint") or ""),
+            "client_ip": str(event.get("client_ip") or ""),
+            "model": str(event.get("model") or ""),
+            "provider": str(event.get("provider") or ""),
+            "backend": str(event.get("backend") or ""),
+            "target": str(event.get("target") or ""),
+            "status_code": safe_int(event.get("status_code"), 0),
+            "success": 1 if event.get("success") else 0,
+            "stream": 1 if event.get("stream") else 0,
+            "input_tokens": max(0, safe_int(event.get("input_tokens"), 0)),
+            "output_tokens": max(0, safe_int(event.get("output_tokens"), 0)),
+            "input_estimated": 1 if event.get("input_estimated") else 0,
+            "output_estimated": 1 if event.get("output_estimated") else 0,
+            "duration_ms": max(0, safe_int(event.get("duration_ms"), 0)),
+            "stop_reason": str(event.get("stop_reason") or ""),
+            "error_type": str(event.get("error_type") or ""),
+        }
+        row["total_tokens"] = max(0, safe_int(event.get("total_tokens"), row["input_tokens"] + row["output_tokens"]))
+        conn = self._connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO usage_events (
+                    ts, request_id, endpoint, client_ip, model, provider, backend, target,
+                    status_code, success, stream, input_tokens, output_tokens, total_tokens,
+                    input_estimated, output_estimated, duration_ms, stop_reason, error_type
+                )
+                VALUES (
+                    :ts, :request_id, :endpoint, :client_ip, :model, :provider, :backend, :target,
+                    :status_code, :success, :stream, :input_tokens, :output_tokens, :total_tokens,
+                    :input_estimated, :output_estimated, :duration_ms, :stop_reason, :error_type
+                )
+                """,
+                row,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def summary(self, *, recent_limit: int = 80) -> dict[str, Any]:
+        if not self.enabled:
+            return {
+                "enabled": False,
+                "db_path": str(self.db_path),
+                "queue_depth": self.queue.qsize(),
+                "dropped_events": self.dropped_events,
+                "last_error": self.last_error,
+                "summary": {},
+                "models": [],
+                "endpoints": [],
+                "recent": [],
+                "timeseries": [],
+            }
+        self.start()
+        try:
+            self._init_db()
+            conn = self._connect()
+            try:
+                total = dict(conn.execute(
+                    """
+                    SELECT
+                        COUNT(*) AS requests,
+                        COALESCE(SUM(success), 0) AS successes,
+                        COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS failures,
+                        COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                        COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                        COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                        COALESCE(SUM(input_estimated), 0) AS input_estimated_events,
+                        COALESCE(SUM(output_estimated), 0) AS output_estimated_events,
+                        COALESCE(MAX(ts), 0) AS last_ts
+                    FROM usage_events
+                    """
+                ).fetchone() or {})
+                models = [dict(row) for row in conn.execute(
+                    """
+                    SELECT
+                        model,
+                        provider,
+                        backend,
+                        COUNT(*) AS requests,
+                        COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                        COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                        COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                        COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS failures,
+                        COALESCE(MAX(ts), 0) AS last_ts
+                    FROM usage_events
+                    GROUP BY model, provider, backend
+                    ORDER BY total_tokens DESC, requests DESC
+                    LIMIT 80
+                    """
+                ).fetchall()]
+                endpoints = [dict(row) for row in conn.execute(
+                    """
+                    SELECT
+                        endpoint,
+                        COUNT(*) AS requests,
+                        COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                        COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                        COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                        COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS failures
+                    FROM usage_events
+                    GROUP BY endpoint
+                    ORDER BY total_tokens DESC, requests DESC
+                    """
+                ).fetchall()]
+                recent = [dict(row) for row in conn.execute(
+                    """
+                    SELECT
+                        id, ts, request_id, endpoint, client_ip, model, provider, backend, target,
+                        status_code, success, stream, input_tokens, output_tokens, total_tokens,
+                        input_estimated, output_estimated, duration_ms, stop_reason, error_type
+                    FROM usage_events
+                    ORDER BY id DESC
+                    LIMIT ?
+                    """,
+                    (max(1, min(recent_limit, 500)),),
+                ).fetchall()]
+                since = time.time() - 3600
+                timeseries = [dict(row) for row in conn.execute(
+                    """
+                    SELECT
+                        CAST(ts / 60 AS INTEGER) * 60 AS bucket_ts,
+                        COUNT(*) AS requests,
+                        COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                        COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                        COALESCE(SUM(total_tokens), 0) AS total_tokens
+                    FROM usage_events
+                    WHERE ts >= ?
+                    GROUP BY bucket_ts
+                    ORDER BY bucket_ts ASC
+                    """,
+                    (since,),
+                ).fetchall()]
+            finally:
+                conn.close()
+        except Exception as exc:
+            self.last_error = str(exc)[:240]
+            return {
+                "enabled": True,
+                "db_path": str(self.db_path),
+                "queue_depth": self.queue.qsize(),
+                "dropped_events": self.dropped_events,
+                "last_error": self.last_error,
+                "summary": {},
+                "models": [],
+                "endpoints": [],
+                "recent": [],
+                "timeseries": [],
+            }
+        return {
+            "enabled": True,
+            "db_path": str(self.db_path),
+            "queue_depth": self.queue.qsize(),
+            "dropped_events": self.dropped_events,
+            "last_error": self.last_error,
+            "summary": total,
+            "models": models,
+            "endpoints": endpoints,
+            "recent": recent,
+            "timeseries": timeseries,
+        }
+
+
+token_metrics_store = TokenMetricsStore(
+    enabled=TOKEN_METRICS_ENABLED,
+    db_path=TOKEN_METRICS_DB,
+    queue_size=TOKEN_METRICS_QUEUE_SIZE,
 )
 
 MODELS = [
@@ -324,6 +650,11 @@ def authorize() -> Response | None:
     if any(token in AUTH_TOKENS for token in candidates):
         return None
     return error_response("authorization required", 401, "authentication_error")
+
+
+def client_ip() -> str:
+    forwarded = str(request.headers.get("X-Forwarded-For") or "").split(",", 1)[0].strip()
+    return forwarded or str(request.remote_addr or "")
 
 
 def default_model() -> dict[str, Any]:
@@ -931,6 +1262,91 @@ def apply_alias_backend_options(payload: dict[str, Any], alias: dict[str, Any]) 
     return merged
 
 
+def token_usage_from_openai_usage(
+    usage: dict[str, Any] | None,
+    *,
+    fallback_input_tokens: int = 0,
+    fallback_output_tokens: int = 0,
+) -> dict[str, Any]:
+    usage = usage or {}
+    input_tokens, input_exact = first_positive_int(usage.get("prompt_tokens"), usage.get("input_tokens"))
+    output_tokens, output_exact = first_positive_int(usage.get("completion_tokens"), usage.get("output_tokens"))
+    total_tokens, total_exact = first_positive_int(usage.get("total_tokens"))
+    if not input_exact and fallback_input_tokens > 0:
+        input_tokens = fallback_input_tokens
+    if not output_exact and fallback_output_tokens > 0:
+        output_tokens = fallback_output_tokens
+    if not total_exact:
+        total_tokens = input_tokens + output_tokens
+    return {
+        "input_tokens": max(0, input_tokens),
+        "output_tokens": max(0, output_tokens),
+        "total_tokens": max(0, total_tokens),
+        "input_estimated": not input_exact and input_tokens > 0,
+        "output_estimated": not output_exact and output_tokens > 0,
+    }
+
+
+def metrics_context(
+    *,
+    endpoint: str,
+    alias: dict[str, Any],
+    stream: bool,
+    input_tokens_estimate: int,
+    started_at: float,
+) -> dict[str, Any]:
+    return {
+        "ts": time.time(),
+        "request_id": str(request.headers.get("X-Request-Id") or uuid.uuid4()),
+        "endpoint": endpoint,
+        "client_ip": client_ip(),
+        "model": alias.get("id") or "",
+        "provider": alias.get("provider") or "",
+        "backend": alias.get("backend") or "",
+        "target": alias.get("target") or "",
+        "stream": bool(stream),
+        "input_tokens_estimate": max(0, int(input_tokens_estimate or 0)),
+        "started_at": started_at,
+    }
+
+
+def record_token_usage(
+    context: dict[str, Any] | None,
+    *,
+    usage: dict[str, Any] | None = None,
+    status_code: int = 200,
+    success: bool = True,
+    output_tokens_estimate: int = 0,
+    stop_reason: str = "",
+    error_type: str = "",
+) -> None:
+    if not context:
+        return
+    tokens = token_usage_from_openai_usage(
+        usage,
+        fallback_input_tokens=safe_int(context.get("input_tokens_estimate"), 0),
+        fallback_output_tokens=output_tokens_estimate,
+    )
+    event = {
+        "ts": context.get("ts") or time.time(),
+        "request_id": context.get("request_id") or "",
+        "endpoint": context.get("endpoint") or "",
+        "client_ip": context.get("client_ip") or "",
+        "model": context.get("model") or "",
+        "provider": context.get("provider") or "",
+        "backend": context.get("backend") or "",
+        "target": context.get("target") or "",
+        "stream": bool(context.get("stream")),
+        "status_code": status_code,
+        "success": success,
+        "duration_ms": int(max(0, (time.time() - float(context.get("started_at") or time.time())) * 1000)),
+        "stop_reason": stop_reason,
+        "error_type": error_type,
+    }
+    event.update(tokens)
+    token_metrics_store.record(event)
+
+
 def proxy_openai_chat(payload: dict[str, Any], *, stream: bool, api_key: str, base_url: str) -> requests.Response:
     return http.post(
         f"{base_url}/chat/completions",
@@ -1032,7 +1448,8 @@ def proxy_anthropic_payload_with_internal_tools(
         )
         return upstream, True
 
-    for _round in range(WEBSEARCH_INTERNAL_MAX_ROUNDS + 1):
+    max_internal_rounds = max(WEBSEARCH_INTERNAL_MAX_ROUNDS, TOOL_REPAIR_MAX_ROUNDS)
+    for round_index in range(max_internal_rounds + 1):
         request_payload = deepcopy(current_payload)
         if WEBSEARCH_FALLBACK_ENABLED:
             request_payload["stream"] = False
@@ -1051,8 +1468,17 @@ def proxy_anthropic_payload_with_internal_tools(
             data = upstream.json()
         except Exception:
             return upstream, False
+        invalids = invalid_tool_calls_from_openai(data, current_payload)
+        if invalids:
+            if round_index < TOOL_REPAIR_MAX_ROUNDS:
+                current_payload = append_invalid_tool_results(current_payload, data, invalids)
+                input_tokens = estimate_openai_tokens(current_payload)
+                continue
+            return synthetic_tool_validation_response(current_payload, invalids), False
         calls = internal_tool_calls_from_openai(data)
         if not calls:
+            return upstream, False
+        if round_index >= WEBSEARCH_INTERNAL_MAX_ROUNDS:
             return upstream, False
         current_payload = append_internal_tool_results(current_payload, data, calls)
         input_tokens = estimate_openai_tokens(current_payload)
@@ -1112,6 +1538,32 @@ def anthropic_message_from_openai(data: dict[str, Any], model_name: str) -> dict
     }
 
 
+def openai_response_text(data: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for choice in data.get("choices") or []:
+        if not isinstance(choice, dict):
+            continue
+        message = choice.get("message") or {}
+        content = message.get("content")
+        if isinstance(content, str):
+            parts.append(content)
+        delta = choice.get("delta") or {}
+        delta_content = delta.get("content") if isinstance(delta, dict) else None
+        if isinstance(delta_content, str):
+            parts.append(delta_content)
+    return "".join(parts)
+
+
+def openai_stop_reason(data: dict[str, Any]) -> str:
+    choice = ((data.get("choices") or [{}]) or [{}])[0]
+    finish_reason = str(choice.get("finish_reason") or "")
+    if finish_reason == "tool_calls":
+        return "tool_use"
+    if finish_reason == "length":
+        return "max_tokens"
+    return finish_reason or "end_turn"
+
+
 def internal_tool_calls_from_openai(data: dict[str, Any]) -> list[dict[str, Any]]:
     choice = ((data.get("choices") or [{}]) or [{}])[0]
     message = choice.get("message") or {}
@@ -1138,6 +1590,152 @@ def internal_tool_calls_from_openai(data: dict[str, Any]) -> list[dict[str, Any]
             if url:
                 calls.append({"id": str(tool_call.get("id") or ""), "name": name, "url": url, "prompt": prompt})
     return calls
+
+
+def openai_tool_schema_map(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    schemas: dict[str, dict[str, Any]] = {}
+    for tool in payload.get("tools") or []:
+        if not isinstance(tool, dict):
+            continue
+        function = tool.get("function") or {}
+        name = str(function.get("name") or "").strip()
+        parameters = function.get("parameters")
+        if name and isinstance(parameters, dict):
+            schemas[name] = parameters
+    return schemas
+
+
+def parse_tool_arguments(value: Any) -> tuple[dict[str, Any] | None, str]:
+    if isinstance(value, dict):
+        return value, json.dumps(value, ensure_ascii=False)
+    raw = str(value or "").strip()
+    if not raw:
+        return {}, raw
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return None, raw
+    if not isinstance(parsed, dict):
+        return None, raw
+    return parsed, raw
+
+
+def tool_calls_from_openai_message(data: dict[str, Any]) -> list[dict[str, Any]]:
+    choice = ((data.get("choices") or [{}]) or [{}])[0]
+    message = choice.get("message") or {}
+    if str(choice.get("finish_reason") or "") != "tool_calls":
+        return []
+    return [item for item in message.get("tool_calls") or [] if isinstance(item, dict)]
+
+
+def invalid_tool_calls(tool_calls: list[dict[str, Any]], payload: dict[str, Any]) -> list[dict[str, Any]]:
+    schemas = openai_tool_schema_map(payload)
+    invalids: list[dict[str, Any]] = []
+    for index, tool_call in enumerate(tool_calls):
+        function = tool_call.get("function") or {}
+        name = str(function.get("name") or "").strip()
+        call_id = str(tool_call.get("id") or f"call_{uuid.uuid4().hex[:10]}")
+        arguments, raw_arguments = parse_tool_arguments(function.get("arguments"))
+        if arguments is None:
+            invalids.append(
+                {
+                    "id": call_id,
+                    "index": index,
+                    "name": name,
+                    "missing": [],
+                    "raw_arguments": raw_arguments,
+                    "message": "arguments must be a JSON object",
+                }
+            )
+            continue
+        schema = schemas.get(name) or {}
+        required = schema.get("required") if isinstance(schema, dict) else []
+        if not isinstance(required, list):
+            required = []
+        required_fields = [str(item) for item in required if isinstance(item, str)]
+        missing = [
+            field
+            for field in required_fields
+            if field not in arguments or arguments.get(field) is None or (isinstance(arguments.get(field), str) and not arguments.get(field).strip())
+        ]
+        if missing:
+            invalids.append(
+                {
+                    "id": call_id,
+                    "index": index,
+                    "name": name,
+                    "missing": missing,
+                    "raw_arguments": raw_arguments,
+                    "message": "missing required fields",
+                }
+            )
+    return invalids
+
+
+def invalid_tool_calls_from_openai(data: dict[str, Any], payload: dict[str, Any]) -> list[dict[str, Any]]:
+    return invalid_tool_calls(tool_calls_from_openai_message(data), payload)
+
+
+def format_invalid_tool_result(invalid: dict[str, Any]) -> str:
+    name = str(invalid.get("name") or "unknown")
+    missing = [str(item) for item in invalid.get("missing") or []]
+    missing_text = ", ".join(missing) if missing else "valid JSON object"
+    raw_arguments = str(invalid.get("raw_arguments") or "")
+    return (
+        "Tool call validation failed before client execution. "
+        f"Tool `{name}` was called with invalid input: {invalid.get('message')}; required: {missing_text}. "
+        f"Received arguments: {raw_arguments or '{}'}\n"
+        "Call the same tool again with a valid JSON object that satisfies the schema. "
+        "Do not explain this validation issue to the user; just make the corrected tool call."
+    )
+
+
+def append_invalid_tool_results(payload: dict[str, Any], data: dict[str, Any], invalids: list[dict[str, Any]]) -> dict[str, Any]:
+    next_payload = deepcopy(payload)
+    messages = next_payload.setdefault("messages", [])
+    if not isinstance(messages, list):
+        messages = []
+        next_payload["messages"] = messages
+    choice = ((data.get("choices") or [{}]) or [{}])[0]
+    message = deepcopy(choice.get("message") or {})
+    message.setdefault("role", "assistant")
+    message.setdefault("content", "")
+    tool_calls = message.get("tool_calls")
+    if isinstance(tool_calls, list):
+        for invalid in invalids:
+            index = safe_int(invalid.get("index"), -1)
+            if 0 <= index < len(tool_calls) and isinstance(tool_calls[index], dict) and not tool_calls[index].get("id"):
+                tool_calls[index]["id"] = str(invalid.get("id") or f"call_{uuid.uuid4().hex[:10]}")
+    messages.append(message)
+    for invalid in invalids:
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": str(invalid.get("id") or f"call_{uuid.uuid4().hex[:10]}"),
+                "content": format_invalid_tool_result(invalid),
+            }
+        )
+    next_payload["stream"] = bool(payload.get("stream"))
+    return next_payload
+
+
+def synthetic_tool_validation_response(payload: dict[str, Any], invalids: list[dict[str, Any]]) -> "JsonResponseShim":
+    details = "; ".join(format_invalid_tool_result(item).splitlines()[0] for item in invalids)
+    return JsonResponseShim(
+        {
+            "id": f"chatcmpl_{uuid.uuid4().hex}",
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": f"A chamada de ferramenta veio invalida repetidas vezes e foi bloqueada pelo proxy para evitar loop. {details}",
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": estimate_openai_tokens(payload), "completion_tokens": 0},
+        }
+    )
 
 
 def append_internal_tool_results(payload: dict[str, Any], data: dict[str, Any], calls: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1222,6 +1820,7 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
     model_name: str,
     context_window: int,
     input_tokens: int,
+    metrics: dict[str, Any] | None = None,
 ):
     message_id = f"msg_{uuid.uuid4().hex}"
     yield sse_event(
@@ -1246,8 +1845,14 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
     usage_payload = {"input_tokens": 0, "output_tokens": 0}
     block_index = 0
     final_stop_reason = "end_turn"
+    metrics_prompt_tokens = 0
+    metrics_completion_tokens = 0
+    metrics_has_prompt_tokens = False
+    metrics_has_completion_tokens = False
+    metrics_text_parts: list[str] = []
 
-    for round_index in range(WEBSEARCH_INTERNAL_MAX_ROUNDS + 1):
+    max_internal_rounds = max(WEBSEARCH_INTERNAL_MAX_ROUNDS, TOOL_REPAIR_MAX_ROUNDS)
+    for round_index in range(max_internal_rounds + 1):
         thinking_open = False
         thinking_parts: list[str] = []
         thinking_index: int | None = None
@@ -1256,6 +1861,7 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
         text_parts: list[str] = []
         tool_state: dict[int, dict[str, Any]] = {}
         finish_reason = ""
+        round_usage: dict[str, Any] = {}
 
         for raw_line in current_response.iter_lines(decode_unicode=False, chunk_size=STREAM_CHUNK_SIZE):
             if not raw_line:
@@ -1274,6 +1880,7 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
             delta = choice.get("delta") or {}
             usage = data.get("usage") or {}
             if usage:
+                round_usage = usage
                 usage_payload["input_tokens"] = int(usage.get("prompt_tokens") or usage_payload["input_tokens"])
                 usage_payload["output_tokens"] += int(usage.get("completion_tokens") or 0)
 
@@ -1302,6 +1909,7 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
 
             text_delta = delta.get("content")
             if isinstance(text_delta, str) and text_delta:
+                metrics_text_parts.append(text_delta)
                 if thinking_open:
                     signature = fake_thinking_signature("".join(thinking_parts), f"{message_id}:{round_index}:{thinking_index}")
                     yield sse_event(
@@ -1364,6 +1972,16 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
             if choice.get("finish_reason"):
                 finish_reason = str(choice.get("finish_reason") or "")
 
+        if round_usage:
+            prompt_value, prompt_exact = first_positive_int(round_usage.get("prompt_tokens"), round_usage.get("input_tokens"))
+            completion_value, completion_exact = first_positive_int(round_usage.get("completion_tokens"), round_usage.get("output_tokens"))
+            if prompt_exact:
+                metrics_prompt_tokens += prompt_value
+                metrics_has_prompt_tokens = True
+            if completion_exact:
+                metrics_completion_tokens += completion_value
+                metrics_has_completion_tokens = True
+
         if thinking_open:
             signature = fake_thinking_signature("".join(thinking_parts), f"{message_id}:{round_index}:{thinking_index}")
             yield sse_event(
@@ -1376,12 +1994,50 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
             yield sse_event("content_block_stop", {"type": "content_block_stop", "index": text_index})
             block_index += 1
 
+        stream_tool_calls = openai_tool_calls_from_stream_state(tool_state)
+        invalids = invalid_tool_calls(stream_tool_calls, current_payload)
+        if finish_reason == "tool_calls" and invalids:
+            assistant_message = {
+                "role": "assistant",
+                "content": "".join(text_parts),
+                "tool_calls": stream_tool_calls,
+            }
+            data = {"choices": [{"finish_reason": "tool_calls", "message": assistant_message}]}
+            if round_index < TOOL_REPAIR_MAX_ROUNDS:
+                current_payload = append_invalid_tool_results(current_payload, data, invalids)
+                current_payload["stream"] = True
+                input_tokens = estimate_openai_tokens(current_payload)
+                current_response = proxy_openai_chat_with_context_retry(
+                    current_payload,
+                    alias=alias,
+                    stream=True,
+                    context_window=context_window,
+                    input_tokens=input_tokens,
+                )
+                if current_response.status_code >= 400:
+                    final_stop_reason = "end_turn"
+                    break
+                continue
+            warning = "A chamada de ferramenta veio invalida repetidas vezes e foi bloqueada pelo proxy para evitar loop."
+            metrics_text_parts.append(warning)
+            yield sse_event(
+                "content_block_start",
+                {"type": "content_block_start", "index": block_index, "content_block": {"type": "text", "text": ""}},
+            )
+            yield sse_event(
+                "content_block_delta",
+                {"type": "content_block_delta", "index": block_index, "delta": {"type": "text_delta", "text": warning}},
+            )
+            yield sse_event("content_block_stop", {"type": "content_block_stop", "index": block_index})
+            final_stop_reason = "end_turn"
+            break
+
         internal_calls = internal_calls_from_stream_tool_state(tool_state)
         if finish_reason == "tool_calls" and internal_calls and round_index < WEBSEARCH_INTERNAL_MAX_ROUNDS:
             assistant_message = {
                 "role": "assistant",
                 "content": "".join(text_parts),
-                "tool_calls": openai_tool_calls_from_stream_state(tool_state),
+                    "tool_calls": stream_tool_calls,
             }
             data = {"choices": [{"finish_reason": "tool_calls", "message": assistant_message}]}
             current_payload = append_internal_tool_results(current_payload, data, internal_calls)
@@ -1400,7 +2056,7 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
             continue
 
         if finish_reason == "tool_calls" and tool_state:
-            for offset, tool_call in enumerate(openai_tool_calls_from_stream_state(tool_state)):
+            for offset, tool_call in enumerate(stream_tool_calls):
                 function = tool_call.get("function") or {}
                 arguments = function.get("arguments") or "{}"
                 yield sse_event(
@@ -1435,11 +2091,24 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
             final_stop_reason = "end_turn"
         break
 
+    metrics_usage: dict[str, Any] = {}
+    if metrics_has_prompt_tokens:
+        metrics_usage["prompt_tokens"] = metrics_prompt_tokens
+    if metrics_has_completion_tokens:
+        metrics_usage["completion_tokens"] = metrics_completion_tokens
+    record_token_usage(
+        metrics,
+        usage=metrics_usage,
+        status_code=200,
+        success=True,
+        output_tokens_estimate=estimate_output_tokens_from_text("".join(metrics_text_parts)),
+        stop_reason=final_stop_reason,
+    )
     yield sse_event("message_delta", {"type": "message_delta", "delta": {"stop_reason": final_stop_reason, "stop_sequence": None}, "usage": usage_payload})
     yield sse_event("message_stop", {"type": "message_stop"})
 
 
-def anthropic_sse_from_openai_stream(response: requests.Response, model_name: str):
+def anthropic_sse_from_openai_stream(response: requests.Response, model_name: str, metrics: dict[str, Any] | None = None):
     message_id = f"msg_{uuid.uuid4().hex}"
     yield sse_event(
         "message_start",
@@ -1466,6 +2135,7 @@ def anthropic_sse_from_openai_stream(response: requests.Response, model_name: st
     tool_state: dict[int, dict[str, Any]] = {}
     usage_payload = {"input_tokens": 0, "output_tokens": 0}
     stop_reason = "end_turn"
+    metrics_text_parts: list[str] = []
 
     for raw_line in response.iter_lines(decode_unicode=False, chunk_size=STREAM_CHUNK_SIZE):
         if not raw_line:
@@ -1497,6 +2167,7 @@ def anthropic_sse_from_openai_stream(response: requests.Response, model_name: st
 
         text_delta = delta.get("content")
         if isinstance(text_delta, str) and text_delta:
+            metrics_text_parts.append(text_delta)
             if thinking_started and not thinking_closed:
                 signature = fake_thinking_signature("".join(thinking_parts), message_id)
                 yield sse_event("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": signature}})
@@ -1574,6 +2245,14 @@ def anthropic_sse_from_openai_stream(response: requests.Response, model_name: st
         block_index = index + (1 if text_started else 0) + (1 if thinking_started else 0)
         yield sse_event("content_block_stop", {"type": "content_block_stop", "index": block_index})
 
+    record_token_usage(
+        metrics,
+        usage=usage_payload,
+        status_code=200,
+        success=True,
+        output_tokens_estimate=estimate_output_tokens_from_text("".join(metrics_text_parts)),
+        stop_reason=stop_reason,
+    )
     yield sse_event("message_delta", {"type": "message_delta", "delta": {"stop_reason": stop_reason, "stop_sequence": None}, "usage": usage_payload})
     yield sse_event("message_stop", {"type": "message_stop"})
 
@@ -1680,7 +2359,11 @@ def sanitize_openai_response_json(data: dict[str, Any]) -> dict[str, Any]:
     return cleaned
 
 
-def sanitized_openai_stream_chunks(response: requests.Response):
+def sanitized_openai_stream_chunks(response: requests.Response, metrics: dict[str, Any] | None = None):
+    usage_payload: dict[str, Any] = {}
+    text_parts: list[str] = []
+    finish_reason = ""
+    recorded = False
     for raw_line in response.iter_lines(decode_unicode=False, chunk_size=STREAM_CHUNK_SIZE):
         if not raw_line:
             continue
@@ -1690,6 +2373,15 @@ def sanitized_openai_stream_chunks(response: requests.Response):
             continue
         data_text = line[5:].strip()
         if data_text == "[DONE]":
+            record_token_usage(
+                metrics,
+                usage=usage_payload,
+                status_code=200,
+                success=True,
+                output_tokens_estimate=estimate_output_tokens_from_text("".join(text_parts)),
+                stop_reason=finish_reason,
+            )
+            recorded = True
             yield b"data: [DONE]\n\n"
             continue
         try:
@@ -1697,11 +2389,18 @@ def sanitized_openai_stream_chunks(response: requests.Response):
         except Exception:
             yield f"{line}\n".encode("utf-8")
             continue
+        usage = data.get("usage") or {}
+        if usage:
+            usage_payload = usage
         changed = False
         for choice in data.get("choices") or []:
             if not isinstance(choice, dict):
                 continue
             delta = choice.get("delta")
+            if isinstance(delta, dict) and isinstance(delta.get("content"), str):
+                text_parts.append(delta.get("content") or "")
+            if choice.get("finish_reason"):
+                finish_reason = str(choice.get("finish_reason") or "")
             if isinstance(delta, dict) and "reasoning_content" in delta:
                 delta = dict(delta)
                 delta.pop("reasoning_content", None)
@@ -1714,6 +2413,15 @@ def sanitized_openai_stream_chunks(response: requests.Response):
             yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode("utf-8")
         else:
             yield f"{line}\n\n".encode("utf-8")
+    if not recorded:
+        record_token_usage(
+            metrics,
+            usage=usage_payload,
+            status_code=200,
+            success=True,
+            output_tokens_estimate=estimate_output_tokens_from_text("".join(text_parts)),
+            stop_reason=finish_reason,
+        )
 
 
 @app.after_request
@@ -1727,7 +2435,20 @@ def add_cors_headers(response: Response) -> Response:
 
 @app.route("/", methods=["GET"])
 def root() -> Response:
-    return response_json({"service": SERVICE_NAME, "ok": True, "endpoints": ["/healthz", "/v1/models", "/v1/messages", "/v1/messages/count_tokens", "/v1/chat/completions"]})
+    return response_json(
+        {
+            "service": SERVICE_NAME,
+            "ok": True,
+            "endpoints": [
+                "/healthz",
+                "/admin/tokens",
+                "/v1/models",
+                "/v1/messages",
+                "/v1/messages/count_tokens",
+                "/v1/chat/completions",
+            ],
+        }
+    )
 
 
 @app.route("/healthz", methods=["GET"])
@@ -1746,6 +2467,18 @@ def healthz() -> Response:
             },
         }
     )
+
+
+@app.route("/admin/tokens", methods=["GET"])
+def admin_tokens() -> Response:
+    auth_error = authorize()
+    if auth_error is not None:
+        return auth_error
+    limit = max(10, min(safe_int(request.args.get("limit"), TOKEN_METRICS_RECENT_LIMIT), 500))
+    payload = token_metrics_store.summary(recent_limit=limit)
+    payload["service"] = SERVICE_NAME
+    payload["now"] = time.time()
+    return response_json(payload)
 
 
 @app.route("/v1/models", methods=["GET"])
@@ -1781,7 +2514,17 @@ def anthropic_messages() -> Response:
     alias = resolve_model(body.get("model"))
     if alias is None:
         return error_response("model not available in redalibabaclaude", 404, "model_not_found")
+    input_tokens_estimate = estimate_tokens(body)
+    started_at = time.time()
+    metrics = metrics_context(
+        endpoint="/v1/messages",
+        alias=alias,
+        stream=bool(body.get("stream")),
+        input_tokens_estimate=input_tokens_estimate,
+        started_at=started_at,
+    )
     if not backend_has_keys(alias):
+        record_token_usage(metrics, status_code=503, success=False, error_type="configuration_error")
         return error_response("alibaba api key not configured for this backend", 503, "configuration_error")
     payload = anthropic_to_openai_payload(body, alias)
     stream = bool(body.get("stream"))
@@ -1790,14 +2533,16 @@ def anthropic_messages() -> Response:
         alias=alias,
         stream=stream,
         context_window=int(alias.get("context_window") or 262144),
-        input_tokens=estimate_tokens(body),
+        input_tokens=input_tokens_estimate,
     )
     if upstream.status_code >= 400:
         try:
             body_text = upstream.text
         except Exception:
             body_text = ""
-        return error_response(alibaba_error_message(upstream.status_code, body_text), 502 if upstream.status_code >= 500 else upstream.status_code, "upstream_error")
+        status_code = 502 if upstream.status_code >= 500 else upstream.status_code
+        record_token_usage(metrics, status_code=status_code, success=False, error_type="upstream_error")
+        return error_response(alibaba_error_message(upstream.status_code, body_text), status_code, "upstream_error")
     if stream and upstream_stream:
         return Response(
             anthropic_sse_from_openai_stream_with_internal_tools(
@@ -1806,7 +2551,8 @@ def anthropic_messages() -> Response:
                 alias=alias,
                 model_name=alias["id"],
                 context_window=int(alias.get("context_window") or 262144),
-                input_tokens=estimate_tokens(body),
+                input_tokens=input_tokens_estimate,
+                metrics=metrics,
             ),
             status=200,
             content_type="text/event-stream; charset=utf-8",
@@ -1814,7 +2560,16 @@ def anthropic_messages() -> Response:
     try:
         data = upstream.json()
     except Exception:
+        record_token_usage(metrics, status_code=502, success=False, error_type="upstream_error")
         return error_response("invalid upstream JSON", 502, "upstream_error")
+    record_token_usage(
+        metrics,
+        usage=data.get("usage") or {},
+        status_code=200,
+        success=True,
+        output_tokens_estimate=estimate_output_tokens_from_text(openai_response_text(data)),
+        stop_reason=openai_stop_reason(data),
+    )
     if stream:
         return Response(anthropic_sse_from_openai_json(data, alias["id"]), status=200, content_type="text/event-stream; charset=utf-8")
     return response_json(anthropic_message_from_openai(data, alias["id"]))
@@ -1831,30 +2586,50 @@ def openai_chat_completions() -> Response:
     alias = resolve_model(body.get("model"))
     if alias is None:
         return error_response("model not available in redalibabaclaude", 404, "model_not_found")
-    if not backend_has_keys(alias):
-        return error_response("alibaba api key not configured for this backend", 503, "configuration_error")
     payload = deepcopy(body)
     stream = bool(payload.get("stream"))
+    input_tokens_estimate = estimate_openai_tokens(payload)
+    metrics = metrics_context(
+        endpoint="/v1/chat/completions",
+        alias=alias,
+        stream=stream,
+        input_tokens_estimate=input_tokens_estimate,
+        started_at=time.time(),
+    )
+    if not backend_has_keys(alias):
+        record_token_usage(metrics, status_code=503, success=False, error_type="configuration_error")
+        return error_response("alibaba api key not configured for this backend", 503, "configuration_error")
     upstream = proxy_openai_chat_with_context_retry(
         payload,
         alias=alias,
         stream=stream,
         context_window=int(alias.get("context_window") or 262144),
-        input_tokens=estimate_openai_tokens(payload),
+        input_tokens=input_tokens_estimate,
     )
     if upstream.status_code >= 400:
         try:
             body_text = upstream.text
         except Exception:
             body_text = ""
-        return error_response(alibaba_error_message(upstream.status_code, body_text), 502 if upstream.status_code >= 500 else upstream.status_code, "upstream_error")
+        status_code = 502 if upstream.status_code >= 500 else upstream.status_code
+        record_token_usage(metrics, status_code=status_code, success=False, error_type="upstream_error")
+        return error_response(alibaba_error_message(upstream.status_code, body_text), status_code, "upstream_error")
     if not stream:
         try:
             data = upstream.json()
         except Exception:
+            record_token_usage(metrics, status_code=502, success=False, error_type="upstream_error")
             return error_response("invalid upstream JSON", 502, "upstream_error")
+        record_token_usage(
+            metrics,
+            usage=data.get("usage") or {},
+            status_code=200,
+            success=True,
+            output_tokens_estimate=estimate_output_tokens_from_text(openai_response_text(data)),
+            stop_reason=openai_stop_reason(data),
+        )
         return Response(json.dumps(sanitize_openai_response_json(data), ensure_ascii=False), status=200, content_type="application/json")
-    return Response(sanitized_openai_stream_chunks(upstream), status=200, content_type="text/event-stream; charset=utf-8")
+    return Response(sanitized_openai_stream_chunks(upstream, metrics=metrics), status=200, content_type="text/event-stream; charset=utf-8")
 
 
 @app.route("/<path:path>", methods=["OPTIONS"])

@@ -252,7 +252,18 @@ REDALIBABACLAUDE_US_API_KEY=
 REDALIBABACLAUDE_REQUIRE_AUTH=1
 REDALIBABACLAUDE_AUTH_TOKENS=red
 REDALIBABACLAUDE_DEFAULT_MODEL=ALI-SG/qwen-coder-plus
+REDALIBABACLAUDE_DATA_DIR=/var/lib/redalibabaclaude
+REDALIBABACLAUDE_TOKEN_METRICS_ENABLED=1
+REDALIBABACLAUDE_TOKEN_METRICS_DB=/var/lib/redalibabaclaude/token_usage.sqlite3
+REDALIBABACLAUDE_TOKEN_METRICS_QUEUE_SIZE=10000
+REDALIBABACLAUDE_TOKEN_METRICS_RECENT_LIMIT=80
 ```
+
+Metricas de tokens:
+
+- `GET /admin/tokens?limit=120` retorna os totais absolutos de entrada/saida, uso por modelo, uso por endpoint e eventos recentes.
+- A gravacao usa fila em memoria mais SQLite em `/var/lib/redalibabaclaude/token_usage.sqlite3`, para nao bloquear o fluxo do proxy.
+- O dashboard consome essa rota na aba `Proxy Tokens`; configure o painel com `REDALIBABACLAUDE_URL`, `REDALIBABACLAUDE_AUTH_TOKEN` e `REDALIBABACLAUDE_TLS_VERIFY`.
 
 Rotacao de keys na VM:
 

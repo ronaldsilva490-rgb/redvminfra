@@ -25,6 +25,7 @@ https://redsystems.ddns.net:5052
 
 - `GET /`
 - `GET /healthz`
+- `GET /admin/tokens`
 - `GET /v1/models`
 - `POST /v1/messages`
 - `POST /v1/messages/count_tokens`
@@ -50,12 +51,36 @@ https://redsystems.ddns.net:5052
 - `max_tokens` fica livre em chamadas normais e so e reduzido preventivamente em chamadas internas conhecidas (`WebSearch`, `WebFetch`, titulo) ou em retry automatico quando o Alibaba responde que o limite maximo e `8192`. O fallback e controlado por `REDALIBABACLAUDE_MAX_OUTPUT_TOKENS=8192`.
 - se o modelo chamar `WebSearch`, o gateway executa a busca internamente no RED Search/SearXNG (`REDALIBABACLAUDE_WEBSEARCH_FALLBACK_URL`, default `http://127.0.0.1:8088/search`), anexa o resultado como `tool` e faz a rodada seguinte no upstream. Assim o Claude Code nao recebe `WebSearch` vazio quando o provedor custom nao tem busca nativa.
 - em chamadas streaming do Claude Code, `REDALIBABACLAUDE_WEBSEARCH_INTERNALIZE_STREAM_REQUESTS=0` evita converter a chamada inteira para JSON e preserva o stream real para manter a UI de thinking expandivel. Quando o upstream emite `tool_calls` de `WebSearch`/`WebFetch`, o gateway intercepta esses deltas no proprio stream, executa RED Search/Fetch, injeta o resultado como mensagem `tool` e continua a rodada seguinte em streaming.
+- se o upstream emitir uma chamada de ferramenta externa sem os campos obrigatorios do schema, por exemplo `Write` com `{}`, o gateway nao entrega essa chamada invalida ao Claude Desktop/Code. Ele injeta um resultado interno de validacao e pede ao modelo para refazer a mesma tool call corretamente. O limite e `REDALIBABACLAUDE_TOOL_REPAIR_MAX_ROUNDS=3`.
 - por padrao no deploy RED, `REDALIBABACLAUDE_EXPERIMENTAL_THINKING_BLOCKS=1` converte `reasoning_content` em bloco Anthropic-like `thinking` com assinatura fake prefixada por `REDALIBABACLAUDE_FAKE_THINKING_SIGNATURE_PREFIX`.
 - em clientes OpenAI-compatible (`/v1/chat/completions`), `reasoning_content` continua sendo removido para nao vazar metadado nao padronizado fora do fluxo Claude.
 - os IDs publicados sao nomes amigaveis, sem referencia a `ALI`; a regiao usada fica apenas no metadata `red.backend`.
 - o gateway ainda aceita os IDs brutos e os aliases antigos como compatibilidade, mas nao os publica em `/v1/models`.
 - TLS e servido no proprio processo usando os certificados do host.
 - autenticacao publica atual: bearer token `red`.
+
+## Metricas de tokens
+
+O proxy registra tokens em SQLite quando `REDALIBABACLAUDE_TOKEN_METRICS_ENABLED=1`.
+A rota administrativa `GET /admin/tokens?limit=120` retorna:
+
+- totais absolutos de entrada, saida e total;
+- consolidado por modelo e endpoint;
+- eventos recentes com status HTTP, duracao, stream/json e estimativa;
+- estado da fila assincrona e eventos descartados.
+
+A escrita e propositalmente leve: a chamada HTTP so enfileira um evento em memoria
+e uma thread dedicada grava no banco `REDALIBABACLAUDE_TOKEN_METRICS_DB`.
+
+Variaveis principais:
+
+```env
+REDALIBABACLAUDE_DATA_DIR=/var/lib/redalibabaclaude
+REDALIBABACLAUDE_TOKEN_METRICS_ENABLED=1
+REDALIBABACLAUDE_TOKEN_METRICS_DB=/var/lib/redalibabaclaude/token_usage.sqlite3
+REDALIBABACLAUDE_TOKEN_METRICS_QUEUE_SIZE=10000
+REDALIBABACLAUDE_TOKEN_METRICS_RECENT_LIMIT=80
+```
 
 ## Rotacao de API key Alibaba
 

@@ -14,6 +14,7 @@ import shlex
 import shutil
 import signal
 import socket
+import ssl
 import struct
 import subprocess
 import threading
@@ -90,6 +91,9 @@ PROXY_IMAGE_MODEL_HINTS = ("flux", "stable-diffusion")
 REDPROXYPRO_URL = os.getenv("REDPROXYPRO_URL", "http://127.0.0.1:8095").rstrip("/")
 REDPROXYPRO_SERVICE = os.getenv("REDPROXYPRO_SERVICE", "redproxypro.service")
 REDPROXYPRO_AUTH_TOKEN = os.getenv("REDPROXYPRO_AUTH_TOKEN", "red").strip()
+REDALIBABACLAUDE_URL = os.getenv("REDALIBABACLAUDE_URL", "https://127.0.0.1:5052").rstrip("/")
+REDALIBABACLAUDE_AUTH_TOKEN = os.getenv("REDALIBABACLAUDE_AUTH_TOKEN", "red").strip()
+REDALIBABACLAUDE_TLS_VERIFY = os.getenv("REDALIBABACLAUDE_TLS_VERIFY", "false").strip().lower() in {"1", "true", "yes", "on", "sim"}
 REDIA_URL = os.getenv("REDIA_URL", "http://127.0.0.1:3099").rstrip("/")
 REDIA_ADMIN_TOKEN = os.getenv("REDIA_ADMIN_TOKEN", "").strip()
 SEB_MONITOR_URL = os.getenv("RED_SEB_MONITOR_URL", "http://127.0.0.1:2580").rstrip("/")
@@ -598,6 +602,33 @@ def redproxypro_request_json(path: str, *, method: str = "GET", payload: dict[st
         return 0, {"error": str(exc.reason)}
 
 
+def redalibabaclaude_request_json(path: str, *, method: str = "GET", payload: dict[str, Any] | None = None, timeout: int = 15) -> tuple[int, Any]:
+    data = None
+    headers = {"Accept": "application/json"}
+    if REDALIBABACLAUDE_AUTH_TOKEN:
+        headers["Authorization"] = f"Bearer {REDALIBABACLAUDE_AUTH_TOKEN}"
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(f"{REDALIBABACLAUDE_URL}{path}", data=data, headers=headers, method=method)
+    context = None
+    if urlparse(REDALIBABACLAUDE_URL).scheme == "https" and not REDALIBABACLAUDE_TLS_VERIFY:
+        context = ssl._create_unverified_context()
+    try:
+        with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
+            body = response.read().decode("utf-8", errors="replace")
+            return response.status, json.loads(body) if body else {}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            parsed = {"raw": body}
+        return exc.code, parsed
+    except urllib.error.URLError as exc:
+        return 0, {"error": str(exc.reason)}
+
+
 def redia_request_json(path: str, *, method: str = "GET", payload: dict[str, Any] | None = None, timeout: int = 30) -> tuple[int, Any]:
     data = None
     headers = {"Accept": "application/json"}
@@ -930,6 +961,49 @@ def redproxypro_snapshot_safe() -> dict[str, Any]:
             "retry_statuses": [],
             "usage_file": "",
             "auth_required": True,
+        }
+
+
+def redalibabaclaude_tokens_snapshot() -> dict[str, Any]:
+    status_code, payload = redalibabaclaude_request_json("/admin/tokens?limit=120", timeout=12)
+    data = payload if isinstance(payload, dict) else {}
+    return {
+        "proxy_url": REDALIBABACLAUDE_URL,
+        "reachable": status_code == 200,
+        "status_code": status_code,
+        "enabled": bool(data.get("enabled", False)),
+        "db_path": data.get("db_path", ""),
+        "queue_depth": int(data.get("queue_depth", 0) or 0),
+        "dropped_events": int(data.get("dropped_events", 0) or 0),
+        "last_error": str(data.get("last_error", "") or data.get("error", "") or ""),
+        "summary": data.get("summary", {}) if isinstance(data.get("summary"), dict) else {},
+        "models": data.get("models", []) if isinstance(data.get("models"), list) else [],
+        "endpoints": data.get("endpoints", []) if isinstance(data.get("endpoints"), list) else [],
+        "recent": data.get("recent", []) if isinstance(data.get("recent"), list) else [],
+        "timeseries": data.get("timeseries", []) if isinstance(data.get("timeseries"), list) else [],
+        "now": data.get("now", time.time()),
+    }
+
+
+def redalibabaclaude_tokens_snapshot_safe() -> dict[str, Any]:
+    try:
+        return redalibabaclaude_tokens_snapshot()
+    except Exception as exc:
+        return {
+            "proxy_url": REDALIBABACLAUDE_URL,
+            "reachable": False,
+            "status_code": 0,
+            "enabled": False,
+            "db_path": "",
+            "queue_depth": 0,
+            "dropped_events": 0,
+            "last_error": str(exc),
+            "summary": {},
+            "models": [],
+            "endpoints": [],
+            "recent": [],
+            "timeseries": [],
+            "now": time.time(),
         }
 
 
@@ -5880,6 +5954,12 @@ async def api_proxy_snapshot(request: Request) -> JSONResponse:
 async def api_redproxypro_snapshot(request: Request) -> JSONResponse:
     ensure_authenticated(request)
     return JSONResponse(await asyncio.to_thread(redproxypro_snapshot_safe))
+
+
+@app.get("/api/proxy-tokens")
+async def api_proxy_tokens_snapshot(request: Request) -> JSONResponse:
+    ensure_authenticated(request)
+    return JSONResponse(await asyncio.to_thread(redalibabaclaude_tokens_snapshot_safe))
 
 
 @app.get("/api/proxy/logs")

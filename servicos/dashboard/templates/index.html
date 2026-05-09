@@ -58,6 +58,7 @@
                 <button class="nav-item" data-view="portal"><i data-lucide="globe"></i><span>Portal</span></button>
                 <button class="nav-item" data-view="proxy"><i data-lucide="bot"></i><span>Proxy IA</span></button>
                 <button class="nav-item" data-view="redproxypro"><i data-lucide="badge-dollar-sign"></i><span>Proxy Pro</span></button>
+                <button class="nav-item" data-view="proxy_tokens"><i data-lucide="gauge"></i><span>Proxy Tokens</span></button>
                 <button class="nav-item" data-view="redia"><i data-lucide="sparkles"></i><span>RED I.A</span></button>
                 <button class="nav-item" data-view="redtrader"><i data-lucide="candlestick-chart"></i><span>Trader</span></button>
                 <button class="nav-item" data-view="proxy_lab"><i data-lucide="flask-conical"></i><span>Proxy Lab</span></button>
@@ -599,6 +600,89 @@
                         <h2>Status técnico</h2>
                     </div>
                     <div class="kv-grid" id="redProxyProSummary"></div>
+                </section>
+            </section>
+
+            <section class="view" id="view-proxy_tokens">
+                <section class="panel proxy-overview-panel">
+                    <div class="panel-head proxy-overview-head">
+                        <div>
+                            <div class="eyebrow">ALIBABA 5052</div>
+                            <h2>Proxy Tokens</h2>
+                            <div class="panel-subtitle">Contagem absoluta de entrada e saida registrada pelo redalibabaclaude.</div>
+                        </div>
+                        <div class="inline-actions">
+                            <div class="chat-status-pill neutral" id="proxyTokensStatus">Aguardando leitura.</div>
+                            <button class="ghost-button" id="proxyTokensRefreshButton" type="button">Atualizar</button>
+                        </div>
+                    </div>
+
+                    <div class="proxy-kpis proxypro-kpis">
+                        <article class="proxy-kpi">
+                            <div class="metric-label">Requests</div>
+                            <div class="metric-value" id="proxyTokensMetricRequests">0</div>
+                            <div class="metric-meta" id="proxyTokensMetricRequestsMeta">0 sucessos / 0 falhas</div>
+                        </article>
+                        <article class="proxy-kpi">
+                            <div class="metric-label">Entrada</div>
+                            <div class="metric-value" id="proxyTokensMetricInput">0</div>
+                            <div class="metric-meta" id="proxyTokensMetricInputMeta">tokens recebidos</div>
+                        </article>
+                        <article class="proxy-kpi">
+                            <div class="metric-label">Saida</div>
+                            <div class="metric-value" id="proxyTokensMetricOutput">0</div>
+                            <div class="metric-meta" id="proxyTokensMetricOutputMeta">tokens gerados</div>
+                        </article>
+                        <article class="proxy-kpi">
+                            <div class="metric-label">Total</div>
+                            <div class="metric-value" id="proxyTokensMetricTotal">0</div>
+                            <div class="metric-meta" id="proxyTokensMetricTotalMeta">entrada + saida</div>
+                        </article>
+                        <article class="proxy-kpi">
+                            <div class="metric-label">Fila</div>
+                            <div class="metric-value" id="proxyTokensMetricQueue">0</div>
+                            <div class="metric-meta" id="proxyTokensMetricQueueMeta">0 descartados</div>
+                        </article>
+                    </div>
+                </section>
+
+                <div class="proxypro-layout">
+                    <section class="panel stretch-panel">
+                        <div class="panel-head">
+                            <div>
+                                <h2>Modelos</h2>
+                                <div class="panel-subtitle">Uso consolidado por modelo do Alibaba proxy.</div>
+                            </div>
+                        </div>
+                        <div class="stack-list proxypro-model-list" id="proxyTokensModelsList"></div>
+                    </section>
+
+                    <section class="panel stretch-panel">
+                        <div class="panel-head">
+                            <div>
+                                <h2>Endpoints</h2>
+                                <div class="panel-subtitle">Separacao por rota Anthropic/OpenAI.</div>
+                            </div>
+                        </div>
+                        <div class="stack-list proxypro-model-list" id="proxyTokensEndpointsList"></div>
+                    </section>
+                </div>
+
+                <section class="panel">
+                    <div class="panel-head">
+                        <div>
+                            <h2>Eventos recentes</h2>
+                            <div class="panel-subtitle">Ultimas chamadas registradas no SQLite local do proxy.</div>
+                        </div>
+                    </div>
+                    <div class="stack-list proxypro-key-list" id="proxyTokensRecentList"></div>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-head">
+                        <h2>Status tecnico</h2>
+                    </div>
+                    <div class="kv-grid" id="proxyTokensSummary"></div>
                 </section>
             </section>
 

@@ -7,6 +7,7 @@ const state = {
     firewall: { enabled: false, raw: [] },
     proxy: null,
     redproxypro: null,
+    proxyTokens: null,
     redia: null,
     sebMonitor: null,
     whatsapp: null,
@@ -104,6 +105,7 @@ const DASHBOARD_VIEW_CONFIG = {
     portal: { label: "Portal", path: "portal", aliases: [] },
     proxy: { label: "Proxy IA", path: "proxyia", aliases: ["proxy"] },
     redproxypro: { label: "RED Proxy Pro", path: "redproxypro", aliases: ["proxy-pro", "proxypro"] },
+    proxy_tokens: { label: "Proxy Tokens", path: "proxy-tokens", aliases: ["tokens", "proxytokens"] },
     redia: { label: "RED I.A", path: "redia", aliases: [] },
     redtrader: { label: "RED Trader", path: "trader", aliases: [] },
     proxy_lab: { label: "Proxy Lab", path: "proxy-lab", aliases: ["proxylab"] },
@@ -202,6 +204,12 @@ function formatDate(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
     return date.toLocaleString("pt-BR");
+}
+
+function formatUnixSeconds(value) {
+    const seconds = Number(value || 0);
+    if (!seconds) return "n/d";
+    return formatDate(seconds * 1000);
 }
 
 function formatUptime(seconds) {
@@ -2441,6 +2449,121 @@ function renderRedProxyPro() {
     }
 }
 
+function renderProxyTokens() {
+    const view = qs("#view-proxy_tokens");
+    if (!view || !state.proxyTokens) return;
+
+    const payload = state.proxyTokens || {};
+    const summary = payload.summary || {};
+    const models = Array.isArray(payload.models) ? [...payload.models] : [];
+    const endpoints = Array.isArray(payload.endpoints) ? [...payload.endpoints] : [];
+    const recent = Array.isArray(payload.recent) ? [...payload.recent] : [];
+    models.sort((a, b) => (Number(b.total_tokens || 0) - Number(a.total_tokens || 0)) || (Number(b.requests || 0) - Number(a.requests || 0)));
+    endpoints.sort((a, b) => (Number(b.total_tokens || 0) - Number(a.total_tokens || 0)) || (Number(b.requests || 0) - Number(a.requests || 0)));
+
+    qs("#proxyTokensMetricRequests").textContent = formatNumber(summary.requests || 0);
+    qs("#proxyTokensMetricRequestsMeta").textContent = `${formatNumber(summary.successes || 0)} sucessos / ${formatNumber(summary.failures || 0)} falhas`;
+    qs("#proxyTokensMetricInput").textContent = formatNumber(summary.input_tokens || 0);
+    qs("#proxyTokensMetricInputMeta").textContent = `${formatNumber(summary.input_estimated_events || 0)} evento(s) estimado(s)`;
+    qs("#proxyTokensMetricOutput").textContent = formatNumber(summary.output_tokens || 0);
+    qs("#proxyTokensMetricOutputMeta").textContent = `${formatNumber(summary.output_estimated_events || 0)} evento(s) estimado(s)`;
+    qs("#proxyTokensMetricTotal").textContent = formatNumber(summary.total_tokens || 0);
+    qs("#proxyTokensMetricTotalMeta").textContent = `ultimo evento: ${formatUnixSeconds(summary.last_ts || 0)}`;
+    qs("#proxyTokensMetricQueue").textContent = formatNumber(payload.queue_depth || 0);
+    qs("#proxyTokensMetricQueueMeta").textContent = `${formatNumber(payload.dropped_events || 0)} descartados`;
+
+    const status = qs("#proxyTokensStatus");
+    if (status) {
+        if (!payload.reachable) {
+            status.textContent = `Sem resposta do proxy. HTTP ${payload.status_code || 0}`;
+        } else if (!payload.enabled) {
+            status.textContent = "Metricas desativadas no proxy.";
+        } else {
+            status.textContent = `Online. Atualizado ${new Date().toLocaleTimeString("pt-BR")}.`;
+        }
+        status.classList.toggle("active", Boolean(payload.reachable && payload.enabled));
+    }
+
+    const modelsHost = qs("#proxyTokensModelsList");
+    if (modelsHost) {
+        modelsHost.innerHTML = models.length ? models.slice(0, 30).map((model) => `
+            <article class="stack-card proxypro-model-card">
+                <div class="stack-head">
+                    <div>
+                        <strong>${escapeHtml(model.model || "modelo")}</strong>
+                        <small>${escapeHtml(model.provider || "provider")} / ${escapeHtml(model.backend || "backend")}</small>
+                    </div>
+                    <span class="pill active">${formatNumber(model.total_tokens || 0)}</span>
+                </div>
+                <div class="stack-meta">
+                    <span>${formatNumber(model.requests || 0)} req</span>
+                    <span>${formatNumber(model.input_tokens || 0)} in</span>
+                    <span>${formatNumber(model.output_tokens || 0)} out</span>
+                    <span>${formatNumber(model.failures || 0)} falhas</span>
+                </div>
+                <div class="stack-copy">Ultimo uso: ${formatUnixSeconds(model.last_ts || 0)}</div>
+            </article>
+        `).join("") : `<div class="empty">Ainda nao ha eventos por modelo.</div>`;
+    }
+
+    const endpointsHost = qs("#proxyTokensEndpointsList");
+    if (endpointsHost) {
+        endpointsHost.innerHTML = endpoints.length ? endpoints.map((endpoint) => `
+            <article class="stack-card proxypro-model-card">
+                <div class="stack-head">
+                    <div>
+                        <strong>${escapeHtml(endpoint.endpoint || "endpoint")}</strong>
+                        <small>${formatNumber(endpoint.requests || 0)} requests</small>
+                    </div>
+                    <span class="pill active">${formatNumber(endpoint.total_tokens || 0)}</span>
+                </div>
+                <div class="stack-meta">
+                    <span>${formatNumber(endpoint.input_tokens || 0)} entrada</span>
+                    <span>${formatNumber(endpoint.output_tokens || 0)} saida</span>
+                    <span>${formatNumber(endpoint.failures || 0)} falhas</span>
+                </div>
+            </article>
+        `).join("") : `<div class="empty">Ainda nao ha eventos por endpoint.</div>`;
+    }
+
+    const recentHost = qs("#proxyTokensRecentList");
+    if (recentHost) {
+        recentHost.innerHTML = recent.length ? recent.slice(0, 80).map((event) => `
+            <article class="stack-card proxypro-key-card">
+                <div class="stack-head">
+                    <div>
+                        <strong>${escapeHtml(event.model || "modelo")}</strong>
+                        <small>${formatUnixSeconds(event.ts || 0)} | ${escapeHtml(event.endpoint || "endpoint")}</small>
+                    </div>
+                    <span class="pill ${Number(event.success || 0) ? "active" : "failed"}">HTTP ${Number(event.status_code || 0)}</span>
+                </div>
+                <div class="stack-meta">
+                    <span>${formatNumber(event.input_tokens || 0)} in</span>
+                    <span>${formatNumber(event.output_tokens || 0)} out</span>
+                    <span>${formatNumber(event.total_tokens || 0)} total</span>
+                    <span>${formatMilliseconds(event.duration_ms || 0)}</span>
+                    <span>${event.stream ? "stream" : "json"}</span>
+                </div>
+                ${event.error_type ? `<div class="stack-copy proxypro-error">${escapeHtml(event.error_type)}</div>` : ""}
+            </article>
+        `).join("") : `<div class="empty">Nenhuma chamada registrada ainda.</div>`;
+    }
+
+    const summaryHost = qs("#proxyTokensSummary");
+    if (summaryHost) {
+        summaryHost.innerHTML = `
+            <div class="kv-item"><span>Endpoint local</span><strong>${escapeHtml(payload.proxy_url || "n/d")}</strong></div>
+            <div class="kv-item"><span>HTTP</span><strong>${Number(payload.status_code || 0)}</strong></div>
+            <div class="kv-item"><span>Metricas</span><strong>${payload.enabled ? "ligadas" : "desligadas"}</strong></div>
+            <div class="kv-item"><span>SQLite</span><strong>${escapeHtml(payload.db_path || "n/d")}</strong></div>
+            <div class="kv-item"><span>Fila pendente</span><strong>${formatNumber(payload.queue_depth || 0)}</strong></div>
+            <div class="kv-item"><span>Eventos descartados</span><strong>${formatNumber(payload.dropped_events || 0)}</strong></div>
+            <div class="kv-item"><span>Ultimo erro</span><strong>${escapeHtml(payload.last_error || "nenhum")}</strong></div>
+            <div class="kv-item"><span>Leitura</span><strong>${formatUnixSeconds(payload.now || 0)}</strong></div>
+        `;
+    }
+}
+
 function renderProxy() {
     if (!state.proxy) return;
 
@@ -3835,6 +3958,7 @@ function renderAll() {
     renderFirewall();
     renderProxy();
     renderRedProxyPro();
+    renderProxyTokens();
     renderRedia();
     renderSebMonitor();
     renderStackServiceViews();
@@ -4276,6 +4400,15 @@ async function refreshRedProxyProPanel(showMessage = true) {
     renderRedProxyPro();
     if (showMessage) {
         showToast("RED Proxy Pro atualizado", "success");
+    }
+}
+
+async function refreshProxyTokensPanel(showMessage = true) {
+    const payload = await api("/api/proxy-tokens");
+    state.proxyTokens = payload;
+    renderProxyTokens();
+    if (showMessage) {
+        showToast("Proxy Tokens atualizado", "success");
     }
 }
 
@@ -4996,6 +5129,7 @@ function wireAuthenticatedUi() {
     qs("#proxyRestartButton").addEventListener("click", () => serviceAction("red-ollama-proxy.service", "restart"));
     qs("#redProxyProRefreshButton")?.addEventListener("click", () => refreshRedProxyProPanel(true));
     qs("#redProxyProRestartButton")?.addEventListener("click", () => serviceAction("redproxypro.service", "restart"));
+    qs("#proxyTokensRefreshButton")?.addEventListener("click", () => refreshProxyTokensPanel(true));
     qs("#proxySaveKeyButton").addEventListener("click", saveProxyKey);
     qs("#proxyResetKeyFormButton").addEventListener("click", resetProxyKeyForm);
     qs("#clearProxyLogButton").addEventListener("click", () => {
@@ -5143,6 +5277,10 @@ function wireAuthenticatedUi() {
         refreshRedProxyProPanel(false).catch(() => {});
     }, 7000);
     setInterval(() => {
+        if (state.currentView !== "proxy_tokens") return;
+        refreshProxyTokensPanel(false).catch(() => {});
+    }, 5000);
+    setInterval(() => {
         if (state.currentView !== "redseb_monitor") return;
         refreshSebMonitor(false).catch(() => {});
     }, 2500);
@@ -5176,6 +5314,9 @@ setView = function(view, options = {}) {
     }
     if (nextView === "redproxypro") {
         refreshRedProxyProPanel(false).catch(() => {});
+    }
+    if (nextView === "proxy_tokens") {
+        refreshProxyTokensPanel(false).catch(() => {});
     }
     if (options.syncHistory === false) return;
     const targetPath = dashboardViewUrl(nextView);
