@@ -697,6 +697,90 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertIn('\\"file_path\\":\\"portfolio.html\\"', text)
         self.assertIn('"stop_reason": "tool_use"', text)
 
+    def test_stream_plan_only_workspace_request_retries_until_write_tool(self):
+        first = FakeResponse(
+            lines=[
+                b'data: {"choices":[{"delta":{"reasoning_content":"vou montar o html completo"},"finish_reason":null}]}',
+                b'data: {"choices":[{"delta":{"content":"Vou criar uma landing page impressionante.\\n\\n"},"finish_reason":"stop"}]}',
+                b"data: [DONE]",
+            ]
+        )
+        second = FakeResponse(
+            lines=[
+                b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_write","type":"function","function":{"name":"Write","arguments":"{\\"file_path\\":\\"landing.html\\",\\"content\\":\\"ok\\"}"}}]},"finish_reason":"tool_calls"}]}',
+                b"data: [DONE]",
+            ]
+        )
+        repaired_payloads = []
+
+        def fake_retry(payload, *, alias, stream, context_window, input_tokens):
+            repaired_payloads.append(json.loads(json.dumps(payload)))
+            return second
+
+        with patch.object(proxy, "EXPERIMENTAL_THINKING_BLOCKS", True), \
+             patch.object(proxy, "WORKSPACE_ACTION_REPAIR_MAX_ROUNDS", 1), \
+             patch.object(proxy, "proxy_openai_chat_with_context_retry", side_effect=fake_retry):
+            text = "".join(
+                proxy.anthropic_sse_from_openai_stream_with_internal_tools(
+                    first,
+                    payload={
+                        "model": "qwen3.6-plus",
+                        "messages": [{"role": "user", "content": "quero que voce crie uma super landing page linda para portfolio de desenvolvedor"}],
+                        "tools": [
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "Write",
+                                    "parameters": {
+                                        "type": "object",
+                                        "properties": {"file_path": {"type": "string"}, "content": {"type": "string"}},
+                                        "required": ["file_path", "content"],
+                                    },
+                                },
+                            },
+                        ],
+                        "stream": True,
+                        "max_tokens": 1024,
+                    },
+                    alias=proxy.resolve_model("Qwen 3.6 Plus"),
+                    model_name="Qwen 3.6 Plus",
+                    context_window=262144,
+                    input_tokens=100,
+                )
+            )
+        self.assertEqual(len(repaired_payloads), 1)
+        self.assertEqual(repaired_payloads[0]["messages"][-2]["role"], "assistant")
+        self.assertIn("Vou criar uma landing page impressionante.", repaired_payloads[0]["messages"][-2]["content"])
+        self.assertEqual(repaired_payloads[0]["messages"][-1]["role"], "user")
+        self.assertIn("did not execute any workspace tool", repaired_payloads[0]["messages"][-1]["content"])
+        self.assertIn('"type": "thinking_delta"', text)
+        self.assertIn("Vou criar uma landing page impressionante.", text)
+        self.assertIn('\\"file_path\\":\\"landing.html\\"', text)
+        self.assertIn('"stop_reason": "tool_use"', text)
+
+    def test_workspace_action_contract_is_injected_for_artifact_requests(self):
+        payload = proxy.anthropic_to_openai_payload(
+            {
+                "model": "Qwen 3.6 Plus",
+                "messages": [{"role": "user", "content": "crie uma landing page em HTML"}],
+                "tools": [
+                    {
+                        "name": "Write",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"file_path": {"type": "string"}, "content": {"type": "string"}},
+                            "required": ["file_path", "content"],
+                        },
+                    }
+                ],
+                "stream": True,
+                "max_tokens": 1024,
+            },
+            proxy.resolve_model("Qwen 3.6 Plus"),
+        )
+        system_messages = [item["content"] for item in payload["messages"] if item.get("role") == "system"]
+        self.assertTrue(any("Workspace action contract" in item for item in system_messages))
+
     def test_json_to_sse_tool_use_emits_input_delta(self):
         payload = {
             "id": "chatcmpl_json_tool",

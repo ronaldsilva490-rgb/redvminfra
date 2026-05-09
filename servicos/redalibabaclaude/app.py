@@ -81,6 +81,7 @@ WEBSEARCH_INTERNAL_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_WEBSEARCH_INTER
 TOOL_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_TOOL_REPAIR_MAX_ROUNDS", 3))
 EMPTY_OUTPUT_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_EMPTY_OUTPUT_REPAIR_MAX_ROUNDS", 2))
 TODO_ONLY_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_TODO_ONLY_REPAIR_MAX_ROUNDS", 2))
+WORKSPACE_ACTION_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_WORKSPACE_ACTION_REPAIR_MAX_ROUNDS", 2))
 WEBFETCH_FALLBACK_TIMEOUT = max(1, env_int("REDALIBABACLAUDE_WEBFETCH_FALLBACK_TIMEOUT", 12))
 WEBFETCH_FALLBACK_MAX_CHARS = max(1000, env_int("REDALIBABACLAUDE_WEBFETCH_FALLBACK_MAX_CHARS", 24000))
 DATA_DIR = Path(os.getenv("REDALIBABACLAUDE_DATA_DIR", "/var/lib/redalibabaclaude")).expanduser()
@@ -1061,6 +1062,7 @@ def anthropic_to_openai_payload(body: dict[str, Any], alias: dict[str, Any]) -> 
     if isinstance(body.get("metadata"), dict):
         payload["metadata"] = deepcopy(body["metadata"])
     apply_effort_options(payload, body)
+    inject_workspace_action_contract(payload)
     return payload
 
 
@@ -1821,6 +1823,15 @@ def todo_only_warning_text(status_code: int | None = None) -> str:
     )
 
 
+def workspace_action_warning_text(status_code: int | None = None) -> str:
+    suffix = f" Upstream status: {status_code}." if status_code else ""
+    return (
+        "A resposta do modelo descreveu a tarefa, mas nao executou nenhuma ferramenta de workspace. "
+        "O proxy bloqueou a conclusao silenciosa porque o pedido exige uma entrega concreta."
+        f"{suffix}"
+    )
+
+
 def payload_tool_names(payload: dict[str, Any]) -> set[str]:
     names: set[str] = set()
     for tool in payload.get("tools") or []:
@@ -1831,6 +1842,9 @@ def payload_tool_names(payload: dict[str, Any]) -> set[str]:
         if name:
             names.add(name)
     return names
+
+
+WORKSPACE_ACTION_TOOL_NAMES = {"write", "edit", "multiedit", "notebookedit", "bash", "mcp__workspace__bash"}
 
 
 def last_user_text_from_openai_messages(payload: dict[str, Any]) -> str:
@@ -1845,7 +1859,7 @@ def last_user_text_from_openai_messages(payload: dict[str, Any]) -> str:
     return ""
 
 
-def has_recent_todo_without_workspace_action(payload: dict[str, Any]) -> bool:
+def recent_tool_result_names(payload: dict[str, Any]) -> list[str]:
     messages = payload.get("messages") or []
     last_user_index = -1
     for index, message in enumerate(messages):
@@ -1853,8 +1867,7 @@ def has_recent_todo_without_workspace_action(payload: dict[str, Any]) -> bool:
             last_user_index = index
     segment = messages[last_user_index + 1 :] if last_user_index >= 0 else messages
     tool_name_by_id: dict[str, str] = {}
-    saw_todo = False
-    saw_non_todo_action = False
+    result_names: list[str] = []
     for message in segment:
         if not isinstance(message, dict):
             continue
@@ -1870,20 +1883,29 @@ def has_recent_todo_without_workspace_action(payload: dict[str, Any]) -> bool:
                     tool_name_by_id[tool_call_id] = tool_name
         elif role == "tool":
             tool_name = tool_name_by_id.get(str(message.get("tool_call_id") or "").strip(), "")
-            if tool_name == "todowrite":
-                saw_todo = True
-            elif tool_name and tool_name not in {"todoread"}:
-                saw_non_todo_action = True
-    return saw_todo and not saw_non_todo_action
+            if tool_name:
+                result_names.append(tool_name)
+    return result_names
+
+
+def has_recent_workspace_action(payload: dict[str, Any]) -> bool:
+    return any(name in WORKSPACE_ACTION_TOOL_NAMES for name in recent_tool_result_names(payload))
+
+
+def has_recent_todo_without_workspace_action(payload: dict[str, Any]) -> bool:
+    names = recent_tool_result_names(payload)
+    saw_todo = "todowrite" in names
+    saw_workspace_action = any(name in WORKSPACE_ACTION_TOOL_NAMES for name in names)
+    return saw_todo and not saw_workspace_action
 
 
 def request_likely_requires_workspace_action(payload: dict[str, Any]) -> bool:
-    if not payload_tool_names(payload).intersection({"write", "edit", "multiedit", "notebookedit", "bash"}):
+    if not payload_tool_names(payload).intersection(WORKSPACE_ACTION_TOOL_NAMES):
         return False
     text = last_user_text_from_openai_messages(payload)
     if not text:
         return False
-    keywords = (
+    action_keywords = (
         "crie",
         "criar",
         "faca",
@@ -1896,16 +1918,6 @@ def request_likely_requires_workspace_action(payload: dict[str, Any]) -> bool:
         "corrija",
         "gera",
         "gere",
-        "site",
-        "pagina",
-        "landing page",
-        "portfolio",
-        "html",
-        "css",
-        "js",
-        "arquivo",
-        "componente",
-        "component",
         "create",
         "build",
         "make",
@@ -1915,10 +1927,83 @@ def request_likely_requires_workspace_action(payload: dict[str, Any]) -> bool:
         "fix",
         "implement",
         "generate",
-        "file",
-        "page",
+        "creating",
+        "editing",
+        "modifying",
     )
-    return any(keyword in text for keyword in keywords)
+    artifact_keywords = (
+        "site",
+        "pagina",
+        "page",
+        "landing page",
+        "portfolio",
+        "html",
+        "css",
+        "js",
+        "javascript",
+        "typescript",
+        "react",
+        "arquivo",
+        "file",
+        "componente",
+        "component",
+        "app",
+        "sistema",
+        "projeto",
+        "project",
+        "codigo",
+        "code",
+        "programa",
+        "script",
+        "layout",
+        "design",
+        "frontend",
+        "front-end",
+        "backend",
+    )
+    return any(keyword in text for keyword in action_keywords) and any(keyword in text for keyword in artifact_keywords)
+
+
+def inject_workspace_action_contract(payload: dict[str, Any]) -> None:
+    if not request_likely_requires_workspace_action(payload) or has_recent_workspace_action(payload):
+        return
+    contract = (
+        "Workspace action contract: the latest user request asks for a concrete local artifact or code change. "
+        "Do not stop after only thinking, planning, or saying you will do it. "
+        "Before the final answer, call at least one concrete workspace tool such as Write, Edit, MultiEdit, NotebookEdit, or Bash. "
+        "TodoWrite alone is only planning and is not a deliverable."
+    )
+    messages = payload.setdefault("messages", [])
+    if not isinstance(messages, list):
+        return
+    insert_at = 1 if messages and isinstance(messages[0], dict) and messages[0].get("role") == "system" else 0
+    messages.insert(insert_at, {"role": "system", "content": contract})
+
+
+def should_retry_missing_workspace_action_completion(payload: dict[str, Any], visible_text: str) -> bool:
+    return bool(visible_text and request_likely_requires_workspace_action(payload) and not has_recent_workspace_action(payload))
+
+
+def append_workspace_action_repair(payload: dict[str, Any], assistant_content: str) -> dict[str, Any]:
+    next_payload = deepcopy(payload)
+    messages = next_payload.setdefault("messages", [])
+    if not isinstance(messages, list):
+        messages = []
+        next_payload["messages"] = messages
+    messages.append({"role": "assistant", "content": assistant_content})
+    messages.append(
+        {
+            "role": "user",
+            "content": (
+                "Your previous assistant turn described the work but did not execute any workspace tool. "
+                "The user requested a concrete local artifact or code change. "
+                "Continue now by calling Write, Edit, MultiEdit, NotebookEdit, or Bash. "
+                "Do not answer with more planning text until after a concrete tool call has been made."
+            ),
+        }
+    )
+    next_payload["stream"] = bool(payload.get("stream"))
+    return next_payload
 
 
 def should_retry_todo_only_completion(payload: dict[str, Any], visible_text: str) -> bool:
@@ -2381,6 +2466,49 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
                     break
                 continue
             warning = todo_only_warning_text()
+            metrics_text_parts.append(warning)
+            yield sse_event(
+                "content_block_start",
+                {"type": "content_block_start", "index": block_index, "content_block": {"type": "text", "text": ""}},
+            )
+            yield sse_event(
+                "content_block_delta",
+                {"type": "content_block_delta", "index": block_index, "delta": {"type": "text_delta", "text": warning}},
+            )
+            yield sse_event("content_block_stop", {"type": "content_block_stop", "index": block_index})
+            final_stop_reason = "end_turn"
+            break
+
+        missing_workspace_action = not tool_state and finish_reason != "length" and should_retry_missing_workspace_action_completion(current_payload, visible_text)
+        if missing_workspace_action:
+            if round_index < WORKSPACE_ACTION_REPAIR_MAX_ROUNDS:
+                current_payload = append_workspace_action_repair(current_payload, "".join(text_parts))
+                current_payload["stream"] = True
+                input_tokens = estimate_openai_tokens(current_payload)
+                print(f"[redalibabaclaude] workspace-action-repair round={round_index + 1}", flush=True)
+                current_response = proxy_openai_chat_with_context_retry(
+                    current_payload,
+                    alias=alias,
+                    stream=True,
+                    context_window=context_window,
+                    input_tokens=input_tokens,
+                )
+                if current_response.status_code >= 400:
+                    warning = workspace_action_warning_text(current_response.status_code)
+                    metrics_text_parts.append(warning)
+                    yield sse_event(
+                        "content_block_start",
+                        {"type": "content_block_start", "index": block_index, "content_block": {"type": "text", "text": ""}},
+                    )
+                    yield sse_event(
+                        "content_block_delta",
+                        {"type": "content_block_delta", "index": block_index, "delta": {"type": "text_delta", "text": warning}},
+                    )
+                    yield sse_event("content_block_stop", {"type": "content_block_stop", "index": block_index})
+                    final_stop_reason = "end_turn"
+                    break
+                continue
+            warning = workspace_action_warning_text()
             metrics_text_parts.append(warning)
             yield sse_event(
                 "content_block_start",
