@@ -621,6 +621,82 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertIn("Upstream status: 400", text)
         self.assertIn('"stop_reason": "end_turn"', text)
 
+    def test_stream_todo_only_completion_retries_until_write_tool(self):
+        first = FakeResponse(
+            lines=[
+                b'data: {"choices":[{"delta":{"content":"Vou criar a landing page agora."},"finish_reason":"stop"}]}',
+                b"data: [DONE]",
+            ]
+        )
+        second = FakeResponse(
+            lines=[
+                b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_write","type":"function","function":{"name":"Write","arguments":"{\\"file_path\\":\\"portfolio.html\\",\\"content\\":\\"ok\\"}"}}]},"finish_reason":"tool_calls"}]}',
+                b"data: [DONE]",
+            ]
+        )
+        repaired_payloads = []
+
+        def fake_retry(payload, *, alias, stream, context_window, input_tokens):
+            repaired_payloads.append(json.loads(json.dumps(payload)))
+            return second
+
+        with patch.object(proxy, "TODO_ONLY_REPAIR_MAX_ROUNDS", 1), \
+             patch.object(proxy, "proxy_openai_chat_with_context_retry", side_effect=fake_retry):
+            text = "".join(
+                proxy.anthropic_sse_from_openai_stream_with_internal_tools(
+                    first,
+                    payload={
+                        "model": "qwen3.6-plus",
+                        "messages": [
+                            {"role": "user", "content": "crie uma landing page moderna para portfolio de desenvolvedor"},
+                            {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "id": "call_todo",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "TodoWrite",
+                                            "arguments": '{"items":[{"content":"criar landing page","status":"in_progress","priority":"high"}]}',
+                                        },
+                                    }
+                                ],
+                            },
+                            {"role": "tool", "tool_call_id": "call_todo", "content": "lista de tarefas atualizada"},
+                        ],
+                        "tools": [
+                            {"type": "function", "function": {"name": "TodoWrite", "parameters": {"type": "object"}}},
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "Write",
+                                    "parameters": {
+                                        "type": "object",
+                                        "properties": {"file_path": {"type": "string"}, "content": {"type": "string"}},
+                                        "required": ["file_path", "content"],
+                                    },
+                                },
+                            },
+                        ],
+                        "stream": True,
+                        "max_tokens": 1024,
+                    },
+                    alias=proxy.resolve_model("Qwen 3.6 Plus"),
+                    model_name="Qwen 3.6 Plus",
+                    context_window=262144,
+                    input_tokens=100,
+                )
+            )
+        self.assertEqual(len(repaired_payloads), 1)
+        self.assertEqual(repaired_payloads[0]["messages"][-2]["role"], "assistant")
+        self.assertIn("Vou criar a landing page agora.", repaired_payloads[0]["messages"][-2]["content"])
+        self.assertEqual(repaired_payloads[0]["messages"][-1]["role"], "user")
+        self.assertIn("did not actually execute a non-todo workspace action", repaired_payloads[0]["messages"][-1]["content"])
+        self.assertIn("Vou criar a landing page agora.", text)
+        self.assertIn('\\"file_path\\":\\"portfolio.html\\"', text)
+        self.assertIn('"stop_reason": "tool_use"', text)
+
     def test_json_to_sse_tool_use_emits_input_delta(self):
         payload = {
             "id": "chatcmpl_json_tool",

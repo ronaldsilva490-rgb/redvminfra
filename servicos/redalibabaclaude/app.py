@@ -80,6 +80,7 @@ WEBSEARCH_FALLBACK_LANGUAGE = os.getenv("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_LAN
 WEBSEARCH_INTERNAL_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_WEBSEARCH_INTERNAL_MAX_ROUNDS", 2))
 TOOL_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_TOOL_REPAIR_MAX_ROUNDS", 3))
 EMPTY_OUTPUT_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_EMPTY_OUTPUT_REPAIR_MAX_ROUNDS", 2))
+TODO_ONLY_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_TODO_ONLY_REPAIR_MAX_ROUNDS", 2))
 WEBFETCH_FALLBACK_TIMEOUT = max(1, env_int("REDALIBABACLAUDE_WEBFETCH_FALLBACK_TIMEOUT", 12))
 WEBFETCH_FALLBACK_MAX_CHARS = max(1000, env_int("REDALIBABACLAUDE_WEBFETCH_FALLBACK_MAX_CHARS", 24000))
 DATA_DIR = Path(os.getenv("REDALIBABACLAUDE_DATA_DIR", "/var/lib/redalibabaclaude")).expanduser()
@@ -1811,6 +1812,142 @@ def empty_output_warning_text(status_code: int | None = None) -> str:
     )
 
 
+def todo_only_warning_text(status_code: int | None = None) -> str:
+    suffix = f" Upstream status: {status_code}." if status_code else ""
+    return (
+        "A resposta do modelo parou apos atualizar o todo e descrever o plano, sem executar a acao concreta no workspace. "
+        "O proxy bloqueou a conclusao silenciosa para evitar marcar a tarefa como pronta sem entrega real."
+        f"{suffix}"
+    )
+
+
+def payload_tool_names(payload: dict[str, Any]) -> set[str]:
+    names: set[str] = set()
+    for tool in payload.get("tools") or []:
+        if not isinstance(tool, dict):
+            continue
+        function = tool.get("function") if isinstance(tool.get("function"), dict) else tool
+        name = str(function.get("name") or "").strip().lower()
+        if name:
+            names.add(name)
+    return names
+
+
+def last_user_text_from_openai_messages(payload: dict[str, Any]) -> str:
+    for message in reversed(payload.get("messages") or []):
+        if not isinstance(message, dict):
+            continue
+        if str(message.get("role") or "").strip() != "user":
+            continue
+        text = text_from_content(message.get("content"))
+        if text.strip():
+            return text.strip().lower()
+    return ""
+
+
+def has_recent_todo_without_workspace_action(payload: dict[str, Any]) -> bool:
+    messages = payload.get("messages") or []
+    last_user_index = -1
+    for index, message in enumerate(messages):
+        if isinstance(message, dict) and str(message.get("role") or "").strip() == "user":
+            last_user_index = index
+    segment = messages[last_user_index + 1 :] if last_user_index >= 0 else messages
+    tool_name_by_id: dict[str, str] = {}
+    saw_todo = False
+    saw_non_todo_action = False
+    for message in segment:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "").strip()
+        if role == "assistant":
+            for tool_call in message.get("tool_calls") or []:
+                if not isinstance(tool_call, dict):
+                    continue
+                function = tool_call.get("function") or {}
+                tool_call_id = str(tool_call.get("id") or "").strip()
+                tool_name = str(function.get("name") or "").strip().lower()
+                if tool_call_id and tool_name:
+                    tool_name_by_id[tool_call_id] = tool_name
+        elif role == "tool":
+            tool_name = tool_name_by_id.get(str(message.get("tool_call_id") or "").strip(), "")
+            if tool_name == "todowrite":
+                saw_todo = True
+            elif tool_name and tool_name not in {"todoread"}:
+                saw_non_todo_action = True
+    return saw_todo and not saw_non_todo_action
+
+
+def request_likely_requires_workspace_action(payload: dict[str, Any]) -> bool:
+    if not payload_tool_names(payload).intersection({"write", "edit", "multiedit", "notebookedit", "bash"}):
+        return False
+    text = last_user_text_from_openai_messages(payload)
+    if not text:
+        return False
+    keywords = (
+        "crie",
+        "criar",
+        "faca",
+        "fazer",
+        "construa",
+        "implemente",
+        "editar",
+        "edite",
+        "atualize",
+        "corrija",
+        "gera",
+        "gere",
+        "site",
+        "pagina",
+        "landing page",
+        "portfolio",
+        "html",
+        "css",
+        "js",
+        "arquivo",
+        "componente",
+        "component",
+        "create",
+        "build",
+        "make",
+        "write",
+        "edit",
+        "update",
+        "fix",
+        "implement",
+        "generate",
+        "file",
+        "page",
+    )
+    return any(keyword in text for keyword in keywords)
+
+
+def should_retry_todo_only_completion(payload: dict[str, Any], visible_text: str) -> bool:
+    return bool(visible_text and request_likely_requires_workspace_action(payload) and has_recent_todo_without_workspace_action(payload))
+
+
+def append_todo_only_repair(payload: dict[str, Any], assistant_content: str) -> dict[str, Any]:
+    next_payload = deepcopy(payload)
+    messages = next_payload.setdefault("messages", [])
+    if not isinstance(messages, list):
+        messages = []
+        next_payload["messages"] = messages
+    messages.append({"role": "assistant", "content": assistant_content})
+    messages.append(
+        {
+            "role": "user",
+            "content": (
+                "Your previous assistant turn updated the todo list or described intended work, "
+                "but did not actually execute a non-todo workspace action. "
+                "Continue now by taking the next concrete step. "
+                "If the request requires creating or editing files, call a non-todo tool such as Write, Edit, MultiEdit, NotebookEdit, or Bash before stopping. "
+                "Do not stop after TodoWrite alone."
+            ),
+        }
+    )
+    next_payload["stream"] = bool(payload.get("stream"))
+    return next_payload
+
+
 def append_internal_tool_results(payload: dict[str, Any], data: dict[str, Any], calls: list[dict[str, Any]]) -> dict[str, Any]:
     next_payload = deepcopy(payload)
     choice = ((data.get("choices") or [{}]) or [{}])[0]
@@ -2201,6 +2338,49 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
                     break
                 continue
             warning = empty_output_warning_text()
+            metrics_text_parts.append(warning)
+            yield sse_event(
+                "content_block_start",
+                {"type": "content_block_start", "index": block_index, "content_block": {"type": "text", "text": ""}},
+            )
+            yield sse_event(
+                "content_block_delta",
+                {"type": "content_block_delta", "index": block_index, "delta": {"type": "text_delta", "text": warning}},
+            )
+            yield sse_event("content_block_stop", {"type": "content_block_stop", "index": block_index})
+            final_stop_reason = "end_turn"
+            break
+
+        todo_only_completion = not tool_state and finish_reason != "length" and should_retry_todo_only_completion(current_payload, visible_text)
+        if todo_only_completion:
+            if round_index < TODO_ONLY_REPAIR_MAX_ROUNDS:
+                current_payload = append_todo_only_repair(current_payload, "".join(text_parts))
+                current_payload["stream"] = True
+                input_tokens = estimate_openai_tokens(current_payload)
+                print(f"[redalibabaclaude] todo-only-repair round={round_index + 1}", flush=True)
+                current_response = proxy_openai_chat_with_context_retry(
+                    current_payload,
+                    alias=alias,
+                    stream=True,
+                    context_window=context_window,
+                    input_tokens=input_tokens,
+                )
+                if current_response.status_code >= 400:
+                    warning = todo_only_warning_text(current_response.status_code)
+                    metrics_text_parts.append(warning)
+                    yield sse_event(
+                        "content_block_start",
+                        {"type": "content_block_start", "index": block_index, "content_block": {"type": "text", "text": ""}},
+                    )
+                    yield sse_event(
+                        "content_block_delta",
+                        {"type": "content_block_delta", "index": block_index, "delta": {"type": "text_delta", "text": warning}},
+                    )
+                    yield sse_event("content_block_stop", {"type": "content_block_stop", "index": block_index})
+                    final_stop_reason = "end_turn"
+                    break
+                continue
+            warning = todo_only_warning_text()
             metrics_text_parts.append(warning)
             yield sse_event(
                 "content_block_start",
