@@ -1709,6 +1709,25 @@ def append_invalid_tool_results(payload: dict[str, Any], data: dict[str, Any], i
     if not isinstance(messages, list):
         messages = []
         next_payload["messages"] = messages
+    if any(str(item.get("message") or "") == "arguments must be a JSON object" for item in invalids):
+        choice = ((data.get("choices") or [{}]) or [{}])[0]
+        message = choice.get("message") or {}
+        content = str(message.get("content") or "")
+        if content:
+            messages.append({"role": "assistant", "content": content})
+        details = "\n".join(format_invalid_tool_result(item) for item in invalids)
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "Your previous tool call arguments were incomplete or invalid JSON before the client could execute them.\n"
+                    f"{details}\n"
+                    "Call the intended tool again with one complete valid JSON object. Do not stop with planning text."
+                ),
+            }
+        )
+        next_payload["stream"] = bool(payload.get("stream"))
+        return next_payload
     choice = ((data.get("choices") or [{}]) or [{}])[0]
     message = deepcopy(choice.get("message") or {})
     message.setdefault("role", "assistant")
@@ -2291,7 +2310,7 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
 
         stream_tool_calls = openai_tool_calls_from_stream_state(tool_state)
         invalids = invalid_tool_calls(stream_tool_calls, current_payload)
-        if finish_reason == "tool_calls" and invalids:
+        if tool_state and finish_reason != "length" and invalids:
             assistant_message = {
                 "role": "assistant",
                 "content": "".join(text_parts),
@@ -2299,6 +2318,7 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
             }
             data = {"choices": [{"finish_reason": "tool_calls", "message": assistant_message}]}
             if round_index < TOOL_REPAIR_MAX_ROUNDS:
+                print(f"[redalibabaclaude] tool-repair round={round_index + 1} invalids={len(invalids)} finish={finish_reason or 'none'}", flush=True)
                 current_payload = append_invalid_tool_results(current_payload, data, invalids)
                 current_payload["stream"] = True
                 input_tokens = estimate_openai_tokens(current_payload)
@@ -2310,6 +2330,17 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
                     input_tokens=input_tokens,
                 )
                 if current_response.status_code >= 400:
+                    warning = "A chamada de ferramenta veio invalida e o reparo falhou no upstream. O proxy bloqueou a conclusao silenciosa."
+                    metrics_text_parts.append(warning)
+                    yield sse_event(
+                        "content_block_start",
+                        {"type": "content_block_start", "index": block_index, "content_block": {"type": "text", "text": ""}},
+                    )
+                    yield sse_event(
+                        "content_block_delta",
+                        {"type": "content_block_delta", "index": block_index, "delta": {"type": "text_delta", "text": warning}},
+                    )
+                    yield sse_event("content_block_stop", {"type": "content_block_stop", "index": block_index})
                     final_stop_reason = "end_turn"
                     break
                 continue
@@ -2328,7 +2359,7 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
             break
 
         internal_calls = internal_calls_from_stream_tool_state(tool_state)
-        if finish_reason == "tool_calls" and internal_calls and round_index < WEBSEARCH_INTERNAL_MAX_ROUNDS:
+        if tool_state and finish_reason != "length" and internal_calls and round_index < WEBSEARCH_INTERNAL_MAX_ROUNDS:
             assistant_message = {
                 "role": "assistant",
                 "content": "".join(text_parts),
@@ -2362,7 +2393,7 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
                 break
             continue
 
-        if finish_reason == "tool_calls" and tool_state:
+        if tool_state and finish_reason != "length":
             for offset, tool_call in enumerate(stream_tool_calls):
                 function = tool_call.get("function") or {}
                 arguments = function.get("arguments") or "{}"

@@ -518,6 +518,62 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertIn('\\"file_path\\":\\"portfolio.html\\"', text)
         self.assertIn('"stop_reason": "tool_use"', text)
 
+    def test_stream_tool_repair_handles_truncated_json_without_tool_result_history(self):
+        first = FakeResponse(
+            lines=[
+                b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_write","type":"function","function":{"name":"Write","arguments":"{\\"file_path\\""}}]},"finish_reason":"stop"}]}',
+                b"data: [DONE]",
+            ]
+        )
+        second = FakeResponse(
+            lines=[
+                b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_write2","type":"function","function":{"name":"Write","arguments":"{\\"file_path\\":\\"landing.html\\",\\"content\\":\\"ok\\"}"}}]},"finish_reason":"tool_calls"}]}',
+                b"data: [DONE]",
+            ]
+        )
+        repaired_payloads = []
+
+        def fake_retry(payload, *, alias, stream, context_window, input_tokens):
+            repaired_payloads.append(json.loads(json.dumps(payload)))
+            return second
+
+        with patch.object(proxy, "TOOL_REPAIR_MAX_ROUNDS", 2), \
+             patch.object(proxy, "proxy_openai_chat_with_context_retry", side_effect=fake_retry):
+            text = "".join(
+                proxy.anthropic_sse_from_openai_stream_with_internal_tools(
+                    first,
+                    payload={
+                        "model": "qwen3.6-plus",
+                        "messages": [{"role": "user", "content": "crie uma landing page"}],
+                        "tools": [
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "Write",
+                                    "parameters": {
+                                        "type": "object",
+                                        "properties": {"file_path": {"type": "string"}, "content": {"type": "string"}},
+                                        "required": ["file_path", "content"],
+                                    },
+                                },
+                            }
+                        ],
+                        "stream": True,
+                        "max_tokens": 1024,
+                    },
+                    alias=proxy.resolve_model("Qwen 3.6 Plus"),
+                    model_name="Qwen 3.6 Plus",
+                    context_window=262144,
+                    input_tokens=100,
+                )
+            )
+        self.assertEqual(len(repaired_payloads), 1)
+        self.assertEqual(repaired_payloads[0]["messages"][-1]["role"], "user")
+        self.assertIn("incomplete or invalid JSON", repaired_payloads[0]["messages"][-1]["content"])
+        self.assertNotEqual(repaired_payloads[0]["messages"][-1]["role"], "tool")
+        self.assertIn('\\"file_path\\":\\"landing.html\\"', text)
+        self.assertIn('"stop_reason": "tool_use"', text)
+
     def test_stream_thinking_only_retries_before_empty_success(self):
         first = FakeResponse(
             lines=[
@@ -755,6 +811,46 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertIn("did not execute any workspace tool", repaired_payloads[0]["messages"][-1]["content"])
         self.assertIn('"type": "thinking_delta"', text)
         self.assertIn("Vou criar uma landing page impressionante.", text)
+        self.assertIn('\\"file_path\\":\\"landing.html\\"', text)
+        self.assertIn('"stop_reason": "tool_use"', text)
+
+    def test_stream_tool_state_with_stop_finish_still_emits_tool_use(self):
+        first = FakeResponse(
+            lines=[
+                b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_write","type":"function","function":{"name":"Write","arguments":"{\\"file_path\\""}}]},"finish_reason":null}]}',
+                b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\\"landing.html\\",\\"content\\":\\"ok\\"}"}}]},"finish_reason":"stop"}]}',
+                b"data: [DONE]",
+            ]
+        )
+        text = "".join(
+            proxy.anthropic_sse_from_openai_stream_with_internal_tools(
+                first,
+                payload={
+                    "model": "qwen3.6-plus",
+                    "messages": [{"role": "user", "content": "crie uma landing page"}],
+                    "tools": [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "Write",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {"file_path": {"type": "string"}, "content": {"type": "string"}},
+                                    "required": ["file_path", "content"],
+                                },
+                            },
+                        }
+                    ],
+                    "stream": True,
+                    "max_tokens": 1024,
+                },
+                alias=proxy.resolve_model("Qwen 3.6 Plus"),
+                model_name="Qwen 3.6 Plus",
+                context_window=262144,
+                input_tokens=100,
+            )
+        )
+        self.assertIn('"type": "tool_use"', text)
         self.assertIn('\\"file_path\\":\\"landing.html\\"', text)
         self.assertIn('"stop_reason": "tool_use"', text)
 
