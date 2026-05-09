@@ -1918,69 +1918,171 @@ def has_recent_todo_without_workspace_action(payload: dict[str, Any]) -> bool:
     return saw_todo and not saw_workspace_action
 
 
+def normalized_search_text(text: str) -> str:
+    normalized = str(text or "").lower()
+    replacements = {
+        "á": "a",
+        "à": "a",
+        "â": "a",
+        "ã": "a",
+        "ä": "a",
+        "é": "e",
+        "ê": "e",
+        "í": "i",
+        "ó": "o",
+        "ô": "o",
+        "õ": "o",
+        "ö": "o",
+        "ú": "u",
+        "ü": "u",
+        "ç": "c",
+    }
+    for source, target in replacements.items():
+        normalized = normalized.replace(source, target)
+    return normalized
+
+
+def contains_term(text: str, term: str) -> bool:
+    normalized = normalized_search_text(text)
+    normalized_term = normalized_search_text(term).strip()
+    if not normalized_term:
+        return False
+    if " " in normalized_term or "-" in normalized_term:
+        pattern = r"(?<![a-z0-9])" + re.escape(normalized_term).replace(r"\ ", r"\s+").replace(r"\-", r"[-\s]+") + r"(?![a-z0-9])"
+    else:
+        pattern = r"(?<![a-z0-9])" + re.escape(normalized_term) + r"(?![a-z0-9])"
+    return re.search(pattern, normalized) is not None
+
+
+def contains_any_term(text: str, terms: tuple[str, ...]) -> bool:
+    return any(contains_term(text, term) for term in terms)
+
+
+def looks_like_conversational_noop(text: str) -> bool:
+    normalized = normalized_search_text(text).strip()
+    compact = re.sub(r"\s+", " ", normalized)
+    if not compact:
+        return False
+    words = re.findall(r"[a-z0-9]+", compact)
+    if len(words) > 16:
+        return False
+    direct_patterns = (
+        "oi",
+        "ola",
+        "olá",
+        "bom dia",
+        "boa tarde",
+        "boa noite",
+        "tudo bem",
+        "ta de boa",
+        "esta tudo bem",
+        "como vai",
+        "hello",
+        "hi",
+        "hey",
+    )
+    if any(compact == normalized_search_text(pattern) for pattern in direct_patterns):
+        return True
+    return bool(
+        re.fullmatch(
+            r"(oi|ola|bom dia|boa tarde|boa noite|hello|hi|hey)[!?.\s]*(como posso ajudar|em que posso ajudar|tudo bem)?[!?.\s]*",
+            compact,
+        )
+    )
+
+
+WORKSPACE_ACTION_TERMS = (
+    "crie",
+    "criar",
+    "faca",
+    "fazer",
+    "construa",
+    "implemente",
+    "editar",
+    "edite",
+    "atualize",
+    "corrija",
+    "gera",
+    "gere",
+    "create",
+    "build",
+    "make",
+    "write",
+    "edit",
+    "update",
+    "fix",
+    "implement",
+    "generate",
+    "creating",
+    "editing",
+    "modifying",
+)
+
+
+WORKSPACE_ARTIFACT_TERMS = (
+    "site",
+    "pagina",
+    "page",
+    "landing page",
+    "portfolio",
+    "html",
+    "css",
+    "js",
+    "javascript",
+    "typescript",
+    "react",
+    "arquivo",
+    "file",
+    "componente",
+    "component",
+    "app",
+    "sistema",
+    "projeto",
+    "project",
+    "codigo",
+    "code",
+    "programa",
+    "script",
+    "layout",
+    "design",
+    "frontend",
+    "front-end",
+    "backend",
+)
+
+
+def assistant_text_looks_like_workspace_plan(text: str) -> bool:
+    if looks_like_conversational_noop(text):
+        return False
+    if contains_any_term(text, WORKSPACE_ACTION_TERMS) and contains_any_term(text, WORKSPACE_ARTIFACT_TERMS):
+        return True
+    return contains_any_term(
+        text,
+        (
+            "vou comecar",
+            "vou fazer",
+            "vou montar",
+            "vou construir",
+            "vou implementar",
+            "vou criar",
+            "i will start",
+            "i will build",
+            "i will create",
+            "let me build",
+            "let me create",
+        ),
+    )
+
+
 def request_likely_requires_workspace_action(payload: dict[str, Any]) -> bool:
     if not payload_tool_names(payload).intersection(WORKSPACE_ACTION_TOOL_NAMES):
         return False
     text = last_user_text_from_openai_messages(payload)
     if not text:
         return False
-    action_keywords = (
-        "crie",
-        "criar",
-        "faca",
-        "fazer",
-        "construa",
-        "implemente",
-        "editar",
-        "edite",
-        "atualize",
-        "corrija",
-        "gera",
-        "gere",
-        "create",
-        "build",
-        "make",
-        "write",
-        "edit",
-        "update",
-        "fix",
-        "implement",
-        "generate",
-        "creating",
-        "editing",
-        "modifying",
-    )
-    artifact_keywords = (
-        "site",
-        "pagina",
-        "page",
-        "landing page",
-        "portfolio",
-        "html",
-        "css",
-        "js",
-        "javascript",
-        "typescript",
-        "react",
-        "arquivo",
-        "file",
-        "componente",
-        "component",
-        "app",
-        "sistema",
-        "projeto",
-        "project",
-        "codigo",
-        "code",
-        "programa",
-        "script",
-        "layout",
-        "design",
-        "frontend",
-        "front-end",
-        "backend",
-    )
-    return any(keyword in text for keyword in action_keywords) and any(keyword in text for keyword in artifact_keywords)
+    if looks_like_conversational_noop(text):
+        return False
+    return contains_any_term(text, WORKSPACE_ACTION_TERMS) and contains_any_term(text, WORKSPACE_ARTIFACT_TERMS)
 
 
 def inject_workspace_action_contract(payload: dict[str, Any]) -> None:
@@ -2000,7 +2102,12 @@ def inject_workspace_action_contract(payload: dict[str, Any]) -> None:
 
 
 def should_retry_missing_workspace_action_completion(payload: dict[str, Any], visible_text: str) -> bool:
-    return bool(visible_text and request_likely_requires_workspace_action(payload) and not has_recent_workspace_action(payload))
+    return bool(
+        visible_text
+        and request_likely_requires_workspace_action(payload)
+        and assistant_text_looks_like_workspace_plan(visible_text)
+        and not has_recent_workspace_action(payload)
+    )
 
 
 def append_workspace_action_repair(payload: dict[str, Any], assistant_content: str) -> dict[str, Any]:

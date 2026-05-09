@@ -877,6 +877,73 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         system_messages = [item["content"] for item in payload["messages"] if item.get("role") == "system"]
         self.assertTrue(any("Workspace action contract" in item for item in system_messages))
 
+    def test_workspace_action_contract_is_not_injected_for_greetings(self):
+        payload = proxy.anthropic_to_openai_payload(
+            {
+                "model": "Qwen 3.6 Plus",
+                "messages": [{"role": "user", "content": "oi"}],
+                "tools": [
+                    {
+                        "name": "Write",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"file_path": {"type": "string"}, "content": {"type": "string"}},
+                            "required": ["file_path", "content"],
+                        },
+                    }
+                ],
+                "stream": True,
+                "max_tokens": 1024,
+            },
+            proxy.resolve_model("Qwen 3.6 Plus"),
+        )
+        system_messages = [item["content"] for item in payload["messages"] if item.get("role") == "system"]
+        self.assertFalse(any("Workspace action contract" in item for item in system_messages))
+        self.assertFalse(proxy.request_likely_requires_workspace_action(payload))
+
+    def test_stream_greeting_does_not_trigger_workspace_action_repair(self):
+        first = FakeResponse(
+            lines=[
+                b'data: {"choices":[{"delta":{"reasoning_content":"cumprimento simples"},"finish_reason":null}]}',
+                b'data: {"choices":[{"delta":{"content":"Oi! Como posso ajudar?"},"finish_reason":"stop"}]}',
+                b"data: [DONE]",
+            ]
+        )
+        with patch.object(proxy, "WORKSPACE_ACTION_REPAIR_MAX_ROUNDS", 2), \
+             patch.object(proxy, "proxy_openai_chat_with_context_retry") as fake_retry:
+            text = "".join(
+                proxy.anthropic_sse_from_openai_stream_with_internal_tools(
+                    first,
+                    payload={
+                        "model": "qwen3.6-plus",
+                        "messages": [{"role": "user", "content": "oi"}],
+                        "tools": [
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "Write",
+                                    "parameters": {
+                                        "type": "object",
+                                        "properties": {"file_path": {"type": "string"}, "content": {"type": "string"}},
+                                        "required": ["file_path", "content"],
+                                    },
+                                },
+                            }
+                        ],
+                        "stream": True,
+                        "max_tokens": 1024,
+                    },
+                    alias=proxy.resolve_model("Qwen 3.6 Plus"),
+                    model_name="Qwen 3.6 Plus",
+                    context_window=262144,
+                    input_tokens=100,
+                )
+            )
+        fake_retry.assert_not_called()
+        self.assertIn("Oi! Como posso ajudar?", text)
+        self.assertNotIn("workspace", text.lower())
+        self.assertNotIn("entrega concreta", text)
+
     def test_json_to_sse_tool_use_emits_input_delta(self):
         payload = {
             "id": "chatcmpl_json_tool",
