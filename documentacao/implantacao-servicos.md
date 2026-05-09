@@ -228,7 +228,7 @@ Responsabilidade:
 - expor `/v1/models`, `/v1/messages`, `/v1/messages/count_tokens` e `/v1/chat/completions`;
 - adaptar Claude Desktop/Claude Code para a Alibaba Model Studio;
 - usar **Singapura** para Qwen e **US Virginia** para DeepSeek/Kimi;
-- filtrar `reasoning_content` e desativar thinking em aliases Qwen selecionados para manter a UI do Claude limpa.
+- repassar `reasoning_content` como bloco `thinking` para Claude Code/Desktop quando `REDALIBABACLAUDE_EXPERIMENTAL_THINKING_BLOCKS=1`; `REDALIBABACLAUDE_FORCE_ANTHROPIC_THINKING=1` força `enable_thinking=true` no endpoint Anthropic mesmo se o cliente nao enviar `effort`; em `/v1/chat/completions`, remover o campo para manter compatibilidade OpenAI.
 
 Instalacao:
 

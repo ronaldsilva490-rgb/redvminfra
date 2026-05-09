@@ -1,0 +1,417 @@
+/* ============================================================
+   STADIA — design tokens + base
+   ============================================================ */
+
+:root {
+  /* surfaces (dark default) */
+  --bg-0: #07080a;
+  --bg-1: #0e1014;
+  --bg-2: #15181f;
+  --bg-3: #1d2129;
+  --surface: #14171d;
+  --surface-2: #1c2028;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.14);
+  --line-strong: rgba(255, 255, 255, 0.28);
+
+  /* text */
+  --fg: #f4f5f7;
+  --fg-2: #c7cad1;
+  --muted: #8a8f99;
+  --muted-2: #5b606b;
+
+  /* accents */
+  --accent: #c8ff00;          /* electric lime — primary CTA */
+  --accent-ink: #0a0b0e;       /* on accent */
+  --accent-glow: rgba(200, 255, 0, 0.45);
+  --accent-2: #7c5cff;         /* secondary / brand */
+  --accent-3: #00e5a0;         /* success / live */
+  --danger: #ff4566;
+  --warn: #ffb020;
+
+  /* radius / shadow */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 22px;
+  --r-xl: 32px;
+  --r-pill: 999px;
+
+  --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 10px 40px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+
+  /* fonts (set by JS based on tweak) */
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* density (set by JS) */
+  --d: 1;                     /* 0.85 compact, 1 regular, 1.15 spacious */
+  --gap-1: calc(4px * var(--d));
+  --gap-2: calc(8px * var(--d));
+  --gap-3: calc(12px * var(--d));
+  --gap-4: calc(16px * var(--d));
+  --gap-5: calc(24px * var(--d));
+  --gap-6: calc(32px * var(--d));
+  --gap-7: calc(48px * var(--d));
+  --gap-8: calc(64px * var(--d));
+
+  --pad-card: calc(20px * var(--d));
+  --pad-section: calc(64px * var(--d));
+
+  --max-w: 1440px;
+
+  /* type scale */
+  --t-xs: 11px;
+  --t-sm: 13px;
+  --t-md: 15px;
+  --t-lg: 18px;
+  --t-xl: 22px;
+  --t-2xl: 28px;
+  --t-3xl: 36px;
+  --t-4xl: 56px;
+  --t-5xl: 84px;
+  --t-6xl: 120px;
+}
+
+/* light mode */
+[data-theme="light"] {
+  --bg-0: #f4f5f7;
+  --bg-1: #ffffff;
+  --bg-2: #f8f9fb;
+  --bg-3: #eceef2;
+  --surface: #ffffff;
+  --surface-2: #f5f6f8;
+  --line: rgba(10, 12, 16, 0.08);
+  --line-2: rgba(10, 12, 16, 0.16);
+  --line-strong: rgba(10, 12, 16, 0.4);
+
+  --fg: #0a0c10;
+  --fg-2: #2a2e36;
+  --muted: #6a6f78;
+  --muted-2: #a0a4ad;
+
+  --accent-ink: #0a0b0e;
+  --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 8px 24px rgba(10, 12, 16, 0.06);
+  --shadow-2: 0 12px 40px rgba(10, 12, 16, 0.08), 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}
+
+/* ============================================================
+   Reset
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg-0);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--t-md);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv11";
+}
+img, svg { display: block; max-width: 100%; }
+button { font-family: inherit; cursor: pointer; }
+input, textarea, select { font-family: inherit; color: inherit; }
+a { color: inherit; text-decoration: none; }
+
+::selection { background: var(--accent); color: var(--accent-ink); }
+
+/* mono labels for data-rich tech vibe */
+.mono { font-family: var(--font-mono); font-feature-settings: "ss01"; }
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 0.92;
+}
+
+/* editorial typography variant — applied when data-typo="editorial" on root */
+[data-typo="editorial"] {
+  --font-display: 'Instrument Serif', Georgia, serif;
+}
+[data-typo="editorial"] .display {
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  font-style: italic;
+}
+
+/* ============================================================
+   Common atoms
+   ============================================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 18px;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-size: var(--t-sm);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-family: var(--font-display);
+  transition: transform 0.15s, box-shadow 0.2s, background 0.2s, border-color 0.2s;
+  white-space: nowrap;
+}
+.btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px var(--accent-glow); }
+.btn:active { transform: translateY(0); }
+.btn.lg { height: 56px; padding: 0 28px; font-size: var(--t-md); }
+.btn.sm { height: 32px; padding: 0 12px; font-size: var(--t-xs); }
+.btn.block { width: 100%; }
+.btn.ghost {
+  background: transparent;
+  color: var(--fg);
+  border-color: var(--line-2);
+}
+.btn.ghost:hover { background: var(--surface-2); box-shadow: none; }
+.btn.outline {
+  background: transparent;
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.btn.outline:hover { background: color-mix(in oklab, var(--accent) 12%, transparent); box-shadow: none; }
+.btn.dark {
+  background: var(--bg-3);
+  color: var(--fg);
+}
+.btn.dark:hover { background: var(--bg-2); box-shadow: none; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--fg-2);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.chip.live { border-color: var(--accent-3); color: var(--accent-3); }
+.chip.live::before {
+  content: "";
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent-3);
+  box-shadow: 0 0 8px var(--accent-3);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: 0.45 } }
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tag .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.input {
+  display: block;
+  width: 100%;
+  height: 52px;
+  padding: 0 16px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: var(--t-md);
+  font-family: var(--font-body);
+  transition: border-color 0.15s, background 0.15s;
+}
+.input:focus { outline: none; border-color: var(--accent); }
+.input.error { border-color: var(--danger); }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.field .hint { font-size: var(--t-xs); color: var(--muted); }
+.field .err { font-size: var(--t-xs); color: var(--danger); font-family: var(--font-mono); }
+
+.divider { height: 1px; background: var(--line); border: 0; }
+
+/* layout primitives */
+.stack { display: flex; flex-direction: column; gap: var(--gap-3); }
+.row { display: flex; align-items: center; gap: var(--gap-3); }
+.row.between { justify-content: space-between; }
+.grid { display: grid; gap: var(--gap-4); }
+
+.container {
+  width: 100%;
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: 0 var(--gap-5);
+}
+
+/* image placeholders — diagonal striped panel */
+.img-ph {
+  position: relative;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.04) 25%, transparent 25%, transparent 50%,
+      rgba(255,255,255,.04) 50%, rgba(255,255,255,.04) 75%, transparent 75%) 0 0 / 16px 16px,
+    var(--bg-2);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.img-ph .label { padding: 4px 8px; border: 1px solid var(--line-2); border-radius: 4px; }
+.img-ph.has-viz .label { display: none; }
+[data-theme="light"] .img-ph {
+  background:
+    linear-gradient(135deg, rgba(0,0,0,.04) 25%, transparent 25%, transparent 50%,
+      rgba(0,0,0,.04) 50%, rgba(0,0,0,.04) 75%, transparent 75%) 0 0 / 16px 16px,
+    var(--bg-2);
+}
+
+/* numeric counters — sport scoreboard look */
+.score {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum", "ss01";
+  font-variant-numeric: tabular-nums;
+}
+
+/* glow utilities */
+.glow-text { text-shadow: 0 0 24px var(--accent-glow); }
+
+/* scrollbar (dark) */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 999px; border: 2px solid var(--bg-0); }
+::-webkit-scrollbar-thumb:hover { background: var(--line-strong); }
+
+/* ============================================================
+   Tweaks: font pairing
+   ============================================================ */
+:root {
+  --font-display: 'Archivo', 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+}
+[data-font-pair="editorial"] {
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+}
+[data-font-pair="editorial"] .display {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-style: normal;
+}
+
+/* ============================================================
+   Tweaks: density
+   ============================================================ */
+[data-density="compact"] { --t-md: 14px; }
+[data-density="compact"] .container { padding: 0 16px; }
+[data-density="compact"] .btn { height: 40px; padding: 0 16px; }
+[data-density="compact"] .btn.lg { height: 48px; padding: 0 22px; }
+
+[data-density="comfy"] { --t-md: 17px; }
+[data-density="comfy"] .container { padding: 0 32px; }
+[data-density="comfy"] .btn { height: 52px; padding: 0 24px; }
+[data-density="comfy"] .btn.lg { height: 64px; padding: 0 32px; }
+
+/* ============================================================
+   Device frame (Tweaks → device)
+   ============================================================ */
+.stadia-app.device-desktop .device-stage,
+.stadia-app.device-desktop .device-frame { display: contents; }
+
+.stadia-app.device-mobile {
+  background: #050608;
+  min-height: 100vh;
+  padding: 32px 16px;
+  display: grid;
+  place-items: start center;
+}
+.stadia-app.device-mobile .device-stage {
+  display: grid;
+  place-items: center;
+  width: 100%;
+}
+.stadia-app.device-mobile .device-frame {
+  width: 390px;
+  max-width: 100%;
+  height: 844px;
+  background: var(--bg-0);
+  border: 12px solid #1a1c20;
+  border-radius: 48px;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.6), 0 0 0 1px #2a2d33 inset;
+  overflow: auto;
+  position: relative;
+}
+.stadia-app.device-mobile .device-frame::-webkit-scrollbar { width: 0; }
+.stadia-app.device-mobile .desktop-only { display: none !important; }
+.stadia-app.device-mobile .container { padding: 0 16px; }
+
+/* mobile-frame fixes for grids that are too wide */
+.stadia-app.device-mobile .topnav { grid-template-columns: 1fr auto !important; }
+.stadia-app.device-mobile .topnav .nav-links,
+.stadia-app.device-mobile .topnav .nav-search { display: none !important; }
+.stadia-app.device-mobile .checkout-grid,
+.stadia-app.device-mobile .acc-grid,
+.stadia-app.device-mobile .auth-split,
+.stadia-app.device-mobile .confirm-grid,
+.stadia-app.device-mobile .cart-grid,
+.stadia-app.device-mobile .pdp-grid,
+.stadia-app.device-mobile .plp-grid {
+  grid-template-columns: 1fr !important;
+  gap: 16px !important;
+}
+.stadia-app.device-mobile .acc-side { position: static !important; }
+
+/* ensure cart flash bubble looks right */
+@keyframes cartPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+.cart-flash { animation: cartPulse 0.5s ease; }
+
+/* keyframes */
+@keyframes fade-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes shimmer { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
+
+/* mobile viewport mode (set on root via tweak) */
+[data-viewport="mobile"] .desktop-only { display: none !important; }
+.mobile-only { display: none; }
+[data-viewport="mobile"] .mobile-only { display: initial; }
+
+/* hide stuff */
+.sr-only { position: absolute; width: 1px; height: 1px; clip: rect(0,0,0,0); }

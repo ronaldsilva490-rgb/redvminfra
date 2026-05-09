@@ -20,6 +20,7 @@ Hoje a RED Systems roda com uma arquitetura de VM unica. O objetivo deste reposi
 - `/portal-assets/` -> assets publicos do portal
 - `/modelo1/` -> landing estatica modelo 1
 - `/modelo2/` -> landing estatica modelo 2
+- `/teste/` -> site estatico de teste esports
 - `/dashboard/` -> painel principal
 - `/proxy/` -> proxy IA oficial
 - `/redproxypro/` -> proxy Vercel AI Gateway com rotacao de keys
@@ -74,6 +75,7 @@ Estado da VM em 2026-05-08: OpenClaw, RED Trader, IQ Bridge, Deploy Agent e webh
 ```text
 servicos/
   portal/                Home publica
+    teste/               Site estatico publicado em /teste/
   dashboard/             Painel principal da VM unica
   proxy/                 Proxy IA oficial
   redproxypro/           Proxy Vercel AI Gateway com rotacao de keys
@@ -208,6 +210,7 @@ Script-base de apoio:
 - redsebia: `/opt/redsebia`
 - iq bridge: `/opt/red-iq-vision-bridge`
 - portal: `/var/www/red-portal`
+- teste esports: `/var/www/teste`
 
 ### Dados
 
@@ -244,6 +247,7 @@ Ele concentra as rotas amigaveis:
 - `/msredpdf/`
 - `/modelo1/`
 - `/modelo2/`
+- `/teste/`
 - `/redia/`
 - `/trader/`
 - `/proxy-lab/`

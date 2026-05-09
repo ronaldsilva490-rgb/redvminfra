@@ -5,6 +5,7 @@ Home publica da stack. Hoje ela e um front estatico servido pelo nginx e funcion
 ## O que este servico entrega
 
 - rota publica: `/`
+- site estatico de teste esports em `/teste/`
 - links oficiais para:
   - dashboard
   - proxy IA
@@ -71,6 +72,7 @@ curl -I http://127.0.0.1/
 ## Runtime oficial na RED
 
 - arquivos: `/var/www/red-portal`
+- teste esports: `/var/www/teste/`
 - galeria de modelos: `/var/www/modelos/` (8 templates)
 - exposicao: nginx em `/` e `/modelos/`
 

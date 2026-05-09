@@ -25,6 +25,7 @@ Na VM principal, `infraestrutura/nginx/red-friendly-paths.nginx.conf` e publicad
 /portal-assets/ Assets do portal
 /modelo1/     Landing estatica modelo 1
 /modelo2/     Landing estatica modelo 2
+/teste/       Site estatico de teste esports
 /dashboard/   Dashboard principal
 /proxy/       Proxy IA oficial
 /redproxypro/ Proxy Vercel AI Gateway com rotacao de keys

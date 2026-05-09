@@ -8,7 +8,7 @@ Objetivo:
 - usar o melhor das keys que realmente funcionaram;
 - combinar **Singapura** para Qwen e **US Virginia** para DeepSeek/Kimi;
 - publicar so modelos que passaram em texto e tool calling;
-- filtrar `reasoning_content` para manter a UI do Claude limpa.
+- repassar `reasoning_content` para Claude Code/Desktop como bloco `thinking` quando o modo experimental estiver ativo.
 
 ## Runtime esperado
 
@@ -44,8 +44,14 @@ https://redsystems.ddns.net:5052
 
 ## Observacoes
 
-- `qwen3.6-plus` e `qwen3.6-max-preview` sobem com `enable_thinking=false` para evitar vazamento de pensamento no stream.
-- `deepseek-v4-*`, `kimi-k2.5` e `qwen3-coder-next` podem produzir `reasoning_content` no upstream; o gateway remove isso antes de entregar ao Claude.
+- `output_config.effort=high|xhigh|max` ou `thinking.type=adaptive` ativa `enable_thinking=true` no upstream, inclusive sobrescrevendo o default `enable_thinking=false` dos Qwen 3.6.
+- `REDALIBABACLAUDE_FORCE_ANTHROPIC_THINKING=1` mantem `enable_thinking=true` no endpoint Anthropic mesmo quando o cliente nao envia explicitamente `effort`/`thinking`.
+- quando `enable_thinking=true`, o Alibaba rejeita `tool_choice` forçado ou `required`; o gateway remove esse campo antes do upstream e mantem as ferramentas disponiveis em modo automatico.
+- `max_tokens` fica livre em chamadas normais e so e reduzido preventivamente em chamadas internas conhecidas (`WebSearch`, `WebFetch`, titulo) ou em retry automatico quando o Alibaba responde que o limite maximo e `8192`. O fallback e controlado por `REDALIBABACLAUDE_MAX_OUTPUT_TOKENS=8192`.
+- se o modelo chamar `WebSearch`, o gateway executa a busca internamente no RED Search/SearXNG (`REDALIBABACLAUDE_WEBSEARCH_FALLBACK_URL`, default `http://127.0.0.1:8088/search`), anexa o resultado como `tool` e faz a rodada seguinte no upstream. Assim o Claude Code nao recebe `WebSearch` vazio quando o provedor custom nao tem busca nativa.
+- em chamadas streaming do Claude Code, `REDALIBABACLAUDE_WEBSEARCH_INTERNALIZE_STREAM_REQUESTS=0` evita converter a chamada inteira para JSON e preserva o stream real para manter a UI de thinking expandivel. Quando o upstream emite `tool_calls` de `WebSearch`/`WebFetch`, o gateway intercepta esses deltas no proprio stream, executa RED Search/Fetch, injeta o resultado como mensagem `tool` e continua a rodada seguinte em streaming.
+- por padrao no deploy RED, `REDALIBABACLAUDE_EXPERIMENTAL_THINKING_BLOCKS=1` converte `reasoning_content` em bloco Anthropic-like `thinking` com assinatura fake prefixada por `REDALIBABACLAUDE_FAKE_THINKING_SIGNATURE_PREFIX`.
+- em clientes OpenAI-compatible (`/v1/chat/completions`), `reasoning_content` continua sendo removido para nao vazar metadado nao padronizado fora do fluxo Claude.
 - os IDs publicados sao nomes amigaveis, sem referencia a `ALI`; a regiao usada fica apenas no metadata `red.backend`.
 - o gateway ainda aceita os IDs brutos e os aliases antigos como compatibilidade, mas nao os publica em `/v1/models`.
 - TLS e servido no proprio processo usando os certificados do host.

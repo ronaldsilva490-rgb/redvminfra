@@ -40,9 +40,247 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertEqual(legacy["target"], "qwen3.6-plus")
         self.assertEqual(raw["id"], "Qwen 3.6 Plus")
 
+    def test_resolve_model_maps_internal_claude_model_to_default(self):
+        alias = proxy.resolve_model("claude-haiku-4-5-20251001")
+        self.assertEqual(alias["id"], proxy.default_model()["id"])
+
     def test_clamp_max_tokens_respects_context(self):
         clamped = proxy.clamp_max_tokens(32000, 238599, 262144)
         self.assertEqual(clamped, 19449)
+
+    def test_clamp_max_tokens_leaves_normal_requests_uncapped(self):
+        clamped = proxy.clamp_max_tokens(32000, 1000, 262144)
+        self.assertEqual(clamped, 32000)
+
+    def test_apply_context_guard_caps_known_internal_tool_requests(self):
+        payload = {
+            "messages": [{"role": "system", "content": "You can use WebSearch for current data."}],
+            "max_tokens": 32000,
+        }
+        guarded = proxy.apply_context_guard(payload, input_tokens=1000, context_window=262144)
+        self.assertEqual(guarded["max_tokens"], 8192)
+
+    def test_websearch_fallback_replaces_empty_client_search_tool_result(self):
+        body = {
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "call_search",
+                            "name": "WebSearch",
+                            "input": {"query": "nextjs ecommerce"},
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_search",
+                            "content": 'Web search results for query: "nextjs ecommerce"\n\n\nREMINDER: cite sources.',
+                        }
+                    ],
+                },
+                {"role": "user", "content": "continue"},
+            ]
+        }
+        fake_results = [{"title": "Next.js Commerce", "url": "https://example.com", "snippet": "Starter ecommerce"}]
+        with patch.object(proxy, "red_search", return_value=fake_results):
+            messages = proxy.anthropic_messages_to_openai(body)
+        tool_messages = [item for item in messages if item["role"] == "tool"]
+        self.assertEqual(len(tool_messages), 1)
+        self.assertIn("RED Search/SearXNG fallback results", tool_messages[0]["content"])
+        self.assertIn("https://example.com", tool_messages[0]["content"])
+
+    def test_internal_websearch_executes_before_returning_tool_use_to_client(self):
+        tool_call = FakeResponse(
+            payload={
+                "id": "chatcmpl_tool",
+                "choices": [
+                    {
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call_search",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "WebSearch",
+                                        "arguments": json.dumps({"query": "nextjs ecommerce"}),
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+            }
+        )
+        final = FakeResponse(
+            payload={
+                "id": "chatcmpl_final",
+                "choices": [{"finish_reason": "stop", "message": {"content": "Usei a busca RED."}}],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 10},
+            }
+        )
+        payloads = []
+
+        def fake_proxy(payload, *, stream, api_key, base_url):
+            payloads.append(payload)
+            return tool_call if len(payloads) == 1 else final
+
+        with patch.object(proxy, "proxy_openai_chat", side_effect=fake_proxy), \
+             patch.object(proxy, "red_search", return_value=[{"title": "Result", "url": "https://example.com", "snippet": "Snippet"}]), \
+             patch.object(proxy.POOL_BY_BACKEND["sg"], "acquire", return_value={"token": "key1"}), \
+             patch.object(proxy.POOL_BY_BACKEND["sg"], "on_success", return_value=None):
+            response, upstream_stream = proxy.proxy_anthropic_payload_with_internal_tools(
+                {
+                    "model": "qwen3.6-plus",
+                    "messages": [{"role": "user", "content": "pesquise na web"}],
+                    "tools": [{"type": "function", "function": {"name": "WebSearch", "parameters": {"type": "object"}}}],
+                    "stream": False,
+                    "max_tokens": 1024,
+                },
+                alias=proxy.resolve_model("Qwen 3.6 Plus"),
+                stream=False,
+                context_window=262144,
+                input_tokens=100,
+            )
+        self.assertIs(response, final)
+        self.assertFalse(upstream_stream)
+        self.assertEqual(len(payloads), 2)
+        self.assertEqual(payloads[1]["messages"][-1]["role"], "tool")
+        self.assertIn("RED Search/SearXNG fallback results", payloads[1]["messages"][-1]["content"])
+
+    def test_internal_webfetch_executes_before_returning_tool_use_to_client(self):
+        tool_call = FakeResponse(
+            payload={
+                "id": "chatcmpl_tool",
+                "choices": [
+                    {
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": "call_fetch",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "WebFetch",
+                                        "arguments": json.dumps({"url": "https://example.com", "prompt": "Resumo"}),
+                                    },
+                                }
+                            ],
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+            }
+        )
+        final = FakeResponse(
+            payload={
+                "id": "chatcmpl_final",
+                "choices": [{"finish_reason": "stop", "message": {"content": "Usei o fetch RED."}}],
+                "usage": {"prompt_tokens": 100, "completion_tokens": 10},
+            }
+        )
+        payloads = []
+
+        def fake_proxy(payload, *, stream, api_key, base_url):
+            payloads.append(payload)
+            return tool_call if len(payloads) == 1 else final
+
+        with patch.object(proxy, "proxy_openai_chat", side_effect=fake_proxy), \
+             patch.object(proxy, "red_fetch", return_value="WebFetch result for URL: https://example.com\n\nContent:\nOK"), \
+             patch.object(proxy.POOL_BY_BACKEND["sg"], "acquire", return_value={"token": "key1"}), \
+             patch.object(proxy.POOL_BY_BACKEND["sg"], "on_success", return_value=None):
+            response, upstream_stream = proxy.proxy_anthropic_payload_with_internal_tools(
+                {
+                    "model": "qwen3.6-plus",
+                    "messages": [{"role": "user", "content": "abra a fonte"}],
+                    "tools": [{"type": "function", "function": {"name": "WebFetch", "parameters": {"type": "object"}}}],
+                    "stream": False,
+                    "max_tokens": 1024,
+                },
+                alias=proxy.resolve_model("Qwen 3.6 Plus"),
+                stream=False,
+                context_window=262144,
+                input_tokens=100,
+            )
+        self.assertIs(response, final)
+        self.assertFalse(upstream_stream)
+        self.assertEqual(len(payloads), 2)
+        self.assertEqual(payloads[1]["messages"][-1]["role"], "tool")
+        self.assertIn("WebFetch result for URL", payloads[1]["messages"][-1]["content"])
+
+    def test_streaming_requests_preserve_stream_for_claude_code_ui(self):
+        ok = FakeResponse(lines=[b"data: [DONE]"])
+        payloads = []
+
+        def fake_proxy(payload, *, stream, api_key, base_url):
+            payloads.append((payload, stream))
+            return ok
+
+        with patch.object(proxy, "WEBSEARCH_INTERNALIZE_STREAM_REQUESTS", False), \
+             patch.object(proxy, "proxy_openai_chat", side_effect=fake_proxy), \
+             patch.object(proxy.POOL_BY_BACKEND["sg"], "acquire", return_value={"token": "key1"}), \
+             patch.object(proxy.POOL_BY_BACKEND["sg"], "on_success", return_value=None):
+            response, upstream_stream = proxy.proxy_anthropic_payload_with_internal_tools(
+                {
+                    "model": "qwen3.6-plus",
+                    "messages": [{"role": "user", "content": "oi"}],
+                    "stream": True,
+                    "max_tokens": 1024,
+                },
+                alias=proxy.resolve_model("Qwen 3.6 Plus"),
+                stream=True,
+                context_window=262144,
+                input_tokens=100,
+            )
+        self.assertIs(response, ok)
+        self.assertTrue(upstream_stream)
+        self.assertEqual(len(payloads), 1)
+        self.assertIs(payloads[0][0]["stream"], True)
+        self.assertIs(payloads[0][1], True)
+
+    def test_webfetch_fallback_replaces_failed_client_fetch_tool_result(self):
+        body = {
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "call_fetch",
+                            "name": "WebFetch",
+                            "input": {"url": "https://example.com", "prompt": "Resumo"},
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_fetch",
+                            "content": "Error: Claude Code is unable to fetch from example.com",
+                            "is_error": True,
+                        }
+                    ],
+                },
+            ]
+        }
+        with patch.object(proxy, "red_fetch", return_value="WebFetch result for URL: https://example.com\n\nContent:\nOK"):
+            messages = proxy.anthropic_messages_to_openai(body)
+        tool_messages = [item for item in messages if item["role"] == "tool"]
+        self.assertEqual(len(tool_messages), 1)
+        self.assertIn("WebFetch result for URL", tool_messages[0]["content"])
 
     def test_anthropic_payload_converts_tools_and_tool_results(self):
         body = {
@@ -134,6 +372,84 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertIn('"type": "tool_use"', text)
         self.assertIn('"partial_json": "{\\"command\\""', text)
         self.assertIn('"stop_reason": "tool_use"', text)
+
+    def test_stream_internal_websearch_preserves_thinking_and_continues(self):
+        first = FakeResponse(
+            lines=[
+                b'data: {"choices":[{"delta":{"reasoning_content":"vou buscar"},"finish_reason":null}]}',
+                b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_search","type":"function","function":{"name":"WebSearch","arguments":"{\\"query\\""}}]},"finish_reason":null}]}',
+                b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\\"noticias hoje\\"}"}}]},"finish_reason":"tool_calls"}]}',
+                b"data: [DONE]",
+            ]
+        )
+        second = FakeResponse(
+            lines=[
+                b'data: {"choices":[{"delta":{"reasoning_content":"resultado recebido"},"finish_reason":null}]}',
+                b'data: {"choices":[{"delta":{"content":"Achei fontes RED."},"finish_reason":"stop"}],"usage":{"prompt_tokens":50,"completion_tokens":8}}',
+                b"data: [DONE]",
+            ]
+        )
+        payloads = []
+
+        def fake_proxy(payload, *, stream, api_key, base_url):
+            payloads.append(payload)
+            return second
+
+        with patch.object(proxy, "EXPERIMENTAL_THINKING_BLOCKS", True), \
+             patch.object(proxy, "proxy_openai_chat", side_effect=fake_proxy), \
+             patch.object(proxy, "red_search", return_value=[{"title": "Fonte", "url": "https://example.com", "snippet": "Resumo"}]), \
+             patch.object(proxy.POOL_BY_BACKEND["sg"], "acquire", return_value={"token": "key1"}), \
+             patch.object(proxy.POOL_BY_BACKEND["sg"], "on_success", return_value=None):
+            text = "".join(
+                proxy.anthropic_sse_from_openai_stream_with_internal_tools(
+                    first,
+                    payload={
+                        "model": "qwen3.6-plus",
+                        "messages": [{"role": "user", "content": "pesquise"}],
+                        "tools": [{"type": "function", "function": {"name": "WebSearch", "parameters": {"type": "object"}}}],
+                        "stream": True,
+                        "max_tokens": 1024,
+                    },
+                    alias=proxy.resolve_model("Qwen 3.6 Plus"),
+                    model_name="Qwen 3.6 Plus",
+                    context_window=262144,
+                    input_tokens=100,
+                )
+            )
+        self.assertIn('"type": "thinking_delta"', text)
+        self.assertIn("Achei fontes RED.", text)
+        self.assertIn('"stop_reason": "end_turn"', text)
+        self.assertNotIn('"name": "WebSearch"', text)
+        self.assertEqual(len(payloads), 1)
+        self.assertEqual(payloads[0]["messages"][-1]["role"], "tool")
+        self.assertIn("RED Search/SearXNG fallback results", payloads[0]["messages"][-1]["content"])
+
+    def test_json_to_sse_tool_use_emits_input_delta(self):
+        payload = {
+            "id": "chatcmpl_json_tool",
+            "choices": [
+                {
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "tool_calls": [
+                            {
+                                "id": "call_search",
+                                "type": "function",
+                                "function": {
+                                    "name": "WebSearch",
+                                    "arguments": json.dumps({"query": "nextjs ecommerce"}),
+                                },
+                            }
+                        ]
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5},
+        }
+        text = "".join(proxy.anthropic_sse_from_openai_json(payload, "Qwen 3.6 Plus"))
+        self.assertIn('"content_block": {"type": "tool_use", "id": "call_search", "name": "WebSearch", "input": {}}', text)
+        self.assertIn('"type": "input_json_delta"', text)
+        self.assertIn('\\"query\\": \\"nextjs ecommerce\\"', text)
 
     def test_models_endpoint_requires_auth(self):
         with proxy.app.test_client() as client:
@@ -245,7 +561,7 @@ class RedAlibabaClaudeTests(unittest.TestCase):
             status_code=400,
             payload={
                 "error": {
-                    "message": "This model's maximum context length is 262144 tokens. However, you requested 23546 output tokens and your prompt contains at least 238599 input tokens, for a total of at least 262145 tokens. Please reduce the length of the messages.",
+                    "message": "This model's maximum context length is 262144 tokens. However, you requested 8192 output tokens and your prompt contains at least 252000 input tokens, for a total of at least 260192 tokens. Please reduce the length of the messages.",
                     "type": "upstream_error",
                 }
             },
@@ -276,7 +592,43 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertIs(response, ok)
         self.assertEqual(len(calls), 2)
         self.assertEqual(calls[0], 19449)
-        self.assertEqual(calls[1], 17401)
+        self.assertEqual(calls[1], 4000)
+
+    def test_max_tokens_range_error_retries_with_upstream_limit(self):
+        too_many = FakeResponse(
+            status_code=400,
+            payload={
+                "error": {
+                    "message": "<400> InternalError.Algo.InvalidParameter: Range of max_tokens should be [1, 8192]",
+                    "type": "upstream_error",
+                }
+            },
+        )
+        ok = FakeResponse(
+            payload={
+                "id": "chatcmpl_5",
+                "choices": [{"finish_reason": "stop", "message": {"content": "OK"}}],
+                "usage": {"prompt_tokens": 1000, "completion_tokens": 12},
+            }
+        )
+        calls = []
+
+        def fake_proxy(payload, *, stream, api_key, base_url):
+            calls.append(payload["max_tokens"])
+            return too_many if len(calls) == 1 else ok
+
+        with patch.object(proxy, "proxy_openai_chat", side_effect=fake_proxy), \
+             patch.object(proxy.POOL_BY_BACKEND["sg"], "acquire", return_value={"token": "key1"}), \
+             patch.object(proxy.POOL_BY_BACKEND["sg"], "on_success", return_value=None):
+            response = proxy.proxy_openai_chat_with_context_retry(
+                {"model": "Qwen 3.6 Plus", "messages": [{"role": "user", "content": "oi"}], "max_tokens": 32000},
+                alias=proxy.resolve_model("Qwen 3.6 Plus"),
+                stream=False,
+                context_window=262144,
+                input_tokens=1000,
+            )
+        self.assertIs(response, ok)
+        self.assertEqual(calls, [32000, 8192])
 
     def test_openai_sanitize_removes_reasoning_content(self):
         payload = {
@@ -293,6 +645,103 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         cleaned = proxy.sanitize_openai_response_json(payload)
         self.assertEqual(cleaned["choices"][0]["message"]["content"], "OK")
         self.assertNotIn("reasoning_content", cleaned["choices"][0]["message"])
+
+    def test_effort_max_enables_thinking_and_overrides_alias_default(self):
+        body = {
+            "model": "Qwen 3.6 Plus",
+            "messages": [{"role": "user", "content": "oi"}],
+            "output_config": {"effort": "max"},
+            "thinking": {"type": "adaptive"},
+        }
+        payload = proxy.anthropic_to_openai_payload(body, proxy.resolve_model(body["model"]))
+        merged = proxy.apply_alias_backend_options(payload, proxy.resolve_model(body["model"]))
+        self.assertIs(merged["enable_thinking"], True)
+
+    def test_forced_tool_choice_is_removed_when_thinking_is_enabled(self):
+        body = {
+            "model": "Qwen 3.6 Plus",
+            "messages": [{"role": "user", "content": "pesquise"}],
+            "tools": [
+                {
+                    "name": "WebSearch",
+                    "description": "Search",
+                    "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}},
+                }
+            ],
+            "tool_choice": {"type": "tool", "name": "WebSearch"},
+            "thinking": {"type": "adaptive"},
+        }
+        payload = proxy.anthropic_to_openai_payload(body, proxy.resolve_model(body["model"]))
+        merged = proxy.apply_alias_backend_options(payload, proxy.resolve_model(body["model"]))
+        self.assertIs(merged["enable_thinking"], True)
+        self.assertNotIn("tool_choice", merged)
+
+    def test_anthropic_payload_forces_thinking_even_without_effort(self):
+        body = {
+            "model": "Qwen 3.6 Plus",
+            "messages": [{"role": "user", "content": "oi"}],
+        }
+        with patch.object(proxy, "FORCE_ANTHROPIC_THINKING", True):
+            payload = proxy.anthropic_to_openai_payload(body, proxy.resolve_model(body["model"]))
+        merged = proxy.apply_alias_backend_options(payload, proxy.resolve_model(body["model"]))
+        self.assertIs(merged["enable_thinking"], True)
+
+    def test_stream_conversion_can_emit_experimental_thinking_block(self):
+        lines = [
+            b'data: {"choices":[{"delta":{"reasoning_content":"pensei "},"finish_reason":null}]}',
+            b'data: {"choices":[{"delta":{"reasoning_content":"nisso"},"finish_reason":null}]}',
+            b'data: {"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}',
+            b"data: [DONE]",
+        ]
+        response = FakeResponse(lines=lines)
+        with patch.object(proxy, "EXPERIMENTAL_THINKING_BLOCKS", True):
+            text = "".join(proxy.anthropic_sse_from_openai_stream(response, "Qwen 3.6 Plus"))
+        self.assertIn('"type": "thinking"', text)
+        self.assertIn('"type": "thinking_delta"', text)
+        self.assertIn('"type": "signature_delta"', text)
+        self.assertIn('"type": "text_delta"', text)
+        self.assertIn('"index": 1', text)
+
+    def test_json_sse_conversion_can_emit_experimental_thinking_block(self):
+        data = {
+            "id": "chatcmpl_test",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "reasoning_content": "analise interna",
+                        "content": "OK",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+        with patch.object(proxy, "EXPERIMENTAL_THINKING_BLOCKS", True):
+            text = "".join(proxy.anthropic_sse_from_openai_json(data, "Qwen 3.6 Plus"))
+        self.assertIn('"type": "thinking"', text)
+        self.assertIn('"type": "thinking_delta"', text)
+        self.assertIn('"type": "signature_delta"', text)
+        self.assertIn('"index": 1', text)
+        self.assertIn('"type": "text_delta"', text)
+
+    def test_anthropic_message_preserves_reasoning_content_when_experimental(self):
+        data = {
+            "id": "chatcmpl_test",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "reasoning_content": "analise interna",
+                        "content": "OK",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+        with patch.object(proxy, "EXPERIMENTAL_THINKING_BLOCKS", True):
+            message = proxy.anthropic_message_from_openai(data, "Qwen 3.6 Plus")
+        self.assertEqual(message["content"][0]["type"], "thinking")
+        self.assertEqual(message["content"][1]["type"], "text")
 
 
 if __name__ == "__main__":

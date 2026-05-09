@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import hashlib
+import html
 import threading
 import time
 import uuid
@@ -52,6 +54,7 @@ TLS_CERT = (os.getenv("REDALIBABACLAUDE_TLS_CERT") or "").strip()
 TLS_KEY = (os.getenv("REDALIBABACLAUDE_TLS_KEY") or "").strip()
 TOKEN_SAFETY_MARGIN = max(0, env_int("REDALIBABACLAUDE_TOKEN_SAFETY_MARGIN", 4096))
 MIN_COMPLETION_TOKENS = max(1, env_int("REDALIBABACLAUDE_MIN_COMPLETION_TOKENS", 256))
+MAX_OUTPUT_TOKENS = max(1, env_int("REDALIBABACLAUDE_MAX_OUTPUT_TOKENS", 8192))
 MAX_CONTEXT_RETRIES = max(1, env_int("REDALIBABACLAUDE_MAX_CONTEXT_RETRIES", 5))
 CONTEXT_RETRY_MARGIN_STEP = max(0, env_int("REDALIBABACLAUDE_CONTEXT_RETRY_MARGIN_STEP", 2048))
 RATE_LIMIT_MIN_INTERVAL_SECONDS = max(0, env_int("REDALIBABACLAUDE_RATE_LIMIT_MIN_INTERVAL_SECONDS", 1))
@@ -61,6 +64,19 @@ RATE_LIMIT_MAX_COOLDOWN_SECONDS = max(1, env_int("REDALIBABACLAUDE_RATE_LIMIT_MA
 MAX_429_RETRIES = max(0, env_int("REDALIBABACLAUDE_MAX_429_RETRIES", 6))
 SERVER_ERROR_COOLDOWN_SECONDS = max(1, env_int("REDALIBABACLAUDE_SERVER_ERROR_COOLDOWN_SECONDS", 4))
 MAX_5XX_RETRIES = max(0, env_int("REDALIBABACLAUDE_MAX_5XX_RETRIES", 4))
+EXPERIMENTAL_THINKING_BLOCKS = env_bool("REDALIBABACLAUDE_EXPERIMENTAL_THINKING_BLOCKS", False)
+FAKE_THINKING_SIGNATURE_PREFIX = os.getenv("REDALIBABACLAUDE_FAKE_THINKING_SIGNATURE_PREFIX", "redalibaba").strip() or "redalibaba"
+FORCE_ANTHROPIC_THINKING = env_bool("REDALIBABACLAUDE_FORCE_ANTHROPIC_THINKING", True)
+WEBSEARCH_FALLBACK_ENABLED = env_bool("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_ENABLED", True)
+WEBSEARCH_INTERNALIZE_STREAM_REQUESTS = env_bool("REDALIBABACLAUDE_WEBSEARCH_INTERNALIZE_STREAM_REQUESTS", False)
+WEBSEARCH_FALLBACK_URL = os.getenv("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_URL", "http://127.0.0.1:8088/search").strip() or "http://127.0.0.1:8088/search"
+WEBSEARCH_FALLBACK_MAX_RESULTS = max(1, env_int("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_MAX_RESULTS", 5))
+WEBSEARCH_FALLBACK_MAX_QUERIES = max(1, env_int("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_MAX_QUERIES", 3))
+WEBSEARCH_FALLBACK_TIMEOUT = max(1, env_int("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_TIMEOUT", 8))
+WEBSEARCH_FALLBACK_LANGUAGE = os.getenv("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_LANGUAGE", "pt-BR").strip() or "pt-BR"
+WEBSEARCH_INTERNAL_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_WEBSEARCH_INTERNAL_MAX_ROUNDS", 2))
+WEBFETCH_FALLBACK_TIMEOUT = max(1, env_int("REDALIBABACLAUDE_WEBFETCH_FALLBACK_TIMEOUT", 12))
+WEBFETCH_FALLBACK_MAX_CHARS = max(1000, env_int("REDALIBABACLAUDE_WEBFETCH_FALLBACK_MAX_CHARS", 24000))
 
 ALIBABA_SG_BASE_URL = os.getenv("REDALIBABACLAUDE_SG_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").rstrip("/")
 ALIBABA_US_BASE_URL = os.getenv("REDALIBABACLAUDE_US_BASE_URL", "https://dashscope-us.aliyuncs.com/compatible-mode/v1").rstrip("/")
@@ -78,7 +94,13 @@ ALIBABA_SG_API_KEYS = split_values(os.getenv("REDALIBABACLAUDE_SG_API_KEYS", "")
 ALIBABA_US_API_KEYS = split_values(os.getenv("REDALIBABACLAUDE_US_API_KEYS", ""))
 
 http = requests.Session()
-http.headers.update({"Accept": "application/json"})
+websearch_cache: dict[str, list[dict[str, str]]] = {}
+http.headers.update(
+    {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; REDSystemsBot/1.0; +https://redsystems.ddns.net)",
+    }
+)
 
 MODELS = [
     {
@@ -317,6 +339,8 @@ def resolve_model(model_name: str | None) -> dict[str, Any] | None:
     if not model_name:
         return default_model()
     key = str(model_name).strip().lower()
+    if key.startswith("claude-haiku-") or key.startswith("claude-sonnet-") or key.startswith("claude-opus-"):
+        return default_model()
     if key in MODEL_BY_ID:
         return MODEL_BY_ID[key]
     if key in MODEL_BY_TARGET:
@@ -399,9 +423,178 @@ def content_block_to_openai(block: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def red_search(query: str, *, max_results: int | None = None) -> list[dict[str, str]]:
+    normalized = re.sub(r"\s+", " ", str(query or "")).strip()
+    if not normalized:
+        return []
+    cache_key = normalized.lower()
+    if cache_key in websearch_cache:
+        return websearch_cache[cache_key]
+    limit = max_results or WEBSEARCH_FALLBACK_MAX_RESULTS
+    try:
+        response = http.get(
+            WEBSEARCH_FALLBACK_URL,
+            params={"q": normalized, "format": "json", "language": WEBSEARCH_FALLBACK_LANGUAGE, "pageno": "1"},
+            timeout=(5, WEBSEARCH_FALLBACK_TIMEOUT),
+        )
+        response.raise_for_status()
+        data = response.json()
+    except Exception:
+        websearch_cache[cache_key] = []
+        return []
+    results: list[dict[str, str]] = []
+    for item in data.get("results") or []:
+        if not isinstance(item, dict):
+            continue
+        title = re.sub(r"\s+", " ", str(item.get("title") or "")).strip()
+        url = str(item.get("url") or "").strip()
+        snippet = re.sub(r"\s+", " ", str(item.get("content") or item.get("snippet") or "")).strip()
+        if not url or not title:
+            continue
+        results.append({"title": title, "url": url, "snippet": snippet})
+        if len(results) >= limit:
+            break
+    websearch_cache[cache_key] = results
+    return results
+
+
+def is_empty_or_failed_websearch_result(content: Any) -> bool:
+    text = text_from_content(content)
+    lowered = text.lower()
+    if "web search results for query" not in lowered:
+        return False
+    if "api error:" in lowered:
+        return True
+    stripped = re.sub(r"reminder:.*", "", text, flags=re.IGNORECASE | re.DOTALL).strip()
+    lines = [line.strip() for line in stripped.splitlines() if line.strip()]
+    return len(lines) <= 2
+
+
+def format_red_search_results(query: str, results: list[dict[str, str]]) -> str:
+    lines = [
+        f'Web search results for query: "{query}"',
+        "",
+        "RED Search/SearXNG fallback results:",
+    ]
+    for index, result in enumerate(results, 1):
+        lines.append(f"{index}. {result['title']}")
+        lines.append(f"   URL: {result['url']}")
+        if result.get("snippet"):
+            lines.append(f"   Trecho: {result['snippet']}")
+    lines.append("")
+    lines.append("REMINDER: You MUST include the sources above in your response to the user using markdown hyperlinks.")
+    return "\n".join(lines)
+
+
+def html_to_text(raw: str) -> str:
+    text = re.sub(r"(?is)<(script|style|noscript|svg|canvas|iframe)\b.*?</\1>", " ", raw or "")
+    text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?is)</(p|div|li|h[1-6]|section|article|tr)>", "\n", text)
+    text = re.sub(r"(?is)<[^>]+>", " ", text)
+    text = html.unescape(text)
+    text = re.sub(r"[ \t\r\f\v]+", " ", text)
+    text = re.sub(r"\n\s+", "\n", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def red_fetch(url: str, prompt: str = "") -> str:
+    target = str(url or "").strip()
+    if not re.match(r"^https?://", target, flags=re.IGNORECASE):
+        return f"WebFetch error: invalid URL {target!r}"
+    try:
+        response = http.get(
+            target,
+            headers={
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5",
+                "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.7,en;q=0.6",
+                "Cache-Control": "no-cache",
+            },
+            timeout=(5, WEBFETCH_FALLBACK_TIMEOUT),
+            allow_redirects=True,
+        )
+    except Exception as exc:
+        return f"WebFetch error while fetching {target}: {exc}"
+
+    content_type = response.headers.get("content-type", "")
+    raw = response.text or ""
+    text = html_to_text(raw) if "html" in content_type.lower() else raw.strip()
+    if not text:
+        return f"WebFetch received {len(response.content or b'')} bytes from {response.url} with status {response.status_code}, but no readable text was extracted."
+    if len(text) > WEBFETCH_FALLBACK_MAX_CHARS:
+        text = text[:WEBFETCH_FALLBACK_MAX_CHARS].rstrip() + "\n\n[truncated by RED WebFetch]"
+
+    lines = [
+        f"WebFetch result for URL: {target}",
+        f"Final URL: {response.url}",
+        f"HTTP status: {response.status_code}",
+    ]
+    if prompt:
+        lines.append(f"Prompt: {prompt}")
+    lines.extend(["", "Content:", text])
+    return "\n".join(lines)
+
+
+def is_failed_webfetch_result(content: Any) -> bool:
+    text = text_from_content(content).lower()
+    return "unable to fetch from" in text or "webfetch failed" in text or "required parameter `url` is missing" in text
+
+
+def websearch_fallback_tool_results(body: dict[str, Any]) -> dict[str, str]:
+    if not WEBSEARCH_FALLBACK_ENABLED:
+        return {}
+    tool_queries: dict[str, str] = {}
+    webfetch_calls: dict[str, dict[str, str]] = {}
+    fallback_results: dict[str, str] = {}
+    for message in body.get("messages") or []:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "").strip()
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        if role == "assistant":
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_use":
+                    continue
+                tool_id = str(block.get("id") or "")
+                tool_input = block.get("input") or {}
+                tool_name = str(block.get("name") or "").strip()
+                if tool_name == "WebSearch":
+                    query = str(tool_input.get("query") or "").strip() if isinstance(tool_input, dict) else ""
+                    if tool_id and query:
+                        tool_queries[tool_id] = query
+                elif tool_name == "WebFetch":
+                    url = str(tool_input.get("url") or "").strip() if isinstance(tool_input, dict) else ""
+                    prompt = str(tool_input.get("prompt") or "").strip() if isinstance(tool_input, dict) else ""
+                    if tool_id and url:
+                        webfetch_calls[tool_id] = {"url": url, "prompt": prompt}
+        elif role == "user":
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_result":
+                    continue
+                tool_use_id = str(block.get("tool_use_id") or "")
+                query = tool_queries.get(tool_use_id)
+                webfetch_call = webfetch_calls.get(tool_use_id)
+                if query and is_empty_or_failed_websearch_result(block.get("content")):
+                    results = red_search(query)
+                    if not results:
+                        continue
+                    fallback_results[tool_use_id] = format_red_search_results(query, results)
+                elif webfetch_call and is_failed_webfetch_result(block.get("content")):
+                    fallback_results[tool_use_id] = red_fetch(webfetch_call["url"], webfetch_call.get("prompt", ""))
+                else:
+                    continue
+                if len(fallback_results) >= WEBSEARCH_FALLBACK_MAX_QUERIES:
+                    break
+        if len(fallback_results) >= WEBSEARCH_FALLBACK_MAX_QUERIES:
+            break
+    return fallback_results
+
+
 def anthropic_messages_to_openai(body: dict[str, Any]) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     system_text = anthropic_system_text(body)
+    fallback_tool_results = websearch_fallback_tool_results(body)
     if system_text:
         messages.append({"role": "system", "content": system_text})
 
@@ -437,11 +630,12 @@ def anthropic_messages_to_openai(body: dict[str, Any]) -> list[dict[str, Any]]:
                         pending_parts = []
                     tool_call_id = str(block.get("tool_use_id") or "")
                     if tool_call_id:
+                        tool_content = fallback_tool_results.get(tool_call_id, block.get("content"))
                         messages.append(
                             {
                                 "role": "tool",
                                 "tool_call_id": tool_call_id,
-                                "content": text_from_content(block.get("content")),
+                                "content": text_from_content(tool_content),
                             }
                         )
             if pending_parts:
@@ -530,7 +724,30 @@ def anthropic_to_openai_payload(body: dict[str, Any], alias: dict[str, Any]) -> 
             payload["tool_choice"] = tool_choice
     if isinstance(body.get("metadata"), dict):
         payload["metadata"] = deepcopy(body["metadata"])
+    apply_effort_options(payload, body)
     return payload
+
+
+def request_effort(body: dict[str, Any]) -> str:
+    output_config = body.get("output_config")
+    if isinstance(output_config, dict):
+        effort = str(output_config.get("effort") or "").strip().lower()
+        if effort:
+            return effort
+    metadata = body.get("metadata")
+    if isinstance(metadata, dict):
+        effort = str(metadata.get("effort") or "").strip().lower()
+        if effort:
+            return effort
+    return ""
+
+
+def apply_effort_options(payload: dict[str, Any], body: dict[str, Any]) -> None:
+    effort = request_effort(body)
+    thinking = body.get("thinking")
+    thinking_requested = isinstance(thinking, dict) and str(thinking.get("type") or "").strip().lower() not in {"", "disabled", "none"}
+    if FORCE_ANTHROPIC_THINKING or effort in {"high", "xhigh", "max"} or thinking_requested:
+        payload["enable_thinking"] = True
 
 
 def estimate_tokens(body: dict[str, Any]) -> int:
@@ -591,21 +808,37 @@ def estimate_openai_tokens(payload: dict[str, Any]) -> int:
     return text_tokens + (image_count * 512)
 
 
-def clamp_max_tokens(requested: Any, input_tokens: int, context_window: int, *, extra_margin: int = 0) -> int:
+def clamp_max_tokens(requested: Any, input_tokens: int, context_window: int, *, extra_margin: int = 0, output_cap: int | None = None) -> int:
     try:
         requested_int = int(requested)
     except Exception:
         requested_int = 2048
     requested_int = max(1, requested_int)
+    cap = int(output_cap) if output_cap else requested_int
+    cap = max(1, cap)
     available = max(1, int(context_window) - max(0, int(input_tokens)) - TOKEN_SAFETY_MARGIN - max(0, int(extra_margin)))
     if available < MIN_COMPLETION_TOKENS:
-        return max(1, available)
-    return max(1, min(requested_int, available))
+        return max(1, min(available, cap))
+    return max(1, min(requested_int, available, cap))
+
+
+def is_internal_tool_request(payload: dict[str, Any]) -> bool:
+    system_text = "\n".join(str(message.get("content") or "") for message in payload.get("messages") or [] if isinstance(message, dict) and message.get("role") == "system")
+    if "WebSearch" in system_text or "WebFetch" in system_text:
+        return True
+    if "Generate a concise, sentence-case title" in system_text:
+        return True
+    return False
 
 
 def apply_context_guard(payload: dict[str, Any], *, input_tokens: int, context_window: int) -> dict[str, Any]:
     guarded = deepcopy(payload)
-    guarded["max_tokens"] = clamp_max_tokens(guarded.get("max_tokens") or 2048, input_tokens, context_window)
+    guarded["max_tokens"] = clamp_max_tokens(
+        guarded.get("max_tokens") or 2048,
+        input_tokens,
+        context_window,
+        output_cap=MAX_OUTPUT_TOKENS if is_internal_tool_request(guarded) else None,
+    )
     return guarded
 
 
@@ -617,6 +850,20 @@ def parse_context_error_limits(body: str) -> tuple[int, int] | None:
     if max_match and prompt_match:
         return int(max_match.group(1)), int(prompt_match.group(1))
     return None
+
+
+def parse_max_tokens_range(body: str) -> int | None:
+    if not body:
+        return None
+    match = re.search(r"Range of max_tokens should be \[1,\s*(\d+)\]", body, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def is_max_tokens_range_error(status_code: int, body: str) -> bool:
+    lowered = (body or "").lower()
+    return status_code == 400 and "range of max_tokens should be" in lowered
 
 
 def is_context_error(status_code: int, body: str) -> bool:
@@ -672,7 +919,15 @@ def apply_alias_backend_options(payload: dict[str, Any], alias: dict[str, Any]) 
     merged["model"] = alias["target"]
     extra_body = alias.get("extra_body") or {}
     for key, value in extra_body.items():
+        if key == "enable_thinking" and merged.get("enable_thinking") is True:
+            continue
         merged[key] = value
+    tool_choice = merged.get("tool_choice")
+    tool_choice_allowed = tool_choice is None or (isinstance(tool_choice, str) and tool_choice in {"auto", "none"})
+    if merged.get("enable_thinking") is True and not tool_choice_allowed:
+        # Alibaba rejects forced/required tool_choice while thinking is enabled.
+        # Keeping tools available in auto mode preserves thinking and tool calls.
+        merged.pop("tool_choice", None)
     return merged
 
 
@@ -700,7 +955,8 @@ def proxy_openai_chat_with_context_retry(
     extra_margin = 0
     rate_retries_left = MAX_429_RETRIES
     server_retries_left = MAX_5XX_RETRIES
-    for _attempt in range(MAX_CONTEXT_RETRIES + MAX_429_RETRIES + MAX_5XX_RETRIES + 1):
+    output_limit_retry_used = False
+    for _attempt in range(MAX_CONTEXT_RETRIES + MAX_429_RETRIES + MAX_5XX_RETRIES + 2):
         pool_item = pool.acquire()
         if pool_item is None:
             raise RuntimeError("alibaba api key not configured")
@@ -724,6 +980,18 @@ def proxy_openai_chat_with_context_retry(
                 return response
             server_retries_left -= 1
             continue
+        if is_max_tokens_range_error(response.status_code, body_text) and not output_limit_retry_used:
+            max_allowed = parse_max_tokens_range(body_text) or MAX_OUTPUT_TOKENS
+            next_payload = deepcopy(current_payload)
+            try:
+                current_max_tokens = int(next_payload.get("max_tokens") or 0)
+            except Exception:
+                current_max_tokens = 0
+            next_payload["max_tokens"] = max(1, min(current_max_tokens or max_allowed, max_allowed))
+            output_limit_retry_used = True
+            if next_payload["max_tokens"] < current_max_tokens or current_max_tokens <= 0:
+                current_payload = next_payload
+                continue
         if not is_context_error(response.status_code, body_text):
             return response
         limits = parse_context_error_limits(body_text)
@@ -744,10 +1012,66 @@ def proxy_openai_chat_with_context_retry(
     return response
 
 
+def proxy_anthropic_payload_with_internal_tools(
+    payload: dict[str, Any],
+    *,
+    alias: dict[str, Any],
+    stream: bool,
+    context_window: int,
+    input_tokens: int,
+) -> tuple[requests.Response, bool]:
+    current_payload = deepcopy(payload)
+    if stream and not WEBSEARCH_INTERNALIZE_STREAM_REQUESTS:
+        current_payload["stream"] = True
+        upstream = proxy_openai_chat_with_context_retry(
+            current_payload,
+            alias=alias,
+            stream=True,
+            context_window=context_window,
+            input_tokens=input_tokens,
+        )
+        return upstream, True
+
+    for _round in range(WEBSEARCH_INTERNAL_MAX_ROUNDS + 1):
+        request_payload = deepcopy(current_payload)
+        if WEBSEARCH_FALLBACK_ENABLED:
+            request_payload["stream"] = False
+        else:
+            request_payload["stream"] = stream
+        upstream = proxy_openai_chat_with_context_retry(
+            request_payload,
+            alias=alias,
+            stream=bool(request_payload.get("stream")),
+            context_window=context_window,
+            input_tokens=input_tokens,
+        )
+        if upstream.status_code >= 400 or not WEBSEARCH_FALLBACK_ENABLED or bool(request_payload.get("stream")):
+            return upstream, bool(request_payload.get("stream"))
+        try:
+            data = upstream.json()
+        except Exception:
+            return upstream, False
+        calls = internal_tool_calls_from_openai(data)
+        if not calls:
+            return upstream, False
+        current_payload = append_internal_tool_results(current_payload, data, calls)
+        input_tokens = estimate_openai_tokens(current_payload)
+    return upstream, False
+
+
 def anthropic_message_from_openai(data: dict[str, Any], model_name: str) -> dict[str, Any]:
     choice = ((data.get("choices") or [{}]) or [{}])[0]
     message = choice.get("message") or {}
     content_blocks: list[dict[str, Any]] = []
+    reasoning_text = message.get("reasoning_content")
+    if EXPERIMENTAL_THINKING_BLOCKS and isinstance(reasoning_text, str) and reasoning_text:
+        content_blocks.append(
+            {
+                "type": "thinking",
+                "thinking": reasoning_text,
+                "signature": fake_thinking_signature(reasoning_text, data.get("id") or ""),
+            }
+        )
     text = message.get("content")
     if isinstance(text, str) and text:
         content_blocks.append({"type": "text", "text": text})
@@ -788,8 +1112,331 @@ def anthropic_message_from_openai(data: dict[str, Any], model_name: str) -> dict
     }
 
 
+def internal_tool_calls_from_openai(data: dict[str, Any]) -> list[dict[str, Any]]:
+    choice = ((data.get("choices") or [{}]) or [{}])[0]
+    message = choice.get("message") or {}
+    if str(choice.get("finish_reason") or "") != "tool_calls":
+        return []
+    calls: list[dict[str, Any]] = []
+    for tool_call in message.get("tool_calls") or []:
+        if not isinstance(tool_call, dict):
+            continue
+        function = tool_call.get("function") or {}
+        name = str(function.get("name") or "").strip()
+        arguments = function.get("arguments") or "{}"
+        try:
+            parsed = json.loads(arguments)
+        except Exception:
+            parsed = {}
+        if name == "WebSearch":
+            query = str(parsed.get("query") or "").strip() if isinstance(parsed, dict) else ""
+            if query:
+                calls.append({"id": str(tool_call.get("id") or ""), "name": name, "query": query})
+        elif name == "WebFetch":
+            url = str(parsed.get("url") or "").strip() if isinstance(parsed, dict) else ""
+            prompt = str(parsed.get("prompt") or "").strip() if isinstance(parsed, dict) else ""
+            if url:
+                calls.append({"id": str(tool_call.get("id") or ""), "name": name, "url": url, "prompt": prompt})
+    return calls
+
+
+def append_internal_tool_results(payload: dict[str, Any], data: dict[str, Any], calls: list[dict[str, Any]]) -> dict[str, Any]:
+    next_payload = deepcopy(payload)
+    choice = ((data.get("choices") or [{}]) or [{}])[0]
+    message = deepcopy(choice.get("message") or {})
+    message.setdefault("role", "assistant")
+    message.setdefault("content", "")
+    next_payload.setdefault("messages", []).append(message)
+    for call in calls:
+        if call["name"] == "WebSearch":
+            query = call["query"]
+            results = red_search(query)
+            content = format_red_search_results(query, results) if results else f'Web search results for query: "{query}"\n\nNo results found by RED Search/SearXNG.'
+        elif call["name"] == "WebFetch":
+            content = red_fetch(call["url"], call.get("prompt", ""))
+        else:
+            continue
+        next_payload["messages"].append(
+            {
+                "role": "tool",
+                "tool_call_id": call["id"],
+                "content": content,
+            }
+        )
+    next_payload["stream"] = bool(payload.get("stream"))
+    return next_payload
+
+
 def sse_event(event: str, payload: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=True)}\n\n"
+
+
+def fake_thinking_signature(text: str, salt: str = "") -> str:
+    digest = hashlib.sha256(f"{FAKE_THINKING_SIGNATURE_PREFIX}:{salt}:{text}".encode("utf-8", "replace")).hexdigest()
+    return f"{FAKE_THINKING_SIGNATURE_PREFIX}:{digest}"
+
+
+def openai_tool_calls_from_stream_state(tool_state: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+    for index in sorted(tool_state):
+        state = tool_state[index]
+        name = str(state.get("name") or "")
+        arguments = "".join(state.get("arguments") or [])
+        calls.append(
+            {
+                "id": str(state.get("id") or f"call_{uuid.uuid4().hex[:10]}"),
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": arguments,
+                },
+            }
+        )
+    return calls
+
+
+def internal_calls_from_stream_tool_state(tool_state: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    if not tool_state:
+        return []
+    data = {
+        "choices": [
+            {
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": openai_tool_calls_from_stream_state(tool_state),
+                },
+            }
+        ]
+    }
+    calls = internal_tool_calls_from_openai(data)
+    return calls if len(calls) == len(tool_state) else []
+
+
+def anthropic_sse_from_openai_stream_with_internal_tools(
+    initial_response: requests.Response,
+    *,
+    payload: dict[str, Any],
+    alias: dict[str, Any],
+    model_name: str,
+    context_window: int,
+    input_tokens: int,
+):
+    message_id = f"msg_{uuid.uuid4().hex}"
+    yield sse_event(
+        "message_start",
+        {
+            "type": "message_start",
+            "message": {
+                "id": message_id,
+                "type": "message",
+                "role": "assistant",
+                "model": model_name,
+                "content": [],
+                "stop_reason": None,
+                "stop_sequence": None,
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+            },
+        },
+    )
+
+    current_payload = deepcopy(payload)
+    current_response = initial_response
+    usage_payload = {"input_tokens": 0, "output_tokens": 0}
+    block_index = 0
+    final_stop_reason = "end_turn"
+
+    for round_index in range(WEBSEARCH_INTERNAL_MAX_ROUNDS + 1):
+        thinking_open = False
+        thinking_parts: list[str] = []
+        thinking_index: int | None = None
+        text_open = False
+        text_index: int | None = None
+        text_parts: list[str] = []
+        tool_state: dict[int, dict[str, Any]] = {}
+        finish_reason = ""
+
+        for raw_line in current_response.iter_lines(decode_unicode=False, chunk_size=STREAM_CHUNK_SIZE):
+            if not raw_line:
+                continue
+            line = raw_line.decode("utf-8", "replace") if isinstance(raw_line, (bytes, bytearray)) else str(raw_line)
+            if not line.startswith("data:"):
+                continue
+            data_text = line[5:].strip()
+            if data_text == "[DONE]":
+                break
+            try:
+                data = json.loads(data_text)
+            except Exception:
+                continue
+            choice = ((data.get("choices") or [{}]) or [{}])[0]
+            delta = choice.get("delta") or {}
+            usage = data.get("usage") or {}
+            if usage:
+                usage_payload["input_tokens"] = int(usage.get("prompt_tokens") or usage_payload["input_tokens"])
+                usage_payload["output_tokens"] += int(usage.get("completion_tokens") or 0)
+
+            reasoning_delta = delta.get("reasoning_content")
+            if EXPERIMENTAL_THINKING_BLOCKS and isinstance(reasoning_delta, str) and reasoning_delta:
+                if text_open:
+                    yield sse_event("content_block_stop", {"type": "content_block_stop", "index": text_index})
+                    text_open = False
+                    block_index += 1
+                if not thinking_open:
+                    thinking_open = True
+                    thinking_index = block_index
+                    yield sse_event(
+                        "content_block_start",
+                        {
+                            "type": "content_block_start",
+                            "index": thinking_index,
+                            "content_block": {"type": "thinking", "thinking": ""},
+                        },
+                    )
+                thinking_parts.append(reasoning_delta)
+                yield sse_event(
+                    "content_block_delta",
+                    {"type": "content_block_delta", "index": thinking_index, "delta": {"type": "thinking_delta", "thinking": reasoning_delta}},
+                )
+
+            text_delta = delta.get("content")
+            if isinstance(text_delta, str) and text_delta:
+                if thinking_open:
+                    signature = fake_thinking_signature("".join(thinking_parts), f"{message_id}:{round_index}:{thinking_index}")
+                    yield sse_event(
+                        "content_block_delta",
+                        {"type": "content_block_delta", "index": thinking_index, "delta": {"type": "signature_delta", "signature": signature}},
+                    )
+                    yield sse_event("content_block_stop", {"type": "content_block_stop", "index": thinking_index})
+                    thinking_open = False
+                    block_index += 1
+                if not text_open:
+                    text_open = True
+                    text_index = block_index
+                    yield sse_event(
+                        "content_block_start",
+                        {"type": "content_block_start", "index": text_index, "content_block": {"type": "text", "text": ""}},
+                    )
+                text_parts.append(text_delta)
+                yield sse_event(
+                    "content_block_delta",
+                    {"type": "content_block_delta", "index": text_index, "delta": {"type": "text_delta", "text": text_delta}},
+                )
+
+            tool_deltas = delta.get("tool_calls") or []
+            if tool_deltas:
+                if thinking_open:
+                    signature = fake_thinking_signature("".join(thinking_parts), f"{message_id}:{round_index}:{thinking_index}")
+                    yield sse_event(
+                        "content_block_delta",
+                        {"type": "content_block_delta", "index": thinking_index, "delta": {"type": "signature_delta", "signature": signature}},
+                    )
+                    yield sse_event("content_block_stop", {"type": "content_block_stop", "index": thinking_index})
+                    thinking_open = False
+                    block_index += 1
+                if text_open:
+                    yield sse_event("content_block_stop", {"type": "content_block_stop", "index": text_index})
+                    text_open = False
+                    block_index += 1
+
+            for tool_delta in tool_deltas:
+                try:
+                    index = int(tool_delta.get("index", 0))
+                except Exception:
+                    index = 0
+                state = tool_state.setdefault(
+                    index,
+                    {
+                        "id": str(tool_delta.get("id") or f"call_{uuid.uuid4().hex[:10]}"),
+                        "name": "",
+                        "arguments": [],
+                    },
+                )
+                if tool_delta.get("id"):
+                    state["id"] = str(tool_delta["id"])
+                function = tool_delta.get("function") or {}
+                if function.get("name"):
+                    state["name"] = str(function["name"])
+                if function.get("arguments") is not None:
+                    state["arguments"].append(str(function.get("arguments") or ""))
+
+            if choice.get("finish_reason"):
+                finish_reason = str(choice.get("finish_reason") or "")
+
+        if thinking_open:
+            signature = fake_thinking_signature("".join(thinking_parts), f"{message_id}:{round_index}:{thinking_index}")
+            yield sse_event(
+                "content_block_delta",
+                {"type": "content_block_delta", "index": thinking_index, "delta": {"type": "signature_delta", "signature": signature}},
+            )
+            yield sse_event("content_block_stop", {"type": "content_block_stop", "index": thinking_index})
+            block_index += 1
+        if text_open:
+            yield sse_event("content_block_stop", {"type": "content_block_stop", "index": text_index})
+            block_index += 1
+
+        internal_calls = internal_calls_from_stream_tool_state(tool_state)
+        if finish_reason == "tool_calls" and internal_calls and round_index < WEBSEARCH_INTERNAL_MAX_ROUNDS:
+            assistant_message = {
+                "role": "assistant",
+                "content": "".join(text_parts),
+                "tool_calls": openai_tool_calls_from_stream_state(tool_state),
+            }
+            data = {"choices": [{"finish_reason": "tool_calls", "message": assistant_message}]}
+            current_payload = append_internal_tool_results(current_payload, data, internal_calls)
+            current_payload["stream"] = True
+            input_tokens = estimate_openai_tokens(current_payload)
+            current_response = proxy_openai_chat_with_context_retry(
+                current_payload,
+                alias=alias,
+                stream=True,
+                context_window=context_window,
+                input_tokens=input_tokens,
+            )
+            if current_response.status_code >= 400:
+                final_stop_reason = "end_turn"
+                break
+            continue
+
+        if finish_reason == "tool_calls" and tool_state:
+            for offset, tool_call in enumerate(openai_tool_calls_from_stream_state(tool_state)):
+                function = tool_call.get("function") or {}
+                arguments = function.get("arguments") or "{}"
+                yield sse_event(
+                    "content_block_start",
+                    {
+                        "type": "content_block_start",
+                        "index": block_index + offset,
+                        "content_block": {
+                            "type": "tool_use",
+                            "id": tool_call.get("id") or f"toolu_{uuid.uuid4().hex[:10]}",
+                            "name": function.get("name") or "",
+                            "input": {},
+                        },
+                    },
+                )
+                if arguments:
+                    yield sse_event(
+                        "content_block_delta",
+                        {
+                            "type": "content_block_delta",
+                            "index": block_index + offset,
+                            "delta": {"type": "input_json_delta", "partial_json": arguments},
+                        },
+                    )
+                yield sse_event("content_block_stop", {"type": "content_block_stop", "index": block_index + offset})
+            final_stop_reason = "tool_use"
+            break
+
+        if finish_reason == "length":
+            final_stop_reason = "max_tokens"
+        else:
+            final_stop_reason = "end_turn"
+        break
+
+    yield sse_event("message_delta", {"type": "message_delta", "delta": {"stop_reason": final_stop_reason, "stop_sequence": None}, "usage": usage_payload})
+    yield sse_event("message_stop", {"type": "message_stop"})
 
 
 def anthropic_sse_from_openai_stream(response: requests.Response, model_name: str):
@@ -813,6 +1460,9 @@ def anthropic_sse_from_openai_stream(response: requests.Response, model_name: st
 
     text_started = False
     text_closed = False
+    thinking_started = False
+    thinking_closed = False
+    thinking_parts: list[str] = []
     tool_state: dict[int, dict[str, Any]] = {}
     usage_payload = {"input_tokens": 0, "output_tokens": 0}
     stop_reason = "end_turn"
@@ -837,19 +1487,41 @@ def anthropic_sse_from_openai_stream(response: requests.Response, model_name: st
             usage_payload["input_tokens"] = int(usage.get("prompt_tokens") or usage_payload["input_tokens"])
             usage_payload["output_tokens"] = int(usage.get("completion_tokens") or usage_payload["output_tokens"])
 
+        reasoning_delta = delta.get("reasoning_content")
+        if EXPERIMENTAL_THINKING_BLOCKS and isinstance(reasoning_delta, str) and reasoning_delta:
+            if not thinking_started:
+                thinking_started = True
+                yield sse_event("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}})
+            thinking_parts.append(reasoning_delta)
+            yield sse_event("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": reasoning_delta}})
+
         text_delta = delta.get("content")
         if isinstance(text_delta, str) and text_delta:
+            if thinking_started and not thinking_closed:
+                signature = fake_thinking_signature("".join(thinking_parts), message_id)
+                yield sse_event("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": signature}})
+                yield sse_event("content_block_stop", {"type": "content_block_stop", "index": 0})
+                thinking_closed = True
             if not text_started:
                 text_started = True
-                yield sse_event("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})
-            yield sse_event("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text_delta}})
+                text_index = 1 if thinking_started else 0
+                yield sse_event("content_block_start", {"type": "content_block_start", "index": text_index, "content_block": {"type": "text", "text": ""}})
+            text_index = 1 if thinking_started else 0
+            yield sse_event("content_block_delta", {"type": "content_block_delta", "index": text_index, "delta": {"type": "text_delta", "text": text_delta}})
 
-        for tool_delta in delta.get("tool_calls") or []:
+        tool_deltas = delta.get("tool_calls") or []
+        if tool_deltas and thinking_started and not thinking_closed:
+            signature = fake_thinking_signature("".join(thinking_parts), message_id)
+            yield sse_event("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": signature}})
+            yield sse_event("content_block_stop", {"type": "content_block_stop", "index": 0})
+            thinking_closed = True
+
+        for tool_delta in tool_deltas:
             try:
                 index = int(tool_delta.get("index", 0))
             except Exception:
                 index = 0
-            block_index = index + (1 if text_started else 0)
+            block_index = index + (1 if text_started else 0) + (1 if thinking_started else 0)
             state = tool_state.setdefault(
                 index,
                 {
@@ -889,14 +1561,81 @@ def anthropic_sse_from_openai_stream(response: requests.Response, model_name: st
             else:
                 stop_reason = "end_turn"
 
-    if text_started and not text_closed:
+    if thinking_started and not thinking_closed:
+        signature = fake_thinking_signature("".join(thinking_parts), message_id)
+        yield sse_event("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": signature}})
         yield sse_event("content_block_stop", {"type": "content_block_stop", "index": 0})
+        thinking_closed = True
+    if text_started and not text_closed:
+        text_index = 1 if thinking_started else 0
+        yield sse_event("content_block_stop", {"type": "content_block_stop", "index": text_index})
         text_closed = True
     for index in sorted(tool_state):
-        block_index = index + (1 if text_started else 0)
+        block_index = index + (1 if text_started else 0) + (1 if thinking_started else 0)
         yield sse_event("content_block_stop", {"type": "content_block_stop", "index": block_index})
 
     yield sse_event("message_delta", {"type": "message_delta", "delta": {"stop_reason": stop_reason, "stop_sequence": None}, "usage": usage_payload})
+    yield sse_event("message_stop", {"type": "message_stop"})
+
+
+def anthropic_sse_from_openai_json(data: dict[str, Any], model_name: str):
+    message = anthropic_message_from_openai(data, model_name)
+    message_start = deepcopy(message)
+    message_start["content"] = []
+    message_start["stop_reason"] = None
+    yield sse_event("message_start", {"type": "message_start", "message": message_start})
+    for index, block in enumerate(message.get("content") or []):
+        block_type = block.get("type")
+        if block_type == "thinking":
+            thinking = str(block.get("thinking") or "")
+            yield sse_event(
+                "content_block_start",
+                {"type": "content_block_start", "index": index, "content_block": {"type": "thinking", "thinking": ""}},
+            )
+            if thinking:
+                yield sse_event(
+                    "content_block_delta",
+                    {"type": "content_block_delta", "index": index, "delta": {"type": "thinking_delta", "thinking": thinking}},
+                )
+            signature = str(block.get("signature") or fake_thinking_signature(thinking, message.get("id") or ""))
+            yield sse_event(
+                "content_block_delta",
+                {"type": "content_block_delta", "index": index, "delta": {"type": "signature_delta", "signature": signature}},
+            )
+            yield sse_event("content_block_stop", {"type": "content_block_stop", "index": index})
+        elif block_type == "text":
+            yield sse_event("content_block_start", {"type": "content_block_start", "index": index, "content_block": {"type": "text", "text": ""}})
+            text = str(block.get("text") or "")
+            if text:
+                yield sse_event("content_block_delta", {"type": "content_block_delta", "index": index, "delta": {"type": "text_delta", "text": text}})
+            yield sse_event("content_block_stop", {"type": "content_block_stop", "index": index})
+        elif block_type == "tool_use":
+            start_block = {
+                "type": "tool_use",
+                "id": block.get("id") or f"toolu_{uuid.uuid4().hex[:10]}",
+                "name": block.get("name") or "",
+                "input": {},
+            }
+            yield sse_event("content_block_start", {"type": "content_block_start", "index": index, "content_block": start_block})
+            tool_input = block.get("input")
+            if tool_input is not None:
+                yield sse_event(
+                    "content_block_delta",
+                    {
+                        "type": "content_block_delta",
+                        "index": index,
+                        "delta": {"type": "input_json_delta", "partial_json": json.dumps(tool_input, ensure_ascii=False)},
+                    },
+                )
+            yield sse_event("content_block_stop", {"type": "content_block_stop", "index": index})
+    yield sse_event(
+        "message_delta",
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": message.get("stop_reason") or "end_turn", "stop_sequence": None},
+            "usage": message.get("usage") or {"input_tokens": 0, "output_tokens": 0},
+        },
+    )
     yield sse_event("message_stop", {"type": "message_stop"})
 
 
@@ -1046,7 +1785,7 @@ def anthropic_messages() -> Response:
         return error_response("alibaba api key not configured for this backend", 503, "configuration_error")
     payload = anthropic_to_openai_payload(body, alias)
     stream = bool(body.get("stream"))
-    upstream = proxy_openai_chat_with_context_retry(
+    upstream, upstream_stream = proxy_anthropic_payload_with_internal_tools(
         payload,
         alias=alias,
         stream=stream,
@@ -1059,13 +1798,26 @@ def anthropic_messages() -> Response:
         except Exception:
             body_text = ""
         return error_response(alibaba_error_message(upstream.status_code, body_text), 502 if upstream.status_code >= 500 else upstream.status_code, "upstream_error")
-    if stream:
-        return Response(anthropic_sse_from_openai_stream(upstream, alias["id"]), status=200, content_type="text/event-stream; charset=utf-8")
+    if stream and upstream_stream:
+        return Response(
+            anthropic_sse_from_openai_stream_with_internal_tools(
+                upstream,
+                payload=payload,
+                alias=alias,
+                model_name=alias["id"],
+                context_window=int(alias.get("context_window") or 262144),
+                input_tokens=estimate_tokens(body),
+            ),
+            status=200,
+            content_type="text/event-stream; charset=utf-8",
+        )
     try:
         data = upstream.json()
     except Exception:
         return error_response("invalid upstream JSON", 502, "upstream_error")
-    return response_json(anthropic_message_from_openai(sanitize_openai_response_json(data), alias["id"]))
+    if stream:
+        return Response(anthropic_sse_from_openai_json(data, alias["id"]), status=200, content_type="text/event-stream; charset=utf-8")
+    return response_json(anthropic_message_from_openai(data, alias["id"]))
 
 
 @app.route("/v1/chat/completions", methods=["POST"])
