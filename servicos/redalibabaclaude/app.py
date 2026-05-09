@@ -193,11 +193,14 @@ class TokenMetricsStore:
         thread.join(timeout=2.0)
 
     def _writer_loop(self) -> None:
-        try:
-            self._init_db()
-        except Exception as exc:
-            self.last_error = str(exc)[:240]
-            self.enabled = False
+        for attempt in range(6):
+            try:
+                self._init_db()
+                break
+            except Exception as exc:
+                self.last_error = str(exc)[:240]
+                time.sleep(min(0.25 * (attempt + 1), 2.0))
+        else:
             return
         while True:
             item = self.queue.get()
@@ -212,11 +215,11 @@ class TokenMetricsStore:
 
     def _connect(self) -> sqlite3.Connection:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(self.db_path), timeout=1.0)
+        conn = sqlite3.connect(str(self.db_path), timeout=5.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA busy_timeout=1000")
+        conn.execute("PRAGMA busy_timeout=5000")
         return conn
 
     def _init_db(self) -> None:
