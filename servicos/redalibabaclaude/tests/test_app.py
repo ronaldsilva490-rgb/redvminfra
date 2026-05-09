@@ -1,7 +1,9 @@
 import json
+import io
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -481,7 +483,8 @@ class RedAlibabaClaudeTests(unittest.TestCase):
             repaired_payloads.append(json.loads(json.dumps(payload)))
             return second
 
-        with patch.object(proxy, "TOOL_REPAIR_MAX_ROUNDS", 2), \
+        with patch.object(proxy, "LIVE_EXTERNAL_TOOL_STREAMING", False), \
+             patch.object(proxy, "TOOL_REPAIR_MAX_ROUNDS", 2), \
              patch.object(proxy, "proxy_openai_chat_with_context_retry", side_effect=fake_retry):
             text = "".join(
                 proxy.anthropic_sse_from_openai_stream_with_internal_tools(
@@ -537,7 +540,8 @@ class RedAlibabaClaudeTests(unittest.TestCase):
             repaired_payloads.append(json.loads(json.dumps(payload)))
             return second
 
-        with patch.object(proxy, "TOOL_REPAIR_MAX_ROUNDS", 2), \
+        with patch.object(proxy, "LIVE_EXTERNAL_TOOL_STREAMING", False), \
+             patch.object(proxy, "TOOL_REPAIR_MAX_ROUNDS", 2), \
              patch.object(proxy, "proxy_openai_chat_with_context_retry", side_effect=fake_retry):
             text = "".join(
                 proxy.anthropic_sse_from_openai_stream_with_internal_tools(
@@ -571,7 +575,56 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertEqual(repaired_payloads[0]["messages"][-1]["role"], "user")
         self.assertIn("incomplete or invalid JSON", repaired_payloads[0]["messages"][-1]["content"])
         self.assertNotEqual(repaired_payloads[0]["messages"][-1]["role"], "tool")
-        self.assertIn('\\"file_path\\":\\"landing.html\\"', text)
+        self.assertIn('\\"file_path\\"', text)
+        self.assertIn(':\\"landing.html\\",\\"content\\":\\"ok\\"}', text)
+        self.assertIn('"stop_reason": "tool_use"', text)
+
+    def test_stream_external_write_tool_emits_input_json_deltas_live(self):
+        response = FakeResponse(
+            lines=[
+                b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_write","type":"function","function":{"name":"Write","arguments":"{\\"file_path\\""}}]},"finish_reason":null}]}',
+                b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\\"hello.html\\",\\"content\\":\\"<h1>"}}]},"finish_reason":null}]}',
+                b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"Oi</h1>\\"}"}}]},"finish_reason":"tool_calls"}]}',
+                b"data: [DONE]",
+            ]
+        )
+        events = list(
+            proxy.anthropic_sse_from_openai_stream_with_internal_tools(
+                response,
+                payload={
+                    "model": "qwen3.6-plus",
+                    "messages": [{"role": "user", "content": "crie uma pagina"}],
+                    "tools": [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": "Write",
+                                "parameters": {
+                                    "type": "object",
+                                    "properties": {"file_path": {"type": "string"}, "content": {"type": "string"}},
+                                    "required": ["file_path", "content"],
+                                },
+                            },
+                        }
+                    ],
+                    "stream": True,
+                    "max_tokens": 1024,
+                },
+                alias=proxy.resolve_model("Qwen 3.6 Plus"),
+                model_name="Qwen 3.6 Plus",
+                context_window=262144,
+                input_tokens=100,
+            )
+        )
+        text = "".join(events)
+        self.assertIn('"content_block": {"type": "tool_use", "id": "call_write", "name": "Write", "input": {}}', text)
+        self.assertIn('"partial_json": "{\\"file_path\\""', text)
+        self.assertIn('"partial_json": ":\\"hello.html\\",\\"content\\":\\"<h1>"', text)
+        self.assertIn('"partial_json": "Oi</h1>\\"}"', text)
+        self.assertLess(
+            text.index('"partial_json": "{\\"file_path\\""'),
+            text.index('"partial_json": ":\\"hello.html\\",\\"content\\":\\"<h1>"'),
+        )
         self.assertIn('"stop_reason": "tool_use"', text)
 
     def test_stream_thinking_only_retries_before_empty_success(self):
@@ -811,7 +864,8 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertIn("did not execute any workspace tool", repaired_payloads[0]["messages"][-1]["content"])
         self.assertIn('"type": "thinking_delta"', text)
         self.assertIn("Vou criar uma landing page impressionante.", text)
-        self.assertIn('\\"file_path\\":\\"landing.html\\"', text)
+        self.assertIn('\\"file_path\\"', text)
+        self.assertIn(':\\"landing.html\\",\\"content\\":\\"ok\\"}', text)
         self.assertIn('"stop_reason": "tool_use"', text)
 
     def test_stream_tool_state_with_stop_finish_still_emits_tool_use(self):
@@ -851,7 +905,8 @@ class RedAlibabaClaudeTests(unittest.TestCase):
             )
         )
         self.assertIn('"type": "tool_use"', text)
-        self.assertIn('\\"file_path\\":\\"landing.html\\"', text)
+        self.assertIn('\\"file_path\\"', text)
+        self.assertIn(':\\"landing.html\\",\\"content\\":\\"ok\\"}', text)
         self.assertIn('"stop_reason": "tool_use"', text)
 
     def test_workspace_action_contract_is_injected_for_artifact_requests(self):
@@ -975,6 +1030,26 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         with proxy.app.test_client() as client:
             response = client.get("/v1/models")
         self.assertEqual(response.status_code, 401)
+
+    def test_auth_401_logs_masked_probe_summary(self):
+        with proxy.app.test_client() as client, io.StringIO() as buffer, redirect_stdout(buffer):
+            response = client.post(
+                "/v1/messages?beta=true",
+                headers={
+                    "Authorization": "Bearer wrong-secret-token",
+                    "Anthropic-Version": "2023-06-01",
+                    "Anthropic-Beta": "tools-2024-04-04",
+                    "User-Agent": "Claude-Desktop-Test",
+                },
+                json={},
+            )
+            output = buffer.getvalue()
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("[redalibabaclaude] auth-401 ", output)
+        self.assertIn('"authorization_scheme": "bearer"', output)
+        self.assertIn('"has_authorization": true', output)
+        self.assertIn('wro...n(len=18)', output)
+        self.assertNotIn("wrong-secret-token", output)
 
     def test_models_endpoint_lists_curated_models(self):
         with proxy.app.test_client() as client:

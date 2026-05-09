@@ -84,6 +84,8 @@ TODO_ONLY_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_TODO_ONLY_REPAIR_
 WORKSPACE_ACTION_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_WORKSPACE_ACTION_REPAIR_MAX_ROUNDS", 2))
 WEBFETCH_FALLBACK_TIMEOUT = max(1, env_int("REDALIBABACLAUDE_WEBFETCH_FALLBACK_TIMEOUT", 12))
 WEBFETCH_FALLBACK_MAX_CHARS = max(1000, env_int("REDALIBABACLAUDE_WEBFETCH_FALLBACK_MAX_CHARS", 24000))
+LIVE_EXTERNAL_TOOL_STREAMING = env_bool("REDALIBABACLAUDE_LIVE_EXTERNAL_TOOL_STREAMING", True)
+INTERNAL_TOOL_NAMES = {"WebSearch", "WebFetch"}
 DATA_DIR = Path(os.getenv("REDALIBABACLAUDE_DATA_DIR", "/var/lib/redalibabaclaude")).expanduser()
 TOKEN_METRICS_ENABLED = env_bool("REDALIBABACLAUDE_TOKEN_METRICS_ENABLED", False)
 TOKEN_METRICS_DB = Path(os.getenv("REDALIBABACLAUDE_TOKEN_METRICS_DB", str(DATA_DIR / "token_usage.sqlite3"))).expanduser()
@@ -113,6 +115,15 @@ http.headers.update(
         "User-Agent": "Mozilla/5.0 (compatible; REDSystemsBot/1.0; +https://redsystems.ddns.net)",
     }
 )
+
+
+def mask_token(value: str) -> str:
+    token = str(value or "").strip()
+    if not token:
+        return ""
+    if len(token) <= 4:
+        return "*" * len(token)
+    return f"{token[:3]}...{token[-1]}(len={len(token)})"
 
 
 class JsonResponseShim:
@@ -655,12 +666,39 @@ def authorize() -> Response | None:
             candidates.append(value)
     if any(token in AUTH_TOKENS for token in candidates):
         return None
+    print(
+        f"[redalibabaclaude] auth-401 {json.dumps(auth_probe_summary(), ensure_ascii=False)}",
+        flush=True,
+    )
     return error_response("authorization required", 401, "authentication_error")
 
 
 def client_ip() -> str:
     forwarded = str(request.headers.get("X-Forwarded-For") or "").split(",", 1)[0].strip()
     return forwarded or str(request.remote_addr or "")
+
+
+def auth_probe_summary() -> dict[str, Any]:
+    auth = str(request.headers.get("Authorization") or "").strip()
+    lower = auth.lower()
+    bearer_value = auth[7:].strip() if lower.startswith("bearer ") else ""
+    custom_headers = {}
+    for header in ("X-API-Key", "api-key", "apikey"):
+        value = str(request.headers.get(header) or "").strip()
+        if value:
+            custom_headers[header] = mask_token(value)
+    return {
+        "path": request.full_path or request.path,
+        "method": request.method,
+        "client_ip": client_ip(),
+        "user_agent": str(request.headers.get("User-Agent") or "")[:180],
+        "has_authorization": bool(auth),
+        "authorization_scheme": "bearer" if bearer_value else ("raw" if auth else ""),
+        "authorization_masked": mask_token(bearer_value or auth),
+        "custom_key_headers": custom_headers,
+        "anthropic_version": str(request.headers.get("Anthropic-Version") or "").strip(),
+        "anthropic_beta": str(request.headers.get("Anthropic-Beta") or "").strip()[:180],
+    }
 
 
 def default_model() -> dict[str, Any]:
@@ -2281,6 +2319,8 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
         text_index: int | None = None
         text_parts: list[str] = []
         tool_state: dict[int, dict[str, Any]] = {}
+        live_external_tool_count = 0
+        live_external_tool_started = False
         finish_reason = ""
         round_usage: dict[str, Any] = {}
 
@@ -2380,6 +2420,9 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
                         "id": str(tool_delta.get("id") or f"call_{uuid.uuid4().hex[:10]}"),
                         "name": "",
                         "arguments": [],
+                        "streamed_arguments": 0,
+                        "live_started": False,
+                        "live_block_index": None,
                     },
                 )
                 if tool_delta.get("id"):
@@ -2389,6 +2432,41 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
                     state["name"] = str(function["name"])
                 if function.get("arguments") is not None:
                     state["arguments"].append(str(function.get("arguments") or ""))
+                tool_name = str(state.get("name") or "")
+                if LIVE_EXTERNAL_TOOL_STREAMING and tool_name and tool_name not in INTERNAL_TOOL_NAMES:
+                    if not state.get("live_started"):
+                        state["live_started"] = True
+                        state["live_block_index"] = block_index + live_external_tool_count
+                        live_external_tool_count += 1
+                        live_external_tool_started = True
+                        yield sse_event(
+                            "content_block_start",
+                            {
+                                "type": "content_block_start",
+                                "index": state["live_block_index"],
+                                "content_block": {
+                                    "type": "tool_use",
+                                    "id": state.get("id") or f"toolu_{uuid.uuid4().hex[:10]}",
+                                    "name": tool_name,
+                                    "input": {},
+                                },
+                            },
+                        )
+                    streamed_arguments = safe_int(state.get("streamed_arguments"), 0)
+                    arguments_chunks = state.get("arguments") or []
+                    while streamed_arguments < len(arguments_chunks):
+                        partial_json = str(arguments_chunks[streamed_arguments] or "")
+                        if partial_json:
+                            yield sse_event(
+                                "content_block_delta",
+                                {
+                                    "type": "content_block_delta",
+                                    "index": state["live_block_index"],
+                                    "delta": {"type": "input_json_delta", "partial_json": partial_json},
+                                },
+                            )
+                        streamed_arguments += 1
+                    state["streamed_arguments"] = streamed_arguments
 
             if choice.get("finish_reason"):
                 finish_reason = str(choice.get("finish_reason") or "")
@@ -2414,6 +2492,14 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
         if text_open:
             yield sse_event("content_block_stop", {"type": "content_block_stop", "index": text_index})
             block_index += 1
+
+        if live_external_tool_started and finish_reason != "length":
+            for index in sorted(tool_state):
+                state = tool_state[index]
+                if state.get("live_started") and state.get("live_block_index") is not None:
+                    yield sse_event("content_block_stop", {"type": "content_block_stop", "index": state["live_block_index"]})
+            final_stop_reason = "tool_use"
+            break
 
         stream_tool_calls = openai_tool_calls_from_stream_state(tool_state)
         invalids = invalid_tool_calls(stream_tool_calls, current_payload)
