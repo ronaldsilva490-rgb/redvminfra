@@ -767,11 +767,14 @@ def compact_json_schema(schema: Any) -> dict[str, Any]:
 
 
 def compact_anthropic_tool(tool: dict[str, Any]) -> dict[str, Any]:
-    return {
+    compact = {
         "name": str(tool.get("name") or ""),
         "description": str(tool.get("description") or ""),
         "input_schema": compact_json_schema(tool.get("input_schema") or tool.get("parameters") or {}),
     }
+    if "eager_input_streaming" in tool:
+        compact["eager_input_streaming"] = bool(tool.get("eager_input_streaming"))
+    return compact
 
 
 def preserve_original_tools_in_system(payload: dict[str, Any], original_tools: list[dict[str, Any]]) -> None:
@@ -1195,19 +1198,23 @@ def messages() -> Response:
         )
         return error_response(status, "upstream provider temporary failure", last_text)
     if UPSTREAM_MODE != "generate":
-        upstream_content = getattr(upstream, "content", None)
-        if upstream_content is None:
-            upstream_content = str(getattr(upstream, "text", "")).encode("utf-8")
         content_type = upstream.headers.get("Content-Type", "application/json")
         if stream:
             response = Response(
                 close_after_iter(upstream, upstream.iter_content(chunk_size=STREAM_CHUNK_SIZE)),
                 status=upstream.status_code,
-                headers={"Content-Type": content_type},
+                headers={
+                    "Content-Type": content_type,
+                    "Cache-Control": "no-cache, no-transform",
+                    "X-Accel-Buffering": "no",
+                },
             )
             response.call_on_close(lambda: safe_close_response(upstream))
             app.logger.info("messages stream_open model=%s status=%s elapsed_ms=%d", alias["id"], upstream.status_code, int((time.monotonic() - started) * 1000))
             return response
+        upstream_content = getattr(upstream, "content", None)
+        if upstream_content is None:
+            upstream_content = str(getattr(upstream, "text", "")).encode("utf-8")
         safe_close_response(upstream)
         app.logger.info("messages complete model=%s status=%s elapsed_ms=%d bytes=%d", alias["id"], upstream.status_code, int((time.monotonic() - started) * 1000), len(upstream_content))
         return Response(upstream_content, status=upstream.status_code, headers={"Content-Type": content_type})
@@ -1216,6 +1223,8 @@ def messages() -> Response:
             close_after_iter(upstream, openai_delta_stream_to_anthropic(upstream.iter_lines(decode_unicode=False, chunk_size=STREAM_CHUNK_SIZE), alias["id"])),
             mimetype="text/event-stream",
         )
+        response.headers["Cache-Control"] = "no-cache, no-transform"
+        response.headers["X-Accel-Buffering"] = "no"
         response.call_on_close(lambda: safe_close_response(upstream))
         app.logger.info("messages generate_stream_open model=%s status=%s elapsed_ms=%d", alias["id"], upstream.status_code, int((time.monotonic() - started) * 1000))
         return response
@@ -1260,7 +1269,11 @@ def chat_completions() -> Response:
     response = Response(
         close_after_iter(upstream, upstream.iter_content(chunk_size=STREAM_CHUNK_SIZE)),
         status=200,
-        headers={"Content-Type": upstream.headers.get("Content-Type", "application/json")},
+        headers={
+            "Content-Type": upstream.headers.get("Content-Type", "application/json"),
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
     )
     response.call_on_close(lambda: safe_close_response(upstream))
     app.logger.info("chat_completions stream_open model=%s status=%s elapsed_ms=%d", alias["id"], upstream.status_code, int((time.monotonic() - started) * 1000))

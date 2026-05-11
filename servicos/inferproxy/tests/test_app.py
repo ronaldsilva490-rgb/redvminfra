@@ -26,6 +26,23 @@ class FakeResponse:
         yield self.text.encode("utf-8")
 
 
+class StreamingOnlyResponse:
+    status_code = 200
+    headers = {"Content-Type": "text/event-stream"}
+
+    @property
+    def content(self):
+        raise AssertionError("streaming response content was buffered")
+
+    @property
+    def text(self):
+        raise AssertionError("streaming response text was buffered")
+
+    def iter_content(self, chunk_size=1):
+        yield b"event: message_start\n"
+        yield b'data: {"type":"message_start","message":{"id":"msg_stream","type":"message","role":"assistant","content":[],"model":"Sonnet 4.6","stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":0,"output_tokens":0}}}\n\n'
+
+
 class InferProxyTranslationTests(unittest.TestCase):
     def test_claude_tool_schema_is_preserved_inside_openai_function(self) -> None:
         body = {
@@ -268,6 +285,35 @@ class InferProxyTranslationTests(unittest.TestCase):
         self.assertEqual(compact["properties"]["mode"], {"type": "string", "enum": ["a", "b"]})
         self.assertEqual(compact["required"], ["command"])
         self.assertIs(compact["additionalProperties"], False)
+
+    def test_compact_tool_schema_preserves_eager_input_streaming(self) -> None:
+        compact = inferproxy.compact_anthropic_tool(
+            {
+                "name": "Write",
+                "input_schema": {"type": "object"},
+                "eager_input_streaming": True,
+            }
+        )
+
+        self.assertIs(compact["eager_input_streaming"], True)
+
+    def test_messages_stream_does_not_buffer_upstream_content(self) -> None:
+        client = inferproxy.app.test_client()
+
+        old_mode = inferproxy.UPSTREAM_MODE
+        inferproxy.UPSTREAM_MODE = "messages"
+        try:
+            with patch.object(inferproxy, "upstream_messages", return_value=StreamingOnlyResponse()):
+                response = client.post(
+                    "/v1/messages",
+                    json={"model": "Sonnet 4.6", "messages": [{"role": "user", "content": "oi"}], "max_tokens": 32, "stream": True},
+                )
+        finally:
+            inferproxy.UPSTREAM_MODE = old_mode
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["X-Accel-Buffering"], "no")
+        self.assertIn(b"message_start", response.get_data())
 
     def test_messages_route_retries_same_model_before_returning_error(self) -> None:
         client = inferproxy.app.test_client()
