@@ -1,0 +1,21 @@
+[Unit]
+Description=RED InferProxy Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/inferproxy
+Environment=INFERPROXY_HOST=0.0.0.0
+Environment=INFERPROXY_PORT=5066
+EnvironmentFile=-/etc/inferproxy.env
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/opt/inferproxy/.venv/bin/python /opt/inferproxy/app.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/inferproxy.log
+StandardError=append:/var/log/inferproxy.log
+
+[Install]
+WantedBy=multi-user.target
