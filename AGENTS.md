@@ -16,11 +16,11 @@ Antes de mudar qualquer coisa:
 2. entenda o estado atual da VM;
 3. mude o minimo necessario;
 4. valide localmente;
-5. faça backup remoto antes de deploy;
+5. faca backup remoto antes de deploy;
 6. reinicie **so** o servico tocado;
 7. valide por HTTP, systemd e, quando fizer sentido, pela UI real.
 
-Nao chute. Nao “assuma que deve estar ok”. Teste.
+Nao chute. Nao "assuma que deve estar ok". Teste.
 
 ---
 
@@ -28,66 +28,71 @@ Nao chute. Nao “assuma que deve estar ok”. Teste.
 
 Hoje a RED Systems roda consolidada em **uma VM principal**.
 
-### Stack principal
+### Stack ativa
 
-- `servicos/portal`
-  - pagina inicial publica
-  - rota: `/`
-- `servicos/dashboard`
-  - painel principal da stack
-  - rota: `/dashboard/`
-- `servicos/proxy`
-  - proxy IA principal
-  - rota: `/proxy/`
-- `servicos/redia`
-  - runtime da RED I.A
-  - rota: `/redia/`
-- `servicos/redtrader`
-  - trading demo/paper
-  - rota: `/trader/`
-- `servicos/openclaw`
-  - assistente operacional privado / chatops
-  - rota: `/openclaw/`
-- `servicos/rapidleech`
-  - transfer hub legado oficializado
-  - rota: `/rapidleech/`
-- `servicos/redseb-monitor`
-  - painel remoto do ecossistema RED SEB / Safe Exam Browser
-  - rota: `:2580`
-- `servicos/proxy-lab`
-  - laboratorio pago de benchmark
-  - rota: `/proxy-lab/`
-- `servicos/extensao-iq-demo/bridge`
-  - bridge da extensao IQ
-  - rota: `/iq-bridge/`
+| Servico | Pasta no repo | Rota publica | Service systemd | Runtime na VM |
+|---|---|---|---|---|
+| Portal | `servicos/portal` | `/` | nginx | `/var/www/red-portal` |
+| Dashboard | `servicos/dashboard` | `/dashboard/` | `red-dashboard.service` | `/opt/redvm-dashboard` |
+| Proxy IA | `servicos/proxy` | `/proxy/` e `/ollama/` | `red-ollama-proxy.service` | `/opt/redvm-proxy` |
+| RED Proxy Pro | `servicos/redproxypro` | `/redproxypro/` | `redproxypro.service` | `/opt/redproxypro` |
+| RED Claude Proxy | `servicos/redclaudeproxy` | `/redclaudeproxy/` | `redclaudeproxy.service` | `/opt/redclaudeproxy` |
+| RED NIM Claude | `servicos/rednimclaude` | `:5050` | `rednimclaude.service` | `/opt/rednimclaude` |
+| RED Lightning Claude | `servicos/redlightningclaude` | `:5051` | `redlightningclaude.service` | `/opt/redlightningclaude` |
+| RED Alibaba Claude | `servicos/redalibabaclaude` | `:5052` | `redalibabaclaude.service` | `/opt/redalibabaclaude` |
+| RED Search (SearXNG) | `servicos/searxng` | `/search/` | `red-searxng.service` | `/opt/red-searxng` |
+| MS RED PDF | `servicos/msredpdf` | `/msredpdf/` | `msredpdf.service` | `/opt/msredpdf` |
+| RED I.A | `servicos/redia` | `/redia/` | `redia.service` | `/opt/redia` |
+| REDSEBIA | `servicos/redsebia` | `/redsebia/` | `red-sebia.service` | `/opt/redsebia` |
+| Proxy Lab | `servicos/proxy-lab` | `/proxy-lab/` | `red-proxy-lab.service` | `/opt/red-proxy-lab` |
+| Rapidleech | `servicos/rapidleech` | `/rapidleech/` | `rapidleech.service` | `/opt/rapidleech` |
+| RED SEB Monitor | `servicos/redseb-monitor` | `:2580` | `red-seb-monitor.service` | `/opt/red-seb-monitor` |
+| Modelos Counter | `servicos/modelos-counter` | interno | `modelos-counter.service` | — |
 
-### Serviços legados
+### Stack versionada mas removida desta VM
 
-- `servicos/deploy-agent`
-  - legado
-  - so tocar se houver motivo real
+Os servicos abaixo continuam no repo, mas **nao existem mais como unit systemd nem como runtime em `/opt/` na VM principal** em 2026-05-10. Ficam versionados para reativacao futura.
+
+| Servico | Pasta no repo | Service systemd | Motivo |
+|---|---|---|---|
+| RED Trader | `servicos/redtrader` | `redtrader.service` | removido da VM por decisao operacional |
+| OpenClaw | `servicos/openclaw` | `red-openclaw.service` | removido da VM por decisao operacional |
+| IQ Bridge | `servicos/extensao-iq-demo/bridge` | `red-iq-vision-bridge.service` | removido da VM por decisao operacional |
+| Deploy Agent | `servicos/deploy-agent` | `red-webhook.service` | legado, removido da VM |
+| RED SEB Webhook | `servicos/redseb-monitor/webhook-whatsapp.js` | `red-seb-webhook.service` | removido da VM por decisao operacional |
+
 ### O que NAO e mais pilar da stack
 
 - Evolution nao e mais necessaria para o fluxo principal.
 - A REDIA ja faz o papel de WhatsApp integrado.
-- O dashboard antigo de “WhatsApp” esta em transicao/legado; o caminho correto agora e **RED I.A** dentro do dashboard principal.
+- O dashboard antigo de "WhatsApp" esta em transicao/legado; o caminho correto agora e **RED I.A** dentro do dashboard principal.
 
 ---
 
-## 3. Mapa Rápido do Repo
+## 3. Mapa Rapido do Repo
 
 ```text
 servicos/
   portal/                Home publica
   dashboard/             Painel principal da VM unica
-  proxy/                 Proxy IA oficial
-  proxy-lab/             Laboratorio Groq/Mistral/NVIDIA
+  proxy/                 Proxy IA oficial (compatibilidade Ollama + NVIDIA)
+  redproxypro/           Proxy Vercel AI Gateway com rotacao de keys
+  redclaudeproxy/        Ponte Claude Desktop/Code para modelos do proxy normal
+  rednimclaude/          Gateway direto para NVIDIA NIM (porta 5050)
+  redlightningclaude/    Gateway direto para Lightning AI (porta 5051)
+  redalibabaclaude/      Gateway direto para Alibaba DashScope (porta 5052)
+  searxng/               Busca web gratuita para OpenClaude
+  msredpdf/              Analise juridica de PDFs/DOCX com IA
+  proxy-lab/             Laboratorio pago de benchmark
   redia/                 Runtime da RED I.A
-  redtrader/             Trader demo/paper
-  openclaw/              Assistente operacional privado OpenClaw
+  redsebia/              Portal, wallet e backend do produto REDSEBIA
+  redtrader/             Trader demo/paper (inativo)
+  openclaw/              Assistente operacional privado (inativo)
   rapidleech/            Transfer hub legado oficializado
   redseb-monitor/        Painel remoto do ecossistema RED SEB
-  extensao-iq-demo/      Extensao Chrome e bridge
+  extensao-iq-demo/      Extensao Chrome e IQ Bridge (inativo)
+  extensao-iq-motor-lab/ Motor de laboratorio remoto para IQ
+  modelos-counter/       Contador de uso de modelos
   deploy-agent/          Legado
 
 infraestrutura/
@@ -95,9 +100,30 @@ infraestrutura/
   systemd/               Units oficiais
   docker/                Artefatos auxiliares/legados
   scripts/               Scripts de infra
+  shell/                 Helpers shell
 
 ferramentas/
   vm/                    Paramiko, migracao e execucao remota
+  implantacao/           Analisadores e helpers de deploy
+  diagnosticos/          Checks sem credenciais hardcoded
+  avaliacoes/            Benchmarks de modelos
+  nvidia/                Testes e utilitarios NVIDIA NIM/NVCF
+  red_model_studio/      App desktop PySide6 para testar chat/imagem
+  redclaudecode/         Launcher visual do Claude Code
+  claude-desktop/        Configuradores Claude Desktop + RED Proxy Pro
+  claude-code-vscode/    Configuracao Claude Code VS Code + RED Proxy Pro
+  seb_frame_streamer/    GUI para simular sessao SEB via WebSocket
+  openclaw/              Ferramentas auxiliares do OpenClaw
+  iq_vision_benchmark/   Benchmarks visuais da IQ
+
+documentacao/
+  estado-atual-vm-2026-05-08.md   Snapshot mais recente
+  arquitetura.md
+  implantacao-servicos.md
+  migracao-mensal-vm.md
+  manual-completo.md
+  preparacao-vm.md
+  inventario-vm-antiga-2026-04-19.md
 ```
 
 ---
@@ -110,7 +136,7 @@ Quem mexe aqui deve agir assim:
 
 - pensar como dono da stack, nao como editor de arquivo;
 - buscar contexto antes de mudar;
-- evitar soluções “magicas” sem rastrear o efeito real;
+- evitar solucoes "magicas" sem rastrear o efeito real;
 - validar tudo que afirmar;
 - tratar deploy, nginx, systemd, env e UI como partes do mesmo sistema.
 
@@ -133,7 +159,7 @@ Sequencia padrao:
 - nao mexer em varios servicos se um so resolve;
 - nao sobrescrever env remoto no escuro;
 - nao hardcodar credenciais no repo;
-- nao dizer “feito” sem checar endpoint, unit ou UI.
+- nao dizer "feito" sem checar endpoint, unit ou UI.
 
 ---
 
@@ -170,7 +196,7 @@ rg -n "(g[h]p_|n[v]api-|g[s]k_|api_key|password|senha|token|secret)" -S .
 git status --short --ignored
 ```
 
-Se o usuario passar credenciais no chat, use **só para a tarefa atual**. Nao persista no repo.
+Se o usuario passar credenciais no chat, use **so para a tarefa atual**. Nao persista no repo.
 
 ---
 
@@ -197,9 +223,10 @@ Sempre fazer backup remoto antes de sobrescrever arquivo de runtime.
 
 Exemplos:
 
-- `/root/backups/dashboard-redia-YYYYMMDD-HHMMSS.tar.gz`
-- `/root/backups/dashboard-routes-YYYYMMDD-HHMMSS.tar.gz`
-- backup de env antes de alterar `REDIA_ADMIN_TOKEN` etc.
+- `/root/backups/dashboard-YYYYMMDD-HHMMSS.tgz`
+- `/root/backups/proxy-YYYYMMDD-HHMMSS.tgz`
+- `/root/backups/redia-YYYYMMDD-HHMMSS.tgz`
+- backup de env antes de alterar tokens ou keys
 
 ### 6.3. Regra de reinicio
 
@@ -224,56 +251,86 @@ python ferramentas/vm/paramiko_exec.py "systemctl is-active red-dashboard"
 
 ## 7. Runtime Paths Oficiais na VM
 
-Use estes caminhos como referencia operacional:
+### Codigo
 
+- portal: `/var/www/red-portal`
 - dashboard: `/opt/redvm-dashboard`
 - proxy: `/opt/redvm-proxy`
+- red proxy pro: `/opt/redproxypro`
+- red claude proxy: `/opt/redclaudeproxy`
+- red nim claude: `/opt/rednimclaude`
+- red lightning claude: `/opt/redlightningclaude`
+- red alibaba claude: `/opt/redalibabaclaude`
+- red search: `/opt/red-searxng`
+- msredpdf: `/opt/msredpdf`
 - redia: `/opt/redia`
+- redsebia: `/opt/redsebia`
 - redtrader: `/opt/redtrader`
 - openclaw: `/opt/red-openclaw`
 - rapidleech: `/opt/rapidleech`
-- red seb monitor: `/opt/red-seb-monitor`
 - proxy-lab: `/opt/red-proxy-lab`
+- red seb monitor: `/opt/red-seb-monitor`
 - iq bridge: `/opt/red-iq-vision-bridge`
-- portal: `/var/www/red-portal`
+- teste esports: `/var/www/teste`
 
-Dados:
+### Dados
 
-- dashboard data: `/opt/redvm-dashboard/data`
-- proxy data: `/var/lib/redvm-proxy`
-- redia data: `/opt/redia/data`
-- redtrader data: `/opt/redtrader/data`
-- proxy-lab data: `/opt/red-proxy-lab/data`
+- dashboard: `/opt/redvm-dashboard/data`
+- proxy: `/var/lib/redvm-proxy`
+- red proxy pro: `/var/lib/redproxypro`
+- red claude proxy: `/var/lib/redclaudeproxy`
+- msredpdf: `/var/lib/msredpdf`
+- redia: `/opt/redia/data`
+- redsebia: `/opt/redsebia/data`
+- redtrader: `/opt/redtrader/data`
+- proxy-lab: `/opt/red-proxy-lab/data`
 - rapidleech files: `/opt/rapidleech/files`
-- iq bridge data: `/opt/red-iq-vision-bridge/data`
 - red seb monitor downloads: `/opt/red-seb-monitor/data/downloads`
+- iq bridge: `/opt/red-iq-vision-bridge/data`
 
 ---
 
-## 8. Nginx e Rotas Públicas
+## 8. Nginx e Rotas Publicas
 
-Arquivo central:
+Arquivo central versionado:
 
 - `infraestrutura/nginx/red-friendly-paths.nginx.conf`
 
-Atalhos importantes:
+Na VM, o include ativo fica em `/etc/nginx/redvm-routes/red-enabled-paths.conf`; a copia em `/etc/nginx/snippets/red-friendly-paths.nginx.conf` e mantida como espelho.
 
-- `/`
-- `/dashboard/`
-- `/proxy/`
-- `/redia/`
-- `/trader/`
-- `/proxy-lab/`
-- `/iq-bridge/`
-- `/openclaw/`
-- `/rapidleech/`
-- `:2580`
+### Rotas publicadas
+
+```text
+/                Portal
+/portal-assets/  Assets do portal
+/modelo1/        Landing estatica modelo 1
+/modelo2/        Landing estatica modelo 2
+/teste/          Site estatico de teste esports
+/dashboard/      Dashboard principal
+/proxy/          Proxy IA oficial
+/redproxypro/    Proxy Vercel AI Gateway
+/redclaudeproxy/ Ponte Claude para proxy normal
+/ollama/         Alias do proxy oficial
+/search/         Busca web gratuita via SearXNG
+/msredpdf/       Analise juridica de PDF/DOCX
+/redia/          Runtime da RED I.A
+/trader/         RED Trader
+/proxy-lab/      Proxy Lab
+/iq-bridge/      IQ Bridge
+/openclaw/       OpenClaw
+/rapidleech/     Rapidleech
+/redsebia/       Portal e backend REDSEBIA
+/redseb/         SEB Monitor via nginx
+/download/       Downloads auxiliares do SEB Monitor
+:5050            RED NIM Claude (TLS proprio)
+:5051            RED Lightning Claude (TLS proprio)
+:5052            RED Alibaba Claude (TLS proprio)
+:2580            RED SEB Monitor
+```
 
 ### Rotas internas do dashboard
 
-O dashboard principal agora usa **rotas reais por aba**, e nao so troca de view em JS.
-
-Caminhos canônicos:
+O dashboard principal usa **rotas reais por aba**:
 
 - `/dashboard/`
 - `/dashboard/servicos`
@@ -287,7 +344,7 @@ Caminhos canônicos:
 - `/dashboard/firewall`
 - `/dashboard/processos`
 
-Se mexer na navegação do dashboard:
+Se mexer na navegacao do dashboard:
 
 1. alinhe template + frontend + backend;
 2. preserve `pushState/popstate`;
@@ -360,12 +417,93 @@ Hoje ele:
 ### Observacoes importantes
 
 - o dashboard principal depende de `REDIA_ADMIN_TOKEN` para falar com a REDIA;
-- se o painel RED I.A parecer “vazio”, verifique primeiro se o token do dashboard bate com `/opt/redia/.env`;
+- se o painel RED I.A parecer "vazio", verifique primeiro se o token do dashboard bate com `/opt/redia/.env`;
 - rotas novas do dashboard nao substituem o runtime da REDIA, so o controlam.
 
 ---
 
-## 11. RED Trader
+## 11. Proxies IA
+
+### Proxy oficial (`servicos/proxy`)
+
+- compatibilidade Ollama
+- upstream NVIDIA NIM
+- base operacional da stack
+- rota: `/proxy/` e `/ollama/`
+
+### RED Proxy Pro (`servicos/redproxypro`)
+
+- Vercel AI Gateway com rotacao de keys
+- keys reais em `/etc/redproxypro.env`, nunca no repo
+- rota: `/redproxypro/`
+
+### RED Claude Proxy (`servicos/redclaudeproxy`)
+
+- ponte dedicada do Claude Desktop/Code para os modelos do proxy normal
+- usa `/etc/redclaudeproxy.env`
+- rota: `/redclaudeproxy/`
+
+### RED NIM Claude (`servicos/rednimclaude`)
+
+- gateway direto para NVIDIA NIM em porta propria (5050)
+- TLS proprio, auth `red`
+
+### RED Lightning Claude (`servicos/redlightningclaude`)
+
+- gateway direto para Lightning AI em porta propria (5051)
+- TLS proprio, auth `red`
+
+### RED Alibaba Claude (`servicos/redalibabaclaude`)
+
+- gateway direto para Alibaba DashScope multi-regiao em porta propria (5052)
+- TLS proprio, auth `red`
+
+### Proxy Lab (`servicos/proxy-lab`)
+
+- laboratorio isolado
+- benchmark pago
+- Groq, Mistral, NVIDIA e afins
+- nao misturar achado experimental com proxy oficial sem teste claro
+
+---
+
+## 12. Servicos Complementares
+
+### RED Search / SearXNG (`servicos/searxng`)
+
+- busca web gratuita usada pelo OpenClaude via provedor custom
+- rota: `/search/`
+
+### MS RED PDF (`servicos/msredpdf`)
+
+- analise juridica de PDFs/DOCX com IA
+- integrado ao proxy IA oficial
+- rota: `/msredpdf/`
+
+### REDSEBIA (`servicos/redsebia`)
+
+- portal do cliente, admin, wallet, PIX e runtime API
+- produto independente
+- rota: `/redsebia/`
+
+### Rapidleech (`servicos/rapidleech`)
+
+- transfer hub legado oficializado como parte da stack
+- rota: `/rapidleech/`
+
+### RED SEB Monitor (`servicos/redseb-monitor`)
+
+- painel remoto do ecossistema RED SEB / Safe Exam Browser
+- porta dedicada `:2580`
+
+### Modelos Counter (`servicos/modelos-counter`)
+
+- contador de uso de modelos do proxy
+- servico interno sem rota publica
+
+---
+
+## 13. RED Trader (inativo)
 
 ### Papel
 
@@ -375,13 +513,9 @@ Hoje ele:
 
 - operar sempre assumindo ambiente demo;
 - evitar automacoes cegas sem olhar logs e painel;
-- quando mexer em estrategia, separar:
-  - logica de codigo
-  - comite/modelos
-  - UI
-  - notificacoes
+- quando mexer em estrategia, separar logica de codigo, modelos, UI e notificacoes.
 
-### Integrações relevantes
+### Integracoes relevantes
 
 - notifica por REDIA/Baileys
 - usa proxy principal
@@ -389,9 +523,11 @@ Hoje ele:
 
 ---
 
-## 12. Extensao IQ Demo + Bridge
+## 14. Extensao IQ Demo + Bridge (inativo)
 
 `servicos/extensao-iq-demo` e `servicos/extensao-iq-demo/bridge` servem para capturar/automatizar a IQ demo.
+
+`servicos/extensao-iq-motor-lab` existe para iteracao rapida por JSON remoto antes de tocar a extensao principal.
 
 ### O que ja foi aprendido
 
@@ -411,28 +547,22 @@ Se for mexer nisso:
 
 ---
 
-## 13. Proxy e Proxy Lab
+## 15. OpenClaw (inativo)
 
-### Proxy oficial
+OpenClaw e o assistente operacional privado da RED.
 
-`servicos/proxy`:
+Papel esperado:
 
-- compatibilidade Ollama
-- upstream NVIDIA
-- base operacional da stack
+- chatops
+- operacao de host
+- uso do proxy RED como backend de modelos
+- integracao privada por WhatsApp
 
-### Proxy Lab
-
-`servicos/proxy-lab`:
-
-- laboratorio isolado
-- benchmark pago
-- Groq, Mistral, NVIDIA e afins
-- nao misturar achado experimental com proxy oficial sem teste claro
+Ele nao substitui dashboard, RED I.A, proxy ou RED Trader.
 
 ---
 
-## 14. READMEs e Documentacao
+## 16. READMEs e Documentacao
 
 Sempre que a arquitetura mudar, alinhe pelo menos:
 
@@ -440,13 +570,14 @@ Sempre que a arquitetura mudar, alinhe pelo menos:
 - `AGENTS.md`
 - `infraestrutura/README.md`
 - `servicos/README.md`
+- `ferramentas/README.md`
 - `servicos/<servico>/README.md` relevante
 
 Se a realidade da VM mudou e o README continua contando a historia antiga, isso e bug de documentacao.
 
 ---
 
-## 15. Git e Entrega
+## 17. Git e Entrega
 
 ### Fluxo recomendado
 
@@ -460,7 +591,7 @@ Se a realidade da VM mudou e o README continua contando a historia antiga, isso 
 ### Nao fazer
 
 - commitar segredo
-- deixar repo “quase certo”
+- deixar repo "quase certo"
 - empurrar alteracao sem refletir runtime real
 
 ### Quando responder ao usuario
@@ -475,7 +606,7 @@ Dizer sempre:
 
 ---
 
-## 16. Checklist de Operacao
+## 18. Checklist de Operacao
 
 ### Se tocar dashboard
 
@@ -495,6 +626,14 @@ Dizer sempre:
 - `systemctl is-active redia`
 - validar `/redia/` ou `/dashboard/api/redia`
 
+### Se tocar proxy/proxies
+
+- validar sintaxe local
+- deploy
+- reiniciar apenas o servico tocado (`red-ollama-proxy`, `redproxypro`, `redclaudeproxy`, `rednimclaude`, `redlightningclaude`, `redalibabaclaude`)
+- `systemctl is-active <service>`
+- testar endpoint com curl
+
 ### Se tocar nginx
 
 - backup remoto
@@ -510,14 +649,41 @@ Dizer sempre:
 - testar `/iq-bridge/healthz`
 - se UX/automacao mudou: validar no navegador real
 
+### Se tocar REDSEBIA
+
+- validar sintaxe local
+- deploy
+- `systemctl restart red-sebia`
+- `systemctl is-active red-sebia`
+- testar `/redsebia/`
+
+### Se tocar SearXNG
+
+- deploy
+- `systemctl restart red-searxng`
+- `systemctl is-active red-searxng`
+- testar `/search/`
+
+### Se tocar MS RED PDF
+
+- validar sintaxe local
+- deploy
+- `systemctl restart msredpdf`
+- `systemctl is-active msredpdf`
+- testar `/msredpdf/`
+
 ---
 
-## 17. Verdades Operacionais Deste Projeto
+## 19. Verdades Operacionais Deste Projeto
 
 - O repo deve refletir a VM unica.
 - O dashboard principal e o centro da operacao.
 - RED I.A e parte do dashboard principal, nao um apendice sem dono.
 - Proxy Lab e laboratorio, nao producao.
+- RED Proxy Pro, RED Claude Proxy, RED NIM Claude, RED Lightning Claude e RED Alibaba Claude sao gateways dedicados para Claude Desktop/Code e devem ser tratados como infra essencial.
+- RED Search (SearXNG) e MS RED PDF sao servicos essenciais ativos.
+- REDSEBIA e produto independente com backend proprio.
 - Evolution nao e mais eixo principal.
+- OpenClaw, RED Trader e IQ Bridge estao **removidos da VM** (nao existem mais como unit nem runtime), nao apenas inativos. Continuam versionados para reativacao futura.
 - O usuario prefere progresso real com validacao, nao promessa.
-- Sempre que houver duvida entre “parece” e “eu testei”, escolha testar.
+- Sempre que houver duvida entre "parece" e "eu testei", escolha testar.

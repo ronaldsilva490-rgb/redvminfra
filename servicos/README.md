@@ -24,6 +24,7 @@ redseb-monitor/         Painel remoto do ecossistema SEB
 redsebia/               Novo portal, wallet e runtime do produto REDSEBIA
 extensao-iq-demo/       Extensao Chrome e IQ Bridge
 extensao-iq-motor-lab/  Motor secundario de experimentacao remota na IQ
+modelos-counter/        Contador de uso de modelos (servico interno)
 deploy-agent/           Legado
 ```
 
@@ -48,6 +49,7 @@ deploy-agent/           Legado
 - [redsebia/README.md](redsebia/README.md)
 - [extensao-iq-demo/README.md](extensao-iq-demo/README.md)
 - [extensao-iq-motor-lab/README.md](extensao-iq-motor-lab/README.md)
+- [modelos-counter/server.py](modelos-counter/server.py) _(servico interno, sem README dedicado)_
 - [deploy-agent/README.md](deploy-agent/README.md)
 
 ## Regras operacionais
@@ -65,27 +67,27 @@ deploy-agent/           Legado
 - `rapidleech/` virou parte oficial da stack e deve ser tratado como runtime publicado por `/rapidleech/`, nao como pasta solta fora do repo.
 - `redseb-monitor/` e o painel remoto oficial do ecossistema RED SEB / Safe Exam Browser, hoje exposto em `:2580`.
 - `redsebia/` e o backend independente do novo produto REDSEBIA, com portal do cliente, admin, wallet, PIX e runtime API.
-- `openclaw/`, `redtrader/`, `extensao-iq-demo/bridge`, `deploy-agent/` e o webhook WhatsApp do SEB continuam versionados, mas estao inativos na VM principal em 2026-05-08.
+- `openclaw/`, `redtrader/`, `extensao-iq-demo/bridge`, `deploy-agent/` e o webhook WhatsApp do SEB continuam versionados, mas foram **removidos da VM principal** em 2026-05-10 (sem unit systemd nem runtime em `/opt/`).
 - `extensao-iq-motor-lab/` existe para iteracao rapida por JSON remoto antes de tocar a extensao principal.
 - `deploy-agent/` e legado; so mexa se houver motivo real.
 
-## Estado da VM principal em 2026-05-08
+## Estado da VM principal em 2026-05-10
 
 Ativos:
 
 ```text
-dashboard, proxy, redproxypro, redclaudeproxy, rednimclaude, redlightningclaude,
-redalibabaclaude, searxng, msredpdf, rapidleech, redia, redsebia, red-seb-monitor,
-proxy-lab, modelos-counter
+portal, dashboard, proxy, redproxypro, redclaudeproxy, rednimclaude,
+redlightningclaude, redalibabaclaude, searxng, msredpdf, rapidleech, redia,
+redsebia, red-seb-monitor, proxy-lab, modelos-counter
 ```
 
-Inativos por decisao operacional:
+Inativos por decisao operacional, removidos da VM mas versionados no repo:
 
 ```text
 openclaw, redtrader, iq-bridge, deploy-agent, red-seb-webhook
 ```
 
-Snapshot completo: [../documentacao/estado-atual-vm-2026-05-08.md](../documentacao/estado-atual-vm-2026-05-08.md)
+Snapshot completo: [../documentacao/estado-atual-vm-2026-05-10.md](../documentacao/estado-atual-vm-2026-05-10.md)
 
 ## Padrao esperado para cada servico
 

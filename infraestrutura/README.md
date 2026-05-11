@@ -7,6 +7,7 @@ systemd/  Units oficiais dos servicos.
 nginx/    Friendly paths e reverse proxy.
 docker/   Artefatos auxiliares/legados.
 scripts/  Instalacao, sync e apoio operacional.
+shell/    Helpers shell (red-root e afins).
 ```
 
 Antes de aplicar qualquer unit ou config em uma VM:
@@ -45,7 +46,7 @@ Na VM principal, `infraestrutura/nginx/red-friendly-paths.nginx.conf` e publicad
 :2580         RED SEB Monitor
 ```
 
-## Units ativas na VM principal em 2026-05-08
+## Units ativas na VM principal em 2026-05-10
 
 ```text
 red-dashboard.service
@@ -65,7 +66,7 @@ red-seb-monitor.service
 red-proxy-lab.service
 ```
 
-Units versionadas, mas inativas nesta VM:
+Units versionadas no repo, mas **removidas da VM** (sem unit systemd nem runtime):
 
 ```text
 red-openclaw.service

@@ -41,7 +41,7 @@ Hoje a RED Systems roda com uma arquitetura de VM unica. O objetivo deste reposi
 - `/redseb/` e `/download/` -> caminhos nginx do SEB Monitor
 - `:2580` -> RED SEB Monitor
 
-Estado da VM em 2026-05-08: OpenClaw, RED Trader, IQ Bridge, Deploy Agent e webhook SEB continuam no repo, mas estao inativos na VM principal por decisao operacional. O snapshot atual esta em [documentacao/estado-atual-vm-2026-05-08.md](documentacao/estado-atual-vm-2026-05-08.md).
+Estado da VM em 2026-05-10: OpenClaw, RED Trader, IQ Bridge, Deploy Agent e webhook SEB continuam versionados no repo, mas foram **removidos da VM principal** (sem unit systemd nem runtime em `/opt`) por decisao operacional. O snapshot atual esta em [documentacao/estado-atual-vm-2026-05-10.md](documentacao/estado-atual-vm-2026-05-10.md).
 
 ### Servicos principais
 
@@ -62,11 +62,12 @@ Estado da VM em 2026-05-08: OpenClaw, RED Trader, IQ Bridge, Deploy Agent e webh
 | Proxy Lab | `servicos/proxy-lab` | `/opt/red-proxy-lab` | `red-proxy-lab.service` | ativo |
 | Rapidleech | `servicos/rapidleech` | `/opt/rapidleech` | `rapidleech.service` | ativo |
 | RED SEB Monitor | `servicos/redseb-monitor` | `/opt/red-seb-monitor` | `red-seb-monitor.service` | ativo |
-| RED Trader | `servicos/redtrader` | `/opt/redtrader` | `redtrader.service` | inativo nesta VM |
-| OpenClaw | `servicos/openclaw` | `/opt/red-openclaw` | `red-openclaw.service` | inativo nesta VM |
-| IQ Bridge | `servicos/extensao-iq-demo/bridge` | `/opt/red-iq-vision-bridge` | `red-iq-vision-bridge.service` | inativo nesta VM |
-| Deploy Agent | `servicos/deploy-agent` | legado | `red-webhook.service` | inativo/legado |
-| RED SEB Webhook | `servicos/redseb-monitor/webhook-whatsapp.js` | `/opt/red-seb-monitor` | `red-seb-webhook.service` | inativo nesta VM |
+| Modelos Counter | `servicos/modelos-counter` | — | `modelos-counter.service` | ativo |
+| RED Trader | `servicos/redtrader` | `/opt/redtrader` | `redtrader.service` | removido da VM |
+| OpenClaw | `servicos/openclaw` | `/opt/red-openclaw` | `red-openclaw.service` | removido da VM |
+| IQ Bridge | `servicos/extensao-iq-demo/bridge` | `/opt/red-iq-vision-bridge` | `red-iq-vision-bridge.service` | removido da VM |
+| Deploy Agent | `servicos/deploy-agent` | legado | `red-webhook.service` | removido da VM |
+| RED SEB Webhook | `servicos/redseb-monitor/webhook-whatsapp.js` | `/opt/red-seb-monitor` | `red-seb-webhook.service` | removido da VM |
 
 ---
 
@@ -93,30 +94,41 @@ servicos/
   redsebia/              Novo portal, wallet e backend do produto REDSEBIA
   extensao-iq-demo/      Extensao Chrome e IQ Bridge
   extensao-iq-motor-lab/ Motor de laboratorio remoto para IQ
+  modelos-counter/       Contador de uso de modelos (servico interno)
   deploy-agent/          Legado
 
 infraestrutura/
   nginx/                 Friendly paths e reverse proxy
   systemd/               Units oficiais
   scripts/               Apoio de infra
+  shell/                 Helpers shell (red-root)
   docker/                Artefatos auxiliares e legados
 
 ferramentas/
   vm/                    Paramiko, execucao remota e migracao
-  claude-desktop/        Configuracao Claude Desktop + RED Proxy Pro
-  claude-code-vscode/    Configuracao Claude Code VS Code + RED Proxy Pro
-  iq_vision_benchmark/   Benchmarks visuais da IQ
+  implantacao/           Analisadores e helpers de deploy
+  diagnosticos/          Checks sem credenciais hardcoded
+  avaliacoes/            Benchmarks de modelos
+  nvidia/                Testes e utilitarios NVIDIA NIM/NVCF
+  openclaw/              Benchmark e testes do OpenClaw
   red_model_studio/      App desktop para testar modelos
   redclaudecode/         Launcher do Claude Code
+  claude-desktop/        Configuracao Claude Desktop + RED Proxy Pro
+  claude-code-vscode/    Configuracao Claude Code VS Code + RED Proxy Pro
+  seb_frame_streamer/    GUI para simular sessao SEB via WebSocket
+  iq_vision_benchmark/   Benchmarks visuais da IQ
 
 documentacao/
+  estado-atual-vm-2026-05-10.md
   estado-atual-vm-2026-05-08.md
+  estado-atual-vm-2026-05-06.md
   arquitetura.md
   implantacao-servicos.md
   inventario-vm-antiga-2026-04-19.md
   migracao-mensal-vm.md
   manual-completo.md
   preparacao-vm.md
+  historico/             Relatorios e analises de versoes anteriores
 ```
 
 ---
@@ -154,6 +166,9 @@ Cada servico agora tem um guia proprio de instalacao em qualquer VM:
 - [servicos/proxy/README.md](servicos/proxy/README.md)
 - [servicos/redproxypro/README.md](servicos/redproxypro/README.md)
 - [servicos/redclaudeproxy/README.md](servicos/redclaudeproxy/README.md)
+- [servicos/rednimclaude/README.md](servicos/rednimclaude/README.md)
+- [servicos/redlightningclaude/README.md](servicos/redlightningclaude/README.md)
+- [servicos/redalibabaclaude/README.md](servicos/redalibabaclaude/README.md)
 - [servicos/msredpdf/README.md](servicos/msredpdf/README.md)
 - [servicos/searxng/README.md](servicos/searxng/README.md)
 - [servicos/proxy-lab/README.md](servicos/proxy-lab/README.md)
@@ -435,6 +450,7 @@ git status --short --ignored
 - [AGENTS.md](AGENTS.md)
 - [servicos/README.md](servicos/README.md)
 - [infraestrutura/README.md](infraestrutura/README.md)
+- [ferramentas/README.md](ferramentas/README.md)
 - [documentacao/preparacao-vm.md](documentacao/preparacao-vm.md)
 - [documentacao/implantacao-servicos.md](documentacao/implantacao-servicos.md)
 - [documentacao/manual-completo.md](documentacao/manual-completo.md)

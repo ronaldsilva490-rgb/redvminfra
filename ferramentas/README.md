@@ -8,11 +8,13 @@ implantacao/  Analisadores e helpers de deploy.
 diagnosticos/ Espaco para checks sem credenciais hardcoded.
 avaliacoes/   Benchmarks de modelos.
 nvidia/       Testes e utilitarios NVIDIA NIM/NVCF.
+openclaw/     Benchmark e testes do OpenClaw.
 red_model_studio/ App desktop PySide6 para testar chat/imagem do proxy.
 redclaudecode/  Launcher visual do Claude Code usando o proxy da RED Systems.
 claude-desktop/  Configuradores do Claude Desktop para RED Proxy Pro, incluindo modo sem VMP.
 claude-code-vscode/  Configuracao da extensao Claude Code no VS Code via RED Proxy Pro.
 seb_frame_streamer/ GUI simples para simular uma sessao SEB real via WebSocket.
+iq_vision_benchmark/ Benchmarks visuais da IQ.
 ```
 
 Scripts antigos com senha hardcoded foram preservados em `.privado/legacy-vm-scripts/` e nao devem ser publicados.
