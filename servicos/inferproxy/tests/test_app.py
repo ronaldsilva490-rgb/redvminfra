@@ -1,7 +1,10 @@
 ﻿from __future__ import annotations
 
+import io
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import app as inferproxy
@@ -296,6 +299,163 @@ class InferProxyTranslationTests(unittest.TestCase):
         )
 
         self.assertIs(compact["eager_input_streaming"], True)
+
+    def test_compact_tool_schema_preserves_anthropic_tool_metadata(self) -> None:
+        compact = inferproxy.compact_anthropic_tool(
+            {
+                "name": "Write",
+                "description": "Writes files",
+                "input_schema": {"type": "object", "properties": {"content": {"type": "string", "title": "Content"}}},
+                "cache_control": {"type": "ephemeral"},
+                "strict": True,
+                "input_examples": [{"content": "hello"}],
+                "defer_loading": False,
+                "allowed_callers": ["user"],
+            }
+        )
+
+        self.assertEqual(compact["cache_control"], {"type": "ephemeral"})
+        self.assertIs(compact["strict"], True)
+        self.assertEqual(compact["input_examples"], [{"content": "hello"}])
+        self.assertIs(compact["defer_loading"], False)
+        self.assertEqual(compact["allowed_callers"], ["user"])
+        self.assertNotIn("title", compact["input_schema"]["properties"]["content"])
+
+    def test_server_tool_shape_passthrough_during_compaction(self) -> None:
+        tool = {
+            "type": "web_search_20250305",
+            "name": "web_search",
+            "max_uses": 3,
+            "allowed_domains": ["docs.anthropic.com"],
+        }
+
+        compact = inferproxy.compact_anthropic_tool(tool)
+
+        self.assertEqual(compact, tool)
+        self.assertIsNot(compact, tool)
+
+    def test_mcp_toolset_shape_passthrough_during_compaction(self) -> None:
+        tool = {
+            "type": "mcp_toolset",
+            "mcp_server_name": "context7",
+            "default_config": {"defer_loading": True},
+            "cache_control": {"type": "ephemeral"},
+        }
+
+        compact = inferproxy.compact_anthropic_tool(tool)
+
+        self.assertEqual(compact, tool)
+        self.assertIsNot(compact, tool)
+
+    def test_auto_beta_headers_for_anthropic_features(self) -> None:
+        body = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "resuma"},
+                        {"type": "document", "source": {"type": "file", "file_id": "file_123"}},
+                    ],
+                }
+            ],
+            "tools": [
+                {"name": "Write", "input_schema": {"type": "object"}, "eager_input_streaming": True},
+                {"type": "mcp_toolset", "mcp_server_name": "context7"},
+            ],
+            "mcp_servers": [{"type": "url", "url": "https://example.com/sse", "name": "context7"}],
+            "context_management": {"edits": [{"type": "clear_tool_uses_20250919"}]},
+            "output_config": {"task_budget": {"type": "tokens", "total": 20000}},
+        }
+
+        header = inferproxy.merged_beta_header("existing-beta", body)
+
+        self.assertEqual(
+            header.split(","),
+            [
+                "existing-beta",
+                "fine-grained-tool-streaming-2025-05-14",
+                "mcp-client-2025-11-20",
+                "files-api-2025-04-14",
+                "context-management-2025-06-27",
+                "task-budgets-2026-03-13",
+            ],
+        )
+
+    def test_auto_beta_headers_for_compaction(self) -> None:
+        header = inferproxy.merged_beta_header(
+            "",
+            {"context_management": {"edits": [{"type": "compact_20260112"}]}},
+        )
+
+        self.assertEqual(header, "compact-2026-01-12")
+
+    def test_content_shape_recognizes_richer_anthropic_blocks(self) -> None:
+        shape = inferproxy.content_shape(
+            [
+                {"type": "redacted_thinking", "data": "abc"},
+                {"type": "server_tool_use", "id": "srvtoolu_1", "name": "web_fetch", "input": {"url": "https://example.com"}},
+                {"type": "mcp_tool_result", "tool_use_id": "mcptoolu_1", "is_error": False, "content": [{"type": "text", "text": "ok"}]},
+                {"type": "document", "source": {"type": "file", "file_id": "file_1"}, "citations": {"enabled": True}},
+            ]
+        )
+
+        self.assertEqual(shape[0]["data_len"], 3)
+        self.assertEqual(shape[1]["name"], "web_fetch")
+        self.assertEqual(shape[2]["tool_use_id"], "mcptoolu_1")
+        self.assertEqual(shape[3]["file_id"], "file_1")
+
+    def test_model_detail_endpoint_returns_alias_metadata_and_request_id(self) -> None:
+        client = inferproxy.app.test_client()
+
+        response = client.get("/v1/models/Sonnet%204.6", headers={"request-id": "req_test_model"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["request-id"], "req_test_model")
+        self.assertEqual(response.get_json()["id"], "Sonnet 4.6")
+
+    def test_file_api_upload_and_payload_reference_resolution(self) -> None:
+        client = inferproxy.app.test_client()
+        old_store = inferproxy.FILE_STORE_PATH
+        with tempfile.TemporaryDirectory() as tmpdir:
+            inferproxy.FILE_STORE_PATH = Path(tmpdir)
+            try:
+                upload = client.post(
+                    "/v1/files",
+                    data={"file": (io.BytesIO(b"hello file"), "hello.txt")},
+                    content_type="multipart/form-data",
+                )
+                self.assertEqual(upload.status_code, 200)
+                file_data = upload.get_json()
+                self.assertEqual(file_data["type"], "file")
+                self.assertEqual(file_data["filename"], "hello.txt")
+
+                payload = {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "document",
+                                    "source": {"type": "file", "file_id": file_data["id"]},
+                                }
+                            ],
+                        }
+                    ]
+                }
+                inferproxy.resolve_payload_file_references(payload)
+                source = payload["messages"][0]["content"][0]["source"]
+                self.assertEqual(source["type"], "base64")
+                self.assertEqual(source["data"], "aGVsbG8gZmlsZQ==")
+
+                listed = client.get("/v1/files")
+                self.assertEqual(listed.status_code, 200)
+                self.assertEqual(listed.get_json()["data"][0]["id"], file_data["id"])
+
+                deleted = client.delete(f"/v1/files/{file_data['id']}")
+                self.assertEqual(deleted.status_code, 200)
+                self.assertIs(deleted.get_json()["deleted"], True)
+            finally:
+                inferproxy.FILE_STORE_PATH = old_store
 
     def test_messages_stream_does_not_buffer_upstream_content(self) -> None:
         client = inferproxy.app.test_client()

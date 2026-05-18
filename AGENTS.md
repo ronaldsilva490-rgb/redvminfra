@@ -37,9 +37,10 @@ Hoje a RED Systems roda consolidada em **uma VM principal**.
 | Proxy IA | `servicos/proxy` | `/proxy/` e `/ollama/` | `red-ollama-proxy.service` | `/opt/redvm-proxy` |
 | RED Proxy Pro | `servicos/redproxypro` | `/redproxypro/` | `redproxypro.service` | `/opt/redproxypro` |
 | RED Claude Proxy | `servicos/redclaudeproxy` | `/redclaudeproxy/` | `redclaudeproxy.service` | `/opt/redclaudeproxy` |
+| InferProxy | `servicos/inferproxy` | `/inferproxy/` | `inferproxy.service` | `/opt/inferproxy` |
 | RED NIM Claude | `servicos/rednimclaude` | `:5050` | `rednimclaude.service` | `/opt/rednimclaude` |
 | RED Lightning Claude | `servicos/redlightningclaude` | `:5051` | `redlightningclaude.service` | `/opt/redlightningclaude` |
-| RED Alibaba Claude | `servicos/redalibabaclaude` | `:5052` | `redalibabaclaude.service` | `/opt/redalibabaclaude` |
+| RED Alibaba Claude | `servicos/redalibabaclaude` | `/proxy2/` e `:5052` | `redalibabaclaude.service` | `/opt/redalibabaclaude` |
 | RED Search (SearXNG) | `servicos/searxng` | `/search/` | `red-searxng.service` | `/opt/red-searxng` |
 | MS RED PDF | `servicos/msredpdf` | `/msredpdf/` | `msredpdf.service` | `/opt/msredpdf` |
 | RED I.A | `servicos/redia` | `/redia/` | `redia.service` | `/opt/redia` |
@@ -78,9 +79,10 @@ servicos/
   proxy/                 Proxy IA oficial (compatibilidade Ollama + NVIDIA)
   redproxypro/           Proxy Vercel AI Gateway com rotacao de keys
   redclaudeproxy/        Ponte Claude Desktop/Code para modelos do proxy normal
+  inferproxy/            Ponte Claude Desktop/Code para InferAll
   rednimclaude/          Gateway direto para NVIDIA NIM (porta 5050)
   redlightningclaude/    Gateway direto para Lightning AI (porta 5051)
-  redalibabaclaude/      Gateway direto para Alibaba DashScope (porta 5052)
+  redalibabaclaude/      Gateway direto para Alibaba DashScope (/proxy2 e porta 5052)
   searxng/               Busca web gratuita para OpenClaude
   msredpdf/              Analise juridica de PDFs/DOCX com IA
   proxy-lab/             Laboratorio pago de benchmark
@@ -258,6 +260,7 @@ python ferramentas/vm/paramiko_exec.py "systemctl is-active red-dashboard"
 - proxy: `/opt/redvm-proxy`
 - red proxy pro: `/opt/redproxypro`
 - red claude proxy: `/opt/redclaudeproxy`
+- inferproxy: `/opt/inferproxy`
 - red nim claude: `/opt/rednimclaude`
 - red lightning claude: `/opt/redlightningclaude`
 - red alibaba claude: `/opt/redalibabaclaude`
@@ -279,6 +282,8 @@ python ferramentas/vm/paramiko_exec.py "systemctl is-active red-dashboard"
 - proxy: `/var/lib/redvm-proxy`
 - red proxy pro: `/var/lib/redproxypro`
 - red claude proxy: `/var/lib/redclaudeproxy`
+- inferproxy files: `/var/lib/inferproxy/files`
+- inferproxy env: `/etc/inferproxy.env`
 - msredpdf: `/var/lib/msredpdf`
 - redia: `/opt/redia/data`
 - redsebia: `/opt/redsebia/data`
@@ -310,6 +315,8 @@ Na VM, o include ativo fica em `/etc/nginx/redvm-routes/red-enabled-paths.conf`;
 /proxy/          Proxy IA oficial
 /redproxypro/    Proxy Vercel AI Gateway
 /redclaudeproxy/ Ponte Claude para proxy normal
+/inferproxy/     Ponte Claude para InferAll
+/proxy2/         Rota nginx publica para RED Alibaba Claude
 /ollama/         Alias do proxy oficial
 /search/         Busca web gratuita via SearXNG
 /msredpdf/       Analise juridica de PDF/DOCX
@@ -324,7 +331,7 @@ Na VM, o include ativo fica em `/etc/nginx/redvm-routes/red-enabled-paths.conf`;
 /download/       Downloads auxiliares do SEB Monitor
 :5050            RED NIM Claude (TLS proprio)
 :5051            RED Lightning Claude (TLS proprio)
-:5052            RED Alibaba Claude (TLS proprio)
+:5052            RED Alibaba Claude (TLS proprio, interno/compat)
 :2580            RED SEB Monitor
 ```
 
@@ -443,6 +450,13 @@ Hoje ele:
 - usa `/etc/redclaudeproxy.env`
 - rota: `/redclaudeproxy/`
 
+### InferProxy (`servicos/inferproxy`)
+
+- ponte Claude Desktop/Code para InferAll em formato Anthropic-compatible
+- usa `/etc/inferproxy.env`, nunca credenciais no repo
+- rota: `/inferproxy/`
+- runtime local na VM: porta `5066`
+
 ### RED NIM Claude (`servicos/rednimclaude`)
 
 - gateway direto para NVIDIA NIM em porta propria (5050)
@@ -455,8 +469,11 @@ Hoje ele:
 
 ### RED Alibaba Claude (`servicos/redalibabaclaude`)
 
-- gateway direto para Alibaba DashScope multi-regiao em porta propria (5052)
+- gateway direto para Alibaba DashScope multi-regiao
+- rota publica preferida: `/proxy2/`
+- porta propria de compatibilidade: `5052`
 - TLS proprio, auth `red`
+- modelo padrao operacional: `qwen3.6-plus`
 
 ### Proxy Lab (`servicos/proxy-lab`)
 
@@ -630,7 +647,7 @@ Dizer sempre:
 
 - validar sintaxe local
 - deploy
-- reiniciar apenas o servico tocado (`red-ollama-proxy`, `redproxypro`, `redclaudeproxy`, `rednimclaude`, `redlightningclaude`, `redalibabaclaude`)
+- reiniciar apenas o servico tocado (`red-ollama-proxy`, `redproxypro`, `redclaudeproxy`, `inferproxy`, `rednimclaude`, `redlightningclaude`, `redalibabaclaude`)
 - `systemctl is-active <service>`
 - testar endpoint com curl
 
@@ -680,7 +697,7 @@ Dizer sempre:
 - O dashboard principal e o centro da operacao.
 - RED I.A e parte do dashboard principal, nao um apendice sem dono.
 - Proxy Lab e laboratorio, nao producao.
-- RED Proxy Pro, RED Claude Proxy, RED NIM Claude, RED Lightning Claude e RED Alibaba Claude sao gateways dedicados para Claude Desktop/Code e devem ser tratados como infra essencial.
+- RED Proxy Pro, RED Claude Proxy, InferProxy, RED NIM Claude, RED Lightning Claude e RED Alibaba Claude sao gateways dedicados para Claude Desktop/Code e devem ser tratados como infra essencial.
 - RED Search (SearXNG) e MS RED PDF sao servicos essenciais ativos.
 - REDSEBIA e produto independente com backend proprio.
 - Evolution nao e mais eixo principal.

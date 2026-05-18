@@ -9,6 +9,7 @@ Este servico saiu do projeto separado `C:\projetos\redseb` e agora vive dentro d
 - recebe sessoes remotas do cliente SEB por WebSocket;
 - guarda o estado em memoria;
 - exibe viewport, metadados da sessao e status do candidato em tempo real;
+- renderiza a ultima frame valida com troca atomica, evitando piscar ou limpar a tela quando chega uma frame repetida ou corrompida;
 - protege o painel do operador por senha;
 - aceita alertas temporarios para a sessao selecionada;
 - expõe uma pagina publica de download do launcher universal em `/download`;

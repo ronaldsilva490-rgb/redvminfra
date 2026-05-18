@@ -2,6 +2,7 @@ import json
 import io
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -30,6 +31,127 @@ class FakeResponse:
 
 
 class RedAlibabaClaudeTests(unittest.TestCase):
+    def test_error_response_includes_request_id(self):
+        with proxy.app.test_request_context("/", headers={"request-id": "req_test_123"}):
+            proxy.assign_request_id()
+            response = proxy.error_response("bad request", 400, "invalid_request_error")
+        self.assertEqual(response.status_code, 400)
+        payload = response.get_json()
+        self.assertEqual(payload["type"], "error")
+        self.assertEqual(payload["request_id"], "req_test_123")
+        self.assertEqual(payload["error"]["message"], "bad request")
+
+    def test_model_detail_route_returns_public_entry(self):
+        client = proxy.app.test_client()
+        response = client.get(
+            "/v1/models/Qwen%203.6%20Plus",
+            headers={"Authorization": "Bearer red"},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["id"], "Qwen 3.6 Plus")
+        self.assertEqual(payload["object"], "model")
+
+    def test_admin_tokens_ui_returns_html(self):
+        client = proxy.app.test_client()
+        response = client.get("/admin/tokens/ui")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Proxy Tokens", response.get_data(as_text=True))
+
+    def test_files_api_roundtrip_and_document_resolution(self):
+        client = proxy.app.test_client()
+        with tempfile.TemporaryDirectory() as td, patch.object(proxy, "FILES_DIR", Path(td)):
+            response = client.post(
+                "/v1/files",
+                headers={"Authorization": "Bearer red"},
+                data={"file": (io.BytesIO(b"conteudo do arquivo"), "doc.txt")},
+                content_type="multipart/form-data",
+            )
+            self.assertEqual(response.status_code, 200)
+            record = response.get_json()
+            self.assertEqual(record["filename"], "doc.txt")
+
+            listed = client.get("/v1/files", headers={"Authorization": "Bearer red"}).get_json()
+            self.assertEqual(listed["data"][0]["id"], record["id"])
+
+            content = client.get(f"/v1/files/{record['id']}/content", headers={"Authorization": "Bearer red"})
+            self.assertEqual(content.status_code, 200)
+            self.assertEqual(content.get_data(), b"conteudo do arquivo")
+
+            body = {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "document",
+                                "source": {"type": "file", "file_id": record["id"]},
+                            }
+                        ],
+                    }
+                ]
+            }
+            converted = proxy.anthropic_messages_to_openai(body)
+            self.assertIn("conteudo do arquivo", converted[-1]["content"])
+
+    def test_search_result_blocks_convert_to_text(self):
+        body = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "search_result",
+                            "source": "https://example.com/doc",
+                            "title": "Doc",
+                            "content": [{"type": "text", "text": "resultado atual"}],
+                        }
+                    ],
+                }
+            ]
+        }
+        converted = proxy.anthropic_messages_to_openai(body)
+        self.assertIn("Search result: Doc", converted[-1]["content"])
+        self.assertIn("resultado atual", converted[-1]["content"])
+
+    def test_tool_schema_preserves_anthropic_metadata_in_description(self):
+        tool = proxy.tool_schema_to_openai(
+            {
+                "name": "Write",
+                "description": "Write file",
+                "input_schema": {"type": "object", "properties": {}},
+                "strict": True,
+                "eager_input_streaming": True,
+                "defer_loading": True,
+            }
+        )
+        function = tool["function"]
+        self.assertTrue(function["strict"])
+        self.assertIn("eager_input_streaming", function["description"])
+        self.assertIn("defer_loading", function["description"])
+
+    def test_sse_stream_wrapper_emits_error_event(self):
+        def broken():
+            yield proxy.sse_event("message_start", {"type": "message_start"})
+            raise RuntimeError("stream broke")
+
+        chunks = list(proxy.sse_stream_with_heartbeat(broken()))
+        joined = "".join(chunks)
+        self.assertIn("event: message_start", joined)
+        self.assertIn("event: error", joined)
+        self.assertIn("upstream_stream_error", joined)
+
+    def test_sse_stream_wrapper_emits_ping_when_idle(self):
+        def slow():
+            time.sleep(0.03)
+            yield proxy.sse_event("message_stop", {"type": "message_stop"})
+
+        with patch.object(proxy, "SSE_HEARTBEAT_SECONDS", 0.01):
+            chunks = list(proxy.sse_stream_with_heartbeat(slow()))
+        joined = "".join(chunks)
+        self.assertIn("event: ping", joined)
+        self.assertIn("event: message_stop", joined)
+
     def test_resolve_model_accepts_raw_ids(self):
         alias = proxy.resolve_model("Qwen 3.6 Plus")
         raw = proxy.resolve_model("DeepSeek V4 Pro")
@@ -63,6 +185,18 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         guarded = proxy.apply_context_guard(payload, input_tokens=1000, context_window=262144)
         self.assertEqual(guarded["max_tokens"], 8192)
 
+    def test_anthropic_payload_caps_output_by_model_alias(self):
+        qwen36 = proxy.anthropic_to_openai_payload(
+            {"model": "Qwen 3.6 Plus", "messages": [{"role": "user", "content": "oi"}], "max_tokens": 50000},
+            proxy.resolve_model("Qwen 3.6 Plus"),
+        )
+        old_coder = proxy.anthropic_to_openai_payload(
+            {"model": "Qwen Coder Plus", "messages": [{"role": "user", "content": "oi"}], "max_tokens": 50000},
+            proxy.resolve_model("Qwen Coder Plus"),
+        )
+        self.assertEqual(qwen36["max_tokens"], 50000)
+        self.assertEqual(old_coder["max_tokens"], 8192)
+
     def test_websearch_fallback_replaces_empty_client_search_tool_result(self):
         body = {
             "messages": [
@@ -91,7 +225,9 @@ class RedAlibabaClaudeTests(unittest.TestCase):
             ]
         }
         fake_results = [{"title": "Next.js Commerce", "url": "https://example.com", "snippet": "Starter ecommerce"}]
-        with patch.object(proxy, "red_search", return_value=fake_results):
+        with patch.object(proxy, "DIRECT_PROTOCOL_MODE", False), \
+             patch.object(proxy, "WEBSEARCH_FALLBACK_ENABLED", True), \
+             patch.object(proxy, "red_search", return_value=fake_results):
             messages = proxy.anthropic_messages_to_openai(body)
         tool_messages = [item for item in messages if item["role"] == "tool"]
         self.assertEqual(len(tool_messages), 1)
@@ -133,11 +269,13 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         )
         payloads = []
 
-        def fake_proxy(payload, *, stream, api_key, base_url):
+        def fake_proxy(payload, *, stream, api_key, base_url, **kwargs):
             payloads.append(payload)
             return tool_call if len(payloads) == 1 else final
 
-        with patch.object(proxy, "proxy_openai_chat", side_effect=fake_proxy), \
+        with patch.object(proxy, "WEBSEARCH_FALLBACK_ENABLED", True), \
+             patch.object(proxy, "WEBSEARCH_INTERNAL_MAX_ROUNDS", 2), \
+             patch.object(proxy, "proxy_openai_chat", side_effect=fake_proxy), \
              patch.object(proxy, "red_search", return_value=[{"title": "Result", "url": "https://example.com", "snippet": "Snippet"}]), \
              patch.object(proxy.POOL_BY_BACKEND["sg"], "acquire", return_value={"token": "key1"}), \
              patch.object(proxy.POOL_BY_BACKEND["sg"], "on_success", return_value=None):
@@ -195,11 +333,13 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         )
         payloads = []
 
-        def fake_proxy(payload, *, stream, api_key, base_url):
+        def fake_proxy(payload, *, stream, api_key, base_url, **kwargs):
             payloads.append(payload)
             return tool_call if len(payloads) == 1 else final
 
-        with patch.object(proxy, "proxy_openai_chat", side_effect=fake_proxy), \
+        with patch.object(proxy, "WEBSEARCH_FALLBACK_ENABLED", True), \
+             patch.object(proxy, "WEBSEARCH_INTERNAL_MAX_ROUNDS", 2), \
+             patch.object(proxy, "proxy_openai_chat", side_effect=fake_proxy), \
              patch.object(proxy, "red_fetch", return_value="WebFetch result for URL: https://example.com\n\nContent:\nOK"), \
              patch.object(proxy.POOL_BY_BACKEND["sg"], "acquire", return_value={"token": "key1"}), \
              patch.object(proxy.POOL_BY_BACKEND["sg"], "on_success", return_value=None):
@@ -226,7 +366,7 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         ok = FakeResponse(lines=[b"data: [DONE]"])
         payloads = []
 
-        def fake_proxy(payload, *, stream, api_key, base_url):
+        def fake_proxy(payload, *, stream, api_key, base_url, **kwargs):
             payloads.append((payload, stream))
             return ok
 
@@ -279,7 +419,9 @@ class RedAlibabaClaudeTests(unittest.TestCase):
                 },
             ]
         }
-        with patch.object(proxy, "red_fetch", return_value="WebFetch result for URL: https://example.com\n\nContent:\nOK"):
+        with patch.object(proxy, "DIRECT_PROTOCOL_MODE", False), \
+             patch.object(proxy, "WEBSEARCH_FALLBACK_ENABLED", True), \
+             patch.object(proxy, "red_fetch", return_value="WebFetch result for URL: https://example.com\n\nContent:\nOK"):
             messages = proxy.anthropic_messages_to_openai(body)
         tool_messages = [item for item in messages if item["role"] == "tool"]
         self.assertEqual(len(tool_messages), 1)
@@ -351,6 +493,42 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertEqual(message["content"][0]["type"], "tool_use")
         self.assertEqual(message["content"][0]["name"], "shell")
 
+    def test_anthropic_payload_preserves_more_client_intent(self):
+        body = {
+            "model": "Qwen 3.6 Plus",
+            "max_tokens": 64,
+            "top_p": 0.7,
+            "stop_sequences": ["END"],
+            "tools": [
+                {
+                    "name": "Write",
+                    "description": "Write a file",
+                    "input_schema": {"type": "object", "properties": {"file_path": {"type": "string"}}},
+                    "strict": True,
+                    "eager_input_streaming": True,
+                }
+            ],
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "document",
+                            "title": "brief.txt",
+                            "source": {"type": "text", "media_type": "text/plain", "data": "conteudo do briefing"},
+                        },
+                        {"type": "text", "text": "use esse documento"},
+                    ],
+                }
+            ],
+        }
+        payload = proxy.anthropic_to_openai_payload(body, proxy.resolve_model(body["model"]))
+        self.assertEqual(payload["top_p"], 0.7)
+        self.assertEqual(payload["stop"], ["END"])
+        self.assertTrue(payload["tools"][0]["function"]["strict"])
+        self.assertIn("brief.txt", payload["messages"][0]["content"])
+        self.assertIn("conteudo do briefing", payload["messages"][0]["content"])
+
     def test_stream_conversion_emits_text_and_stop(self):
         lines = [
             b'data: {"choices":[{"delta":{"content":"ola "},"finish_reason":null}]}',
@@ -376,6 +554,29 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertIn('"partial_json": "{\\"command\\""', text)
         self.assertIn('"stop_reason": "tool_use"', text)
 
+    def test_stream_conversion_closes_text_before_tool_use(self):
+        lines = [
+            b'data: {"choices":[{"delta":{"content":"vou criar"},"finish_reason":null}]}',
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"Write","arguments":"{\\"file_path\\":\\"a.txt\\""}}]},"finish_reason":null}]}',
+            b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":",\\"content\\":\\"ok\\"}"}}]},"finish_reason":"tool_calls"}]}',
+            b"data: [DONE]",
+        ]
+        text = "".join(proxy.anthropic_sse_from_openai_stream(FakeResponse(lines=lines), "Qwen 3.6 Plus"))
+        text_stop = text.find('"type": "content_block_stop", "index": 0')
+        tool_start = text.find('"content_block": {"type": "tool_use"')
+        self.assertGreaterEqual(text_stop, 0)
+        self.assertGreater(tool_start, text_stop)
+
+    def test_stream_conversion_thinking_start_has_signature_field(self):
+        lines = [
+            b'data: {"choices":[{"delta":{"reasoning_content":"pensando"},"finish_reason":null}]}',
+            b'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}',
+            b"data: [DONE]",
+        ]
+        with patch.object(proxy, "EXPERIMENTAL_THINKING_BLOCKS", True):
+            text = "".join(proxy.anthropic_sse_from_openai_stream(FakeResponse(lines=lines), "Qwen 3.6 Plus"))
+        self.assertIn('"content_block": {"type": "thinking", "thinking": "", "signature": ""}', text)
+
     def test_stream_internal_websearch_preserves_thinking_and_continues(self):
         first = FakeResponse(
             lines=[
@@ -394,11 +595,12 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         )
         payloads = []
 
-        def fake_proxy(payload, *, stream, api_key, base_url):
+        def fake_proxy(payload, *, stream, api_key, base_url, **kwargs):
             payloads.append(payload)
             return second
 
-        with patch.object(proxy, "EXPERIMENTAL_THINKING_BLOCKS", True), \
+        with patch.object(proxy, "WEBSEARCH_INTERNAL_MAX_ROUNDS", 2), \
+             patch.object(proxy, "EXPERIMENTAL_THINKING_BLOCKS", True), \
              patch.object(proxy, "proxy_openai_chat", side_effect=fake_proxy), \
              patch.object(proxy, "red_search", return_value=[{"title": "Fonte", "url": "https://example.com", "snippet": "Resumo"}]), \
              patch.object(proxy.POOL_BY_BACKEND["sg"], "acquire", return_value={"token": "key1"}), \
@@ -580,6 +782,7 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertIn('"stop_reason": "tool_use"', text)
 
     def test_stream_external_write_tool_emits_input_json_deltas_live(self):
+        self.assertTrue(proxy.LIVE_EXTERNAL_TOOL_STREAMING)
         response = FakeResponse(
             lines=[
                 b'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_write","type":"function","function":{"name":"Write","arguments":"{\\"file_path\\""}}]},"finish_reason":null}]}',
@@ -588,34 +791,35 @@ class RedAlibabaClaudeTests(unittest.TestCase):
                 b"data: [DONE]",
             ]
         )
-        events = list(
-            proxy.anthropic_sse_from_openai_stream_with_internal_tools(
-                response,
-                payload={
-                    "model": "qwen3.6-plus",
-                    "messages": [{"role": "user", "content": "crie uma pagina"}],
-                    "tools": [
-                        {
-                            "type": "function",
-                            "function": {
-                                "name": "Write",
-                                "parameters": {
-                                    "type": "object",
-                                    "properties": {"file_path": {"type": "string"}, "content": {"type": "string"}},
-                                    "required": ["file_path", "content"],
+        with patch.object(proxy, "LIVE_EXTERNAL_TOOL_STREAMING", True):
+            events = list(
+                proxy.anthropic_sse_from_openai_stream_with_internal_tools(
+                    response,
+                    payload={
+                        "model": "qwen3.6-plus",
+                        "messages": [{"role": "user", "content": "crie uma pagina"}],
+                        "tools": [
+                            {
+                                "type": "function",
+                                "function": {
+                                    "name": "Write",
+                                    "parameters": {
+                                        "type": "object",
+                                        "properties": {"file_path": {"type": "string"}, "content": {"type": "string"}},
+                                        "required": ["file_path", "content"],
+                                    },
                                 },
-                            },
-                        }
-                    ],
-                    "stream": True,
-                    "max_tokens": 1024,
-                },
-                alias=proxy.resolve_model("Qwen 3.6 Plus"),
-                model_name="Qwen 3.6 Plus",
-                context_window=262144,
-                input_tokens=100,
+                            }
+                        ],
+                        "stream": True,
+                        "max_tokens": 1024,
+                    },
+                    alias=proxy.resolve_model("Qwen 3.6 Plus"),
+                    model_name="Qwen 3.6 Plus",
+                    context_window=262144,
+                    input_tokens=100,
+                )
             )
-        )
         text = "".join(events)
         self.assertIn('"content_block": {"type": "tool_use", "id": "call_write", "name": "Write", "input": {}}', text)
         self.assertIn('"partial_json": "{\\"file_path\\""', text)
@@ -910,6 +1114,30 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         self.assertIn('"stop_reason": "tool_use"', text)
 
     def test_workspace_action_contract_is_injected_for_artifact_requests(self):
+        with patch.object(proxy, "DIRECT_PROTOCOL_MODE", False):
+            payload = proxy.anthropic_to_openai_payload(
+                {
+                    "model": "Qwen 3.6 Plus",
+                    "messages": [{"role": "user", "content": "crie uma landing page em HTML"}],
+                    "tools": [
+                        {
+                            "name": "Write",
+                            "input_schema": {
+                                "type": "object",
+                                "properties": {"file_path": {"type": "string"}, "content": {"type": "string"}},
+                                "required": ["file_path", "content"],
+                            },
+                        }
+                    ],
+                    "stream": True,
+                    "max_tokens": 1024,
+                },
+                proxy.resolve_model("Qwen 3.6 Plus"),
+            )
+        system_messages = [item["content"] for item in payload["messages"] if item.get("role") == "system"]
+        self.assertTrue(any("Workspace action contract" in item for item in system_messages))
+
+    def test_direct_protocol_mode_does_not_inject_workspace_action_contract(self):
         payload = proxy.anthropic_to_openai_payload(
             {
                 "model": "Qwen 3.6 Plus",
@@ -930,7 +1158,7 @@ class RedAlibabaClaudeTests(unittest.TestCase):
             proxy.resolve_model("Qwen 3.6 Plus"),
         )
         system_messages = [item["content"] for item in payload["messages"] if item.get("role") == "system"]
-        self.assertTrue(any("Workspace action contract" in item for item in system_messages))
+        self.assertFalse(any("Workspace action contract" in item for item in system_messages))
 
     def test_workspace_action_contract_is_not_injected_for_greetings(self):
         payload = proxy.anthropic_to_openai_payload(
@@ -1096,7 +1324,7 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         def fake_acquire():
             return pool_items[len(calls)]
 
-        def fake_proxy(payload, *, stream, api_key, base_url):
+        def fake_proxy(payload, *, stream, api_key, base_url, **kwargs):
             calls.append(api_key)
             return limited if api_key == "key1" else ok
 
@@ -1131,7 +1359,7 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         def fake_acquire():
             return pool_items[len(calls)]
 
-        def fake_proxy(payload, *, stream, api_key, base_url):
+        def fake_proxy(payload, *, stream, api_key, base_url, **kwargs):
             calls.append(api_key)
             return broken if api_key == "key1" else ok
 
@@ -1170,7 +1398,7 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         )
         calls = []
 
-        def fake_proxy(payload, *, stream, api_key, base_url):
+        def fake_proxy(payload, *, stream, api_key, base_url, **kwargs):
             calls.append(payload["max_tokens"])
             return too_long if len(calls) == 1 else ok
 
@@ -1208,7 +1436,7 @@ class RedAlibabaClaudeTests(unittest.TestCase):
         )
         calls = []
 
-        def fake_proxy(payload, *, stream, api_key, base_url):
+        def fake_proxy(payload, *, stream, api_key, base_url, **kwargs):
             calls.append(payload["max_tokens"])
             return too_many if len(calls) == 1 else ok
 
@@ -1276,7 +1504,8 @@ class RedAlibabaClaudeTests(unittest.TestCase):
             "model": "Qwen 3.6 Plus",
             "messages": [{"role": "user", "content": "oi"}],
         }
-        with patch.object(proxy, "FORCE_ANTHROPIC_THINKING", True):
+        with patch.object(proxy, "DIRECT_PROTOCOL_MODE", False), \
+             patch.object(proxy, "FORCE_ANTHROPIC_THINKING", True):
             payload = proxy.anthropic_to_openai_payload(body, proxy.resolve_model(body["model"]))
         merged = proxy.apply_alias_backend_options(payload, proxy.resolve_model(body["model"]))
         self.assertIs(merged["enable_thinking"], True)

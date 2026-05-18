@@ -2672,6 +2672,7 @@ function renderDashboard(basePath = "") {
     let committeeAbortController = null;
     let committeeRequestSerial = 0;
     let frameRenderToken = 0;
+    let currentFrameKey = "";
 
     function escapeHtml(value) {
       return String(value || "")
@@ -2827,10 +2828,18 @@ function renderDashboard(basePath = "") {
     function renderViewerFrame(base64) {
       const value = String(base64 || "").trim();
       if (!value) {
+        currentFrameKey = "";
+        frameRenderToken += 1;
         viewerImage.hidden = true;
         viewerImage.removeAttribute("src");
         emptyState.hidden = false;
         updateCopyFrameAvailability("Nenhuma frame pronta para copiar.");
+        return;
+      }
+
+      const nextFrameKey = value.length + ":" + value.slice(0, 64) + ":" + value.slice(-64);
+      if (nextFrameKey === currentFrameKey && !viewerImage.hidden && viewerImage.getAttribute("src")) {
+        updateCopyFrameAvailability();
         return;
       }
 
@@ -2845,32 +2854,52 @@ function renderDashboard(basePath = "") {
 
       const tryLoad = () => {
         const mime = orderedMimes[attempt] || "image/jpeg";
-        viewerImage.onload = () => {
+        const nextImage = new Image();
+        const commitFrame = () => {
           if (token !== frameRenderToken) return;
+          viewerImage.onload = null;
+          viewerImage.onerror = null;
+          viewerImage.src = nextImage.src;
           viewerImage.hidden = false;
           emptyState.hidden = true;
+          currentFrameKey = nextFrameKey;
           updateCopyFrameAvailability("Frame pronta para copiar.");
         };
-        viewerImage.onerror = () => {
+        nextImage.onload = () => {
+          if (typeof nextImage.decode === "function") {
+            nextImage.decode().then(commitFrame).catch(commitFrame);
+            return;
+          }
+          commitFrame();
+        };
+        nextImage.onerror = () => {
           if (token !== frameRenderToken) return;
           attempt += 1;
           if (attempt < orderedMimes.length) {
             tryLoad();
             return;
           }
-          viewerImage.hidden = true;
-          viewerImage.removeAttribute("src");
-          emptyState.hidden = false;
-          emptyState.textContent = "A frame chegou, mas o navegador nao conseguiu renderizar a imagem desta view.";
-          updateCopyFrameAvailability("A frame atual nao pode ser copiada.");
+          if (viewerImage.hidden || !viewerImage.getAttribute("src")) {
+            currentFrameKey = "";
+            viewerImage.hidden = true;
+            viewerImage.removeAttribute("src");
+            emptyState.hidden = false;
+            emptyState.textContent = "A frame chegou, mas o navegador nao conseguiu renderizar a imagem desta view.";
+            updateCopyFrameAvailability("A frame atual nao pode ser copiada.");
+            return;
+          }
+          updateCopyFrameAvailability("A nova frame falhou; mantendo a ultima frame valida.");
         };
-        viewerImage.src = buildImageDataUrl(value, mime);
+        nextImage.src = buildImageDataUrl(value, mime);
       };
 
-      viewerImage.hidden = true;
-      emptyState.hidden = false;
-      emptyState.textContent = "Carregando frame da view selecionada...";
-      updateCopyFrameAvailability("Preparando frame para copia...");
+      if (viewerImage.hidden || !viewerImage.getAttribute("src")) {
+        emptyState.hidden = false;
+        emptyState.textContent = "Carregando frame da view selecionada...";
+        updateCopyFrameAvailability("Preparando frame para copia...");
+      } else {
+        updateCopyFrameAvailability();
+      }
       tryLoad();
     }
 
@@ -3115,6 +3144,8 @@ function renderDashboard(basePath = "") {
         commandStatus.textContent = "Selecione uma sessão ativa para enviar um alerta.";
         sendAlertButton.disabled = true;
         viewTabs.innerHTML = "";
+        currentFrameKey = "";
+        frameRenderToken += 1;
         viewerImage.hidden = true;
         viewerImage.removeAttribute("src");
         emptyState.hidden = false;
@@ -3193,6 +3224,8 @@ function renderDashboard(basePath = "") {
       if (activeView && activeView.imageBase64) {
         renderViewerFrame(activeView.imageBase64);
       } else {
+        currentFrameKey = "";
+        frameRenderToken += 1;
         viewerImage.hidden = true;
         viewerImage.removeAttribute("src");
         emptyState.hidden = false;

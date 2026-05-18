@@ -25,6 +25,8 @@ Hoje a RED Systems roda com uma arquitetura de VM unica. O objetivo deste reposi
 - `/proxy/` -> proxy IA oficial
 - `/redproxypro/` -> proxy Vercel AI Gateway com rotacao de keys
 - `/redclaudeproxy/` -> ponte Claude Desktop/Code para os modelos do proxy normal
+- `/inferproxy/` -> ponte Claude Desktop/Code para InferAll via endpoint Anthropic-like
+- `/proxy2/` -> rota nginx publica para o RED Alibaba Claude em `redalibabaclaude`
 - `/ollama/` -> alias do proxy IA
 - `:5050` -> RED NIM Claude direto para Claude Desktop
 - `:5051` -> RED Lightning Claude direto para Claude Desktop
@@ -52,6 +54,7 @@ Estado da VM em 2026-05-10: OpenClaw, RED Trader, IQ Bridge, Deploy Agent e webh
 | Proxy IA | `servicos/proxy` | `/opt/redvm-proxy` | `red-ollama-proxy.service` | ativo |
 | RED Proxy Pro | `servicos/redproxypro` | `/opt/redproxypro` | `redproxypro.service` | ativo |
 | RED Claude Proxy | `servicos/redclaudeproxy` | `/opt/redclaudeproxy` | `redclaudeproxy.service` | ativo |
+| InferProxy | `servicos/inferproxy` | `/opt/inferproxy` | `inferproxy.service` | ativo |
 | RED NIM Claude | `servicos/rednimclaude` | `/opt/rednimclaude` | `rednimclaude.service` | ativo |
 | RED Lightning Claude | `servicos/redlightningclaude` | `/opt/redlightningclaude` | `redlightningclaude.service` | ativo |
 | RED Alibaba Claude | `servicos/redalibabaclaude` | `/opt/redalibabaclaude` | `redalibabaclaude.service` | ativo |
@@ -81,6 +84,7 @@ servicos/
   proxy/                 Proxy IA oficial
   redproxypro/           Proxy Vercel AI Gateway com rotacao de keys
   redclaudeproxy/        Ponte Claude para modelos do proxy normal
+  inferproxy/            Ponte Claude para InferAll
   redlightningclaude/    Ponte Claude para o endpoint Lightning AI
   redalibabaclaude/      Ponte Claude para DashScope Alibaba multi-regiao
   searxng/               Busca web gratuita para OpenClaude
@@ -166,6 +170,7 @@ Cada servico agora tem um guia proprio de instalacao em qualquer VM:
 - [servicos/proxy/README.md](servicos/proxy/README.md)
 - [servicos/redproxypro/README.md](servicos/redproxypro/README.md)
 - [servicos/redclaudeproxy/README.md](servicos/redclaudeproxy/README.md)
+- [servicos/inferproxy/README.md](servicos/inferproxy/README.md)
 - [servicos/rednimclaude/README.md](servicos/rednimclaude/README.md)
 - [servicos/redlightningclaude/README.md](servicos/redlightningclaude/README.md)
 - [servicos/redalibabaclaude/README.md](servicos/redalibabaclaude/README.md)
@@ -214,6 +219,7 @@ Script-base de apoio:
 - proxy: `/opt/redvm-proxy`
 - red proxy pro: `/opt/redproxypro`
 - red claude proxy: `/opt/redclaudeproxy`
+- inferproxy: `/opt/inferproxy`
 - red search: `/opt/red-searxng`
 - msredpdf: `/opt/msredpdf`
 - redia: `/opt/redia`
@@ -233,6 +239,7 @@ Script-base de apoio:
 - proxy: `/var/lib/redvm-proxy`
 - red proxy pro: `/var/lib/redproxypro`
 - red claude proxy: `/var/lib/redclaudeproxy`
+- inferproxy env: `/etc/inferproxy.env`
 - msredpdf: `/var/lib/msredpdf`
 - redia: `/opt/redia/data`
 - redtrader: `/opt/redtrader/data`
@@ -257,6 +264,8 @@ Ele concentra as rotas amigaveis:
 - `/proxy/`
 - `/redproxypro/`
 - `/redclaudeproxy/`
+- `/inferproxy/`
+- `/proxy2/`
 - `/ollama/`
 - `/search/`
 - `/msredpdf/`

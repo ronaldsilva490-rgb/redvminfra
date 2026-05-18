@@ -3,17 +3,37 @@ set -euo pipefail
 
 ENV_FILE="/etc/redalibabaclaude.env"
 SERVICE="redalibabaclaude.service"
-MODE="both"
-KEY=""
+DATA_DIR="/var/lib/redalibabaclaude"
+REGISTRY_FILE="${DATA_DIR}/alibaba_keys.tsv"
+TOKEN_USAGE_DB="${DATA_DIR}/token_usage.sqlite3"
 
 usage() {
-  cat <<USAGE
+  cat <<'USAGE'
 Uso:
-  alibaba <api-key>             atualiza SG e US com a mesma key e reinicia o proxy
-  alibaba --sg <api-key>        atualiza so REDALIBABACLAUDE_SG_API_KEY
-  alibaba --us <api-key>        atualiza so REDALIBABACLAUDE_US_API_KEY
-  alibaba --show                mostra env mascarado e status do servico
+  alibaba add sg <api-key>    adiciona a key ao pool SG, pede um nome e reinicia o proxy
+  alibaba add us <api-key>    adiciona a key ao pool US, pede um nome e reinicia o proxy
+  alibaba add both <api-key>  adiciona a mesma key aos pools SG e US
+  alibaba <api-key>           compatibilidade: equivale a alibaba add both <api-key>
+  alibaba list                lista as keys salvas e testa cada key
+  alibaba list --no-test      lista as keys sem testar
+  alibaba use                 mostra uso por key
+  alibaba smoke-models        testa candidatos rapidos por regiao usando a primeira key disponivel
+  alibaba del <indice>        remove a key do pool pelo indice e reinicia o proxy
+  alibaba --show              mostra env mascarado e status do servico
 USAGE
+}
+
+ensure_runtime() {
+  mkdir -p "$DATA_DIR"
+  touch "$REGISTRY_FILE"
+  chmod 600 "$REGISTRY_FILE" || true
+}
+
+require_env() {
+  if [[ ! -f "$ENV_FILE" ]]; then
+    echo "Erro: env nao encontrado: $ENV_FILE" >&2
+    exit 1
+  fi
 }
 
 mask_key() {
@@ -25,10 +45,70 @@ mask_key() {
   fi
 }
 
+key_fingerprint() {
+  local key="${1:-}"
+  if [[ -z "$key" ]]; then
+    return 0
+  fi
+  printf '%s' "$key" | sha256sum | awk '{print substr($1, 1, 12)}'
+}
+
+key_usage_fields() {
+  local region="$1"
+  local key="$2"
+  local fingerprint where stats requests successes failures tokens last_ts last
+  fingerprint="$(key_fingerprint "$key")"
+  if [[ -z "$fingerprint" || ! -f "$TOKEN_USAGE_DB" ]] || ! command -v sqlite3 >/dev/null 2>&1; then
+    printf '0\t0\t0\t0\t-'
+    return 0
+  fi
+  if [[ "$(sqlite3 "$TOKEN_USAGE_DB" "SELECT COUNT(*) FROM pragma_table_info('usage_events') WHERE name='key_fingerprint';" 2>/dev/null || echo 0)" != "1" ]]; then
+    printf '0\t0\t0\t0\tnovo'
+    return 0
+  fi
+  case "$region" in
+    sg) where="backend = 'sg'" ;;
+    us) where="backend = 'us'" ;;
+    both) where="backend IN ('sg', 'us')" ;;
+    *) where="1 = 1" ;;
+  esac
+  stats="$(sqlite3 -separator $'\t' "$TOKEN_USAGE_DB" "
+    SELECT
+      COUNT(*),
+      COALESCE(SUM(success), 0),
+      COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0),
+      COALESCE(SUM(total_tokens), 0),
+      COALESCE(MAX(ts), 0)
+    FROM usage_events
+    WHERE key_fingerprint = '$fingerprint' AND $where;
+  " 2>/dev/null || true)"
+  IFS=$'\t' read -r requests successes failures tokens last_ts <<< "$stats"
+  requests="${requests:-0}"
+  successes="${successes:-0}"
+  failures="${failures:-0}"
+  tokens="${tokens:-0}"
+  last_ts="${last_ts:-0}"
+  last=""
+  if [[ "$last_ts" != "0" && "$last_ts" != "0.0" ]]; then
+    last="$(sqlite3 "$TOKEN_USAGE_DB" "SELECT strftime('%m-%d %H:%M', $last_ts, 'unixepoch');" 2>/dev/null || true)"
+  fi
+  printf '%s\t%s\t%s\t%s\t%s' "$requests" "$successes" "$failures" "$tokens" "${last:-"-"}"
+}
+
+trim_text() {
+  local value="${1:-}"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
 show_state() {
   echo "Arquivo: $ENV_FILE"
   if [[ -f "$ENV_FILE" ]]; then
-    sed -E 's/(REDALIBABACLAUDE_(SG|US)_API_KEY=).*/\1***MASKED***/' "$ENV_FILE"
+    sed -E \
+      -e 's/(REDALIBABACLAUDE_(SG|US)_API_KEY=).*/\1***MASKED***/' \
+      -e 's/(REDALIBABACLAUDE_(SG|US)_API_KEYS=).*/\1***MASKED***/' \
+      "$ENV_FILE"
   else
     echo "Nao existe: $ENV_FILE"
   fi
@@ -36,56 +116,323 @@ show_state() {
   systemctl --no-pager --full status "$SERVICE" | sed -n '1,12p' || true
 }
 
-if [[ $# -lt 1 ]]; then
-  usage
-  exit 2
-fi
+read_registry() {
+  awk -F '\t' '
+    NF >= 3 { print tolower($1) "\t" $2 "\t" $3; next }
+    NF >= 2 { print "both\t" $1 "\t" $2 }
+  ' "$REGISTRY_FILE"
+}
 
-case "$1" in
-  --show)
-    show_state
-    exit 0
-    ;;
-  --sg)
-    MODE="sg"
-    shift
-    ;;
-  --us)
-    MODE="us"
-    shift
-    ;;
-  --both)
-    MODE="both"
-    shift
-    ;;
-esac
-
-if [[ $# -ne 1 ]]; then
-  usage
-  exit 2
-fi
-
-KEY="$1"
-if [[ ! "$KEY" =~ ^sk-[A-Za-z0-9_-]{20,}$ ]]; then
-  echo "Erro: a key nao parece uma API key Alibaba valida com prefixo sk-." >&2
-  exit 2
-fi
-
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "Erro: env nao encontrado: $ENV_FILE" >&2
-  exit 1
-fi
-
-backup="${ENV_FILE}.bak.$(date +%Y%m%d-%H%M%S)"
-cp -a "$ENV_FILE" "$backup"
-chmod 600 "$backup" || true
-
-tmp="$(mktemp)"
-cp "$ENV_FILE" "$tmp"
-
-update_var() {
+env_value() {
   local name="$1"
-  local value="$2"
+  grep -E "^${name}=" "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true
+}
+
+bootstrap_registry_from_env_if_needed() {
+  ensure_runtime
+  require_env
+  if [[ -s "$REGISTRY_FILE" ]]; then
+    return 0
+  fi
+
+  local sg_csv us_csv sg_primary us_primary
+  sg_csv="$(env_value REDALIBABACLAUDE_SG_API_KEYS)"
+  us_csv="$(env_value REDALIBABACLAUDE_US_API_KEYS)"
+  sg_primary="$(env_value REDALIBABACLAUDE_SG_API_KEY)"
+  us_primary="$(env_value REDALIBABACLAUDE_US_API_KEY)"
+
+  if [[ -z "$sg_csv" && -n "$sg_primary" ]]; then
+    sg_csv="$sg_primary"
+  fi
+  if [[ -z "$us_csv" && -n "$us_primary" ]]; then
+    us_csv="$us_primary"
+  fi
+
+  local tmp keys_all key idx_sg=0 idx_us=0 idx_both=0
+  tmp="$(mktemp)"
+  keys_all="$(printf '%s,%s' "$sg_csv" "$us_csv" | tr ',' '\n' | sed '/^$/d' | awk '!seen[$0]++')"
+
+  while IFS= read -r key; do
+    [[ -n "$key" ]] || continue
+    local in_sg=0 in_us=0
+    if printf '%s\n' "$sg_csv" | tr ',' '\n' | grep -Fxq "$key"; then in_sg=1; fi
+    if printf '%s\n' "$us_csv" | tr ',' '\n' | grep -Fxq "$key"; then in_us=1; fi
+    if [[ "$in_sg" -eq 1 && "$in_us" -eq 1 ]]; then
+      idx_both=$((idx_both + 1))
+      printf 'both\tLEGACY_BOTH_%d\t%s\n' "$idx_both" "$key" >> "$tmp"
+    elif [[ "$in_sg" -eq 1 ]]; then
+      idx_sg=$((idx_sg + 1))
+      printf 'sg\tLEGACY_SG_%d\t%s\n' "$idx_sg" "$key" >> "$tmp"
+    elif [[ "$in_us" -eq 1 ]]; then
+      idx_us=$((idx_us + 1))
+      printf 'us\tLEGACY_US_%d\t%s\n' "$idx_us" "$key" >> "$tmp"
+    fi
+  done <<< "$keys_all"
+
+  install -m 600 -o root -g root "$tmp" "$REGISTRY_FILE"
+  rm -f "$tmp"
+}
+
+list_keys() {
+  bootstrap_registry_from_env_if_needed
+  local do_test="${1:-1}"
+  local idx=0
+  local health
+  printf '\nAlibaba keys\n\n'
+  printf '%-3s %-5s %-28s %-17s %s\n' "ID" "REG" "NOME" "KEY" "STATUS"
+  printf '%-3s %-5s %-28s %-17s %s\n' "--" "---" "----------------------------" "-----------------" "------"
+  while IFS=$'\t' read -r region name key; do
+    [[ -n "${key:-}" ]] || continue
+    idx=$((idx + 1))
+    if [[ "$do_test" == "1" ]]; then
+      health="$(smoke_key_for_registry_region "$region" "$key")"
+    else
+      health="SKIP"
+    fi
+    printf '%-3d %-5s %-28.28s %-17s %s\n' "$idx" "${region^^}" "$name" "$(mask_key "$key")" "$health"
+  done < <(read_registry)
+  if [[ $idx -eq 0 ]]; then
+    echo "Nenhuma key salva."
+  fi
+}
+
+use_keys() {
+  bootstrap_registry_from_env_if_needed
+  local idx=0
+  local requests successes failures tokens last total_requests=0 total_successes=0 total_failures=0 total_tokens=0
+  printf '\nAlibaba uso\n\n'
+  printf '%2s %-2s %-22s %-13s %4s %4s %4s %7s %s\n' "#" "RG" "NOME" "KEY" "USE" "OK" "ERR" "TOK" "ULT"
+  while IFS=$'\t' read -r region name key; do
+    [[ -n "${key:-}" ]] || continue
+    idx=$((idx + 1))
+    IFS=$'\t' read -r requests successes failures tokens last <<< "$(key_usage_fields "$region" "$key")"
+    total_requests=$((total_requests + ${requests:-0}))
+    total_successes=$((total_successes + ${successes:-0}))
+    total_failures=$((total_failures + ${failures:-0}))
+    total_tokens=$((total_tokens + ${tokens:-0}))
+    printf '%2d %-2s %-22.22s %-13s %4s %4s %4s %7s %s\n' \
+      "$idx" "${region^^}" "$name" "$(mask_key "$key")" "${requests:-0}" "${successes:-0}" "${failures:-0}" "${tokens:-0}" "${last:-"-"}"
+  done < <(read_registry)
+  if [[ $idx -eq 0 ]]; then
+    echo "Nenhuma key salva."
+    return 0
+  fi
+  printf '%2s %-2s %-22s %-13s %4s %4s %4s %7s %s\n' "" "" "TOTAL" "" "$total_requests" "$total_successes" "$total_failures" "$total_tokens" ""
+}
+
+region_base_url() {
+  local region="$1"
+  local configured=""
+  case "$region" in
+    sg)
+      configured="$(env_value REDALIBABACLAUDE_SG_BASE_URL)"
+      printf '%s' "${configured:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}"
+      ;;
+    us)
+      configured="$(env_value REDALIBABACLAUDE_US_BASE_URL)"
+      printf '%s' "${configured:-https://dashscope-us.aliyuncs.com/compatible-mode/v1}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+region_smoke_model() {
+  local region="$1"
+  local configured=""
+  case "$region" in
+    sg)
+      configured="$(env_value REDALIBABACLAUDE_SG_SMOKE_MODEL)"
+      printf '%s' "${configured:-qwen-coder-plus}"
+      ;;
+    us)
+      configured="$(env_value REDALIBABACLAUDE_US_SMOKE_MODEL)"
+      printf '%s' "${configured:-qwen3-coder-plus}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+region_smoke_candidates() {
+  local region="$1"
+  local configured=""
+  case "$region" in
+    sg)
+      configured="$(env_value REDALIBABACLAUDE_SG_SMOKE_CANDIDATES)"
+      printf '%s' "${configured:-qwen3.6-plus qwen-coder-plus qwen3-coder-next qwen3.6-max-preview}"
+      ;;
+    us)
+      configured="$(env_value REDALIBABACLAUDE_US_SMOKE_CANDIDATES)"
+      printf '%s' "${configured:-deepseek-v4-flash qwen3-coder-plus deepseek-v4-pro kimi-k2.5}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+first_key_for_region() {
+  local wanted="$1"
+  read_registry | awk -F '\t' -v region="$wanted" '
+    ($1 == region || $1 == "both") && $3 != "" { print $3; exit }
+  '
+}
+
+json_error_summary() {
+  local body_path="$1"
+  python3 - "$body_path" <<'PY' 2>/dev/null || true
+import json
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace")[:2000]
+try:
+    data = json.loads(text)
+except Exception:
+    print(" ".join(text.split())[:160])
+    raise SystemExit
+
+err = data.get("error") if isinstance(data, dict) else None
+if isinstance(err, dict):
+    msg = err.get("message") or err.get("code") or err
+elif err:
+    msg = err
+else:
+    msg = data.get("message") if isinstance(data, dict) else text
+print(" ".join(str(msg).split())[:160])
+PY
+}
+
+smoke_key_once() {
+  local region="$1"
+  local key="$2"
+  local model="$3"
+  local base_url timeout payload body err metrics curl_rc status ttfb total summary
+  base_url="$(region_base_url "$region")"
+  timeout="$(env_value REDALIBABACLAUDE_KEY_SMOKE_TIMEOUT)"
+  timeout="${timeout:-7}"
+  payload='{"model":"'"$model"'","messages":[{"role":"user","content":"Responda apenas OK."}],"max_tokens":2,"temperature":0,"stream":false,"enable_thinking":false}'
+  body="$(mktemp)"
+  err="$(mktemp)"
+  curl_rc=0
+  metrics="$(curl -ksS \
+    --connect-timeout 3 \
+    --max-time "$timeout" \
+    -o "$body" \
+    -w '%{http_code}\t%{time_starttransfer}\t%{time_total}' \
+    -H "Authorization: Bearer $key" \
+    -H "Content-Type: application/json" \
+    -d "$payload" \
+    "${base_url%/}/chat/completions" 2>"$err")" || curl_rc=$?
+
+  status="$(printf '%s' "$metrics" | awk -F '\t' '{print $1}')"
+  ttfb="$(printf '%s' "$metrics" | awk -F '\t' '{print $2}')"
+  total="$(printf '%s' "$metrics" | awk -F '\t' '{print $3}')"
+
+  if [[ "$curl_rc" -eq 0 && "$status" == "200" ]]; then
+    printf 'OK %ss' "$total"
+  else
+    summary="$(json_error_summary "$body")"
+    if [[ -z "$summary" ]]; then
+      summary="$(trim_text "$(cat "$err" 2>/dev/null || true)")"
+    fi
+    if [[ -z "$summary" ]]; then
+      summary="sem resposta"
+    fi
+    printf 'FAIL %s %ss: %s' "${status:-curl-$curl_rc}" "${total:-0}" "$summary"
+  fi
+
+  rm -f "$body" "$err"
+}
+
+smoke_key_for_registry_region() {
+  local region="$1"
+  local key="$2"
+  case "$region" in
+    sg|us)
+      printf '%s' "$(smoke_key_once "$region" "$key" "$(region_smoke_model "$region")")"
+      ;;
+    both)
+      printf 'SG %s | US %s' \
+        "$(smoke_key_once sg "$key" "$(region_smoke_model sg)")" \
+        "$(smoke_key_once us "$key" "$(region_smoke_model us)")"
+      ;;
+    *)
+      printf 'SKIP regiao invalida'
+      ;;
+  esac
+}
+
+smoke_models() {
+  bootstrap_registry_from_env_if_needed
+  local region key model
+  for region in sg us; do
+    key="$(first_key_for_region "$region")"
+    echo "${region^^}:"
+    if [[ -z "$key" ]]; then
+      echo "  SKIP sem key cadastrada"
+      continue
+    fi
+    for model in $(region_smoke_candidates "$region"); do
+      echo "  $model -> $(smoke_key_once "$region" "$key" "$model")"
+    done
+  done
+}
+
+prompt_name() {
+  local key="$1"
+  local name=""
+  echo "DIGITE UM NOME A SER ASSOCIADO COM A KEY ${key}:" >&2
+  IFS= read -r name
+  name="${name#"${name%%[![:space:]]*}"}"
+  name="${name%"${name##*[![:space:]]}"}"
+  name="${name//$'\t'/ }"
+  if [[ -z "$name" ]]; then
+    echo "Erro: nome nao pode ficar vazio." >&2
+    exit 2
+  fi
+  printf '%s' "$name"
+}
+
+rebuild_env_from_registry() {
+  local tmp="$1"
+  local sg_csv=""
+  local us_csv=""
+  local sg_first=""
+  local us_first=""
+  while IFS=$'\t' read -r region name key; do
+    [[ -n "${key:-}" ]] || continue
+    case "$region" in
+      sg)
+        if [[ -z "$sg_first" ]]; then sg_first="$key"; fi
+        if [[ -z "$sg_csv" ]]; then sg_csv="$key"; else sg_csv="${sg_csv},${key}"; fi
+        ;;
+      us)
+        if [[ -z "$us_first" ]]; then us_first="$key"; fi
+        if [[ -z "$us_csv" ]]; then us_csv="$key"; else us_csv="${us_csv},${key}"; fi
+        ;;
+      both)
+        if [[ -z "$sg_first" ]]; then sg_first="$key"; fi
+        if [[ -z "$us_first" ]]; then us_first="$key"; fi
+        if [[ -z "$sg_csv" ]]; then sg_csv="$key"; else sg_csv="${sg_csv},${key}"; fi
+        if [[ -z "$us_csv" ]]; then us_csv="$key"; else us_csv="${us_csv},${key}"; fi
+        ;;
+    esac
+  done < <(read_registry)
+
+  update_var_in_tmp "$tmp" REDALIBABACLAUDE_SG_API_KEY "$sg_first"
+  update_var_in_tmp "$tmp" REDALIBABACLAUDE_US_API_KEY "$us_first"
+  update_var_in_tmp "$tmp" REDALIBABACLAUDE_SG_API_KEYS "$sg_csv"
+  update_var_in_tmp "$tmp" REDALIBABACLAUDE_US_API_KEYS "$us_csv"
+}
+
+update_var_in_tmp() {
+  local tmp="$1"
+  local name="$2"
+  local value="$3"
   if grep -q "^${name}=" "$tmp"; then
     sed -i "s|^${name}=.*|${name}=${value}|" "$tmp"
   else
@@ -93,39 +440,176 @@ update_var() {
   fi
 }
 
-case "$MODE" in
-  sg)
-    update_var REDALIBABACLAUDE_SG_API_KEY "$KEY"
-    ;;
-  us)
-    update_var REDALIBABACLAUDE_US_API_KEY "$KEY"
-    ;;
-  both)
-    update_var REDALIBABACLAUDE_SG_API_KEY "$KEY"
-    update_var REDALIBABACLAUDE_US_API_KEY "$KEY"
-    ;;
-  *)
-    echo "Modo invalido: $MODE" >&2
+apply_and_restart() {
+  local backup_env="$1"
+  local backup_registry="$2"
+  local tmp_env="$3"
+  install -m 600 -o root -g root "$tmp_env" "$ENV_FILE"
+  rm -f "$tmp_env"
+
+  systemctl restart "$SERVICE"
+  sleep 1
+  if ! systemctl is-active --quiet "$SERVICE"; then
+    echo "Erro: $SERVICE nao ficou ativo. Restaurando backup." >&2
+    cp -a "$backup_env" "$ENV_FILE"
+    cp -a "$backup_registry" "$REGISTRY_FILE"
+    systemctl restart "$SERVICE" || true
+    exit 1
+  fi
+  if command -v curl >/dev/null 2>&1; then
+    curl -ks --max-time 8 https://127.0.0.1:5052/healthz >/dev/null || true
+  fi
+}
+
+normalize_region() {
+  local region="${1:-}"
+  case "${region,,}" in
+    sg|us|both)
+      printf '%s' "${region,,}"
+      ;;
+    *)
+      echo "Erro: regiao invalida. Use sg, us ou both." >&2
+      exit 2
+      ;;
+  esac
+}
+
+add_key() {
+  local region="$1"
+  local key="$2"
+  bootstrap_registry_from_env_if_needed
+  if [[ ! "$key" =~ ^sk-[A-Za-z0-9_-]{20,}$ ]]; then
+    echo "Erro: a key nao parece uma API key Alibaba valida com prefixo sk-." >&2
     exit 2
-    ;;
-esac
+  fi
+  region="$(normalize_region "$region")"
+  if read_registry | awk -F '\t' -v wanted_region="$region" -v needle="$key" '$1 == wanted_region && $3 == needle { found=1 } END { exit found ? 0 : 1 }'; then
+    echo "Erro: essa key ja esta cadastrada nessa regiao." >&2
+    exit 2
+  fi
 
-install -m 600 -o root -g root "$tmp" "$ENV_FILE"
-rm -f "$tmp"
+  local name
+  name="$(prompt_name "$key")"
 
-systemctl restart "$SERVICE"
-sleep 1
-if ! systemctl is-active --quiet "$SERVICE"; then
-  echo "Erro: $SERVICE nao ficou ativo. Restaurando backup." >&2
-  cp -a "$backup" "$ENV_FILE"
-  systemctl restart "$SERVICE" || true
-  exit 1
-fi
+  local backup_env="${ENV_FILE}.bak.$(date +%Y%m%d-%H%M%S)"
+  local backup_registry="${REGISTRY_FILE}.bak.$(date +%Y%m%d-%H%M%S)"
+  cp -a "$ENV_FILE" "$backup_env"
+  cp -a "$REGISTRY_FILE" "$backup_registry"
+  chmod 600 "$backup_env" "$backup_registry" || true
 
-echo "Alibaba key atualizada ($MODE): $(mask_key "$KEY")"
-echo "Backup: $backup"
-echo "Servico: $(systemctl is-active "$SERVICE")"
-if command -v curl >/dev/null 2>&1; then
-  curl -ks --max-time 8 https://127.0.0.1:5052/healthz || true
-  echo
-fi
+  printf '%s\t%s\t%s\n' "$region" "$name" "$key" >> "$REGISTRY_FILE"
+  local tmp_env
+  tmp_env="$(mktemp)"
+  cp "$ENV_FILE" "$tmp_env"
+  rebuild_env_from_registry "$tmp_env"
+  apply_and_restart "$backup_env" "$backup_registry" "$tmp_env"
+
+  echo "key salva com sucesso."
+  echo "Servico: $(systemctl is-active "$SERVICE")"
+}
+
+delete_key() {
+  local target="$1"
+  bootstrap_registry_from_env_if_needed
+  if [[ ! "$target" =~ ^[0-9]+$ ]] || [[ "$target" -lt 1 ]]; then
+    echo "Erro: indice invalido." >&2
+    exit 2
+  fi
+
+  local tmp_registry
+  tmp_registry="$(mktemp)"
+  local idx=0
+  local removed=0
+  while IFS=$'\t' read -r region name key; do
+    [[ -n "${key:-}" ]] || continue
+    idx=$((idx + 1))
+    if [[ "$idx" -eq "$target" ]]; then
+      removed=1
+      continue
+    fi
+    printf '%s\t%s\t%s\n' "$region" "$name" "$key" >> "$tmp_registry"
+  done < <(read_registry)
+
+  if [[ "$removed" -ne 1 ]]; then
+    rm -f "$tmp_registry"
+    echo "Erro: indice $target nao encontrado." >&2
+    exit 2
+  fi
+
+  local backup_env="${ENV_FILE}.bak.$(date +%Y%m%d-%H%M%S)"
+  local backup_registry="${REGISTRY_FILE}.bak.$(date +%Y%m%d-%H%M%S)"
+  cp -a "$ENV_FILE" "$backup_env"
+  cp -a "$REGISTRY_FILE" "$backup_registry"
+  chmod 600 "$backup_env" "$backup_registry" || true
+
+  install -m 600 -o root -g root "$tmp_registry" "$REGISTRY_FILE"
+  rm -f "$tmp_registry"
+  local tmp_env
+  tmp_env="$(mktemp)"
+  cp "$ENV_FILE" "$tmp_env"
+  rebuild_env_from_registry "$tmp_env"
+  apply_and_restart "$backup_env" "$backup_registry" "$tmp_env"
+
+  echo "key removida com sucesso."
+  echo "Servico: $(systemctl is-active "$SERVICE")"
+}
+
+main() {
+  if [[ $# -lt 1 ]]; then
+    usage
+    exit 2
+  fi
+
+  case "$1" in
+    add)
+      if [[ $# -ne 3 ]]; then
+        usage
+        exit 2
+      fi
+      add_key "$2" "$3"
+      ;;
+    list)
+      if [[ $# -eq 1 ]]; then
+        list_keys 1
+      elif [[ $# -eq 2 && "$2" == "--no-test" ]]; then
+        list_keys 0
+      else
+        usage
+        exit 2
+      fi
+      ;;
+    use)
+      if [[ $# -ne 1 ]]; then
+        usage
+        exit 2
+      fi
+      use_keys
+      ;;
+    smoke-models)
+      if [[ $# -ne 1 ]]; then
+        usage
+        exit 2
+      fi
+      smoke_models
+      ;;
+    del)
+      if [[ $# -ne 2 ]]; then
+        usage
+        exit 2
+      fi
+      delete_key "$2"
+      ;;
+    --show)
+      show_state
+      ;;
+    *)
+      if [[ $# -ne 1 ]]; then
+        usage
+        exit 2
+      fi
+      add_key "both" "$1"
+      ;;
+  esac
+}
+
+main "$@"

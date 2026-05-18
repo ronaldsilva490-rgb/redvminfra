@@ -2,6 +2,8 @@
 
 import json
 import logging
+import base64
+import mimetypes
 import os
 import re
 import time
@@ -11,7 +13,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import requests
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, g, jsonify, request, send_file
 
 
 SERVICE_NAME = "inferproxy"
@@ -29,6 +31,9 @@ READ_TIMEOUT = int(os.getenv("INFERPROXY_READ_TIMEOUT", "360"))
 STREAM_CHUNK_SIZE = max(1, int(os.getenv("INFERPROXY_STREAM_CHUNK_SIZE", "1")))
 UPSTREAM_MODE = os.getenv("INFERPROXY_UPSTREAM_MODE", "messages").strip().lower()
 COMPACT_CLAUDE_TOOLS = os.getenv("INFERPROXY_COMPACT_CLAUDE_TOOLS", "1").strip().lower() not in {"0", "false", "no", "off"}
+AUTO_BETA_HEADERS = os.getenv("INFERPROXY_AUTO_BETA_HEADERS", "1").strip().lower() not in {"0", "false", "no", "off"}
+FILE_STORE_PATH = Path(os.getenv("INFERPROXY_FILE_STORE_PATH", "/var/lib/inferproxy/files"))
+FILE_UPLOAD_MAX_BYTES = max(1, int(os.getenv("INFERPROXY_FILE_UPLOAD_MAX_BYTES", str(32 * 1024 * 1024))))
 UPSTREAM_RETRY_ATTEMPTS = max(1, int(os.getenv("INFERPROXY_UPSTREAM_RETRY_ATTEMPTS", "2")))
 UPSTREAM_RETRY_SLEEP = max(0.0, float(os.getenv("INFERPROXY_UPSTREAM_RETRY_SLEEP", "0.8")))
 ENABLE_MODEL_FALLBACK = os.getenv("INFERPROXY_ENABLE_MODEL_FALLBACK", "0").strip().lower() not in {"0", "false", "no", "off"}
@@ -106,8 +111,23 @@ app.logger.setLevel(os.getenv("INFERPROXY_LOG_LEVEL", "INFO").upper())
 logging.getLogger("werkzeug").setLevel(os.getenv("INFERPROXY_WERKZEUG_LOG_LEVEL", "WARNING").upper())
 
 
+@app.before_request
+def assign_request_id() -> None:
+    g.request_id = request.headers.get("request-id") or f"req_{uuid.uuid4().hex}"
+
+
+@app.after_request
+def add_anthropic_response_headers(response: Response) -> Response:
+    response.headers.setdefault("request-id", getattr(g, "request_id", f"req_{uuid.uuid4().hex}"))
+    return response
+
+
 def now_s() -> int:
     return int(time.time())
+
+
+def request_id() -> str:
+    return getattr(g, "request_id", f"req_{uuid.uuid4().hex}")
 
 
 def auth_ok() -> bool:
@@ -121,7 +141,7 @@ def auth_ok() -> bool:
 def require_auth() -> Response | None:
     if auth_ok():
         return None
-    return jsonify({"type": "error", "error": {"type": "authentication_error", "message": "invalid inferproxy token"}}), 401
+    return jsonify({"type": "error", "error": {"type": "authentication_error", "message": "invalid inferproxy token"}, "request_id": request_id()}), 401
 
 
 def default_alias() -> dict[str, Any]:
@@ -176,6 +196,11 @@ def request_summary(body: dict[str, Any]) -> dict[str, Any]:
         "thinking": bool(body.get("thinking")),
         "output_config": bool(body.get("output_config")),
         "metadata": bool(body.get("metadata")),
+        "cache_control": bool(body.get("cache_control")),
+        "context_management": bool(body.get("context_management")),
+        "mcp_servers": len(body.get("mcp_servers") or []) if isinstance(body.get("mcp_servers"), list) else 0,
+        "container": bool(body.get("container")),
+        "service_tier": body.get("service_tier") if isinstance(body.get("service_tier"), str) else "",
     }
 
 
@@ -221,16 +246,41 @@ def content_shape(content: Any) -> Any:
                 elif item_type == "thinking":
                     row["thinking_len"] = len(str(item.get("thinking") or ""))
                     row["has_signature"] = bool(item.get("signature"))
+                elif item_type == "redacted_thinking":
+                    row["data_len"] = len(str(item.get("data") or ""))
                 elif item_type == "tool_use":
                     row["name"] = str(item.get("name") or "")
                     row["input_keys"] = sorted((item.get("input") or {}).keys()) if isinstance(item.get("input"), dict) else []
                 elif item_type == "tool_result":
                     row["tool_use_id"] = str(item.get("tool_use_id") or "")
                     row["content_shape"] = content_shape(item.get("content"))
+                elif item_type == "server_tool_use":
+                    row["id"] = str(item.get("id") or "")
+                    row["name"] = str(item.get("name") or "")
+                    row["input_keys"] = sorted((item.get("input") or {}).keys()) if isinstance(item.get("input"), dict) else []
+                elif item_type in {"web_search_tool_result", "web_fetch_tool_result"}:
+                    row["tool_use_id"] = str(item.get("tool_use_id") or "")
+                    row["content_shape"] = content_shape(item.get("content"))
+                elif item_type == "mcp_tool_use":
+                    row["id"] = str(item.get("id") or "")
+                    row["name"] = str(item.get("name") or "")
+                    row["server_name"] = str(item.get("server_name") or "")
+                    row["input_keys"] = sorted((item.get("input") or {}).keys()) if isinstance(item.get("input"), dict) else []
+                elif item_type == "mcp_tool_result":
+                    row["tool_use_id"] = str(item.get("tool_use_id") or "")
+                    row["is_error"] = bool(item.get("is_error"))
+                    row["content_shape"] = content_shape(item.get("content"))
                 elif item_type == "image":
                     source = item.get("source") if isinstance(item.get("source"), dict) else {}
                     row["source_type"] = source.get("type")
                     row["media_type"] = source.get("media_type")
+                    row["file_id"] = source.get("file_id")
+                elif item_type in {"document", "container_upload"}:
+                    source = item.get("source") if isinstance(item.get("source"), dict) else {}
+                    row["source_type"] = source.get("type")
+                    row["media_type"] = source.get("media_type")
+                    row["file_id"] = source.get("file_id")
+                    row["has_citations"] = bool(item.get("citations"))
                 else:
                     row["keys"] = sorted(item.keys())
                 output.append(row)
@@ -398,6 +448,70 @@ def remove_thinking_for_opus_if_needed(payload: dict[str, Any], original_body: d
             alias.get("id"),
             ",".join(sorted(matched)),
         )
+
+
+def file_dir(file_id: str) -> Path:
+    return FILE_STORE_PATH / file_id
+
+
+def file_meta_path(file_id: str) -> Path:
+    return file_dir(file_id) / "meta.json"
+
+
+def file_blob_path(file_id: str) -> Path:
+    return file_dir(file_id) / "content.bin"
+
+
+def load_file_meta(file_id: str) -> dict[str, Any] | None:
+    if not re.fullmatch(r"file_[A-Za-z0-9_-]+", str(file_id or "")):
+        return None
+    path = file_meta_path(file_id)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def stored_file_payload(file_id: str) -> dict[str, Any] | None:
+    meta = load_file_meta(file_id)
+    if not meta:
+        return None
+    blob = file_blob_path(file_id)
+    if not blob.exists():
+        return None
+    data = blob.read_bytes()
+    return {
+        "type": "base64",
+        "media_type": meta.get("mime_type") or "application/octet-stream",
+        "data": base64.b64encode(data).decode("ascii"),
+    }
+
+
+def resolve_file_sources(value: Any) -> Any:
+    if isinstance(value, list):
+        return [resolve_file_sources(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    output = deepcopy(value)
+    source = output.get("source")
+    if isinstance(source, dict) and (source.get("type") == "file" or source.get("file_id")):
+        file_id = str(source.get("file_id") or "")
+        replacement = stored_file_payload(file_id)
+        if replacement:
+            output["source"] = replacement
+            return output
+    for key, item in list(output.items()):
+        output[key] = resolve_file_sources(item)
+    return output
+
+
+def resolve_payload_file_references(payload: dict[str, Any]) -> None:
+    if "system" in payload:
+        payload["system"] = resolve_file_sources(payload["system"])
+    if "messages" in payload:
+        payload["messages"] = resolve_file_sources(payload["messages"])
 
 
 def is_inferall_operation_aborted(text: str) -> bool:
@@ -679,15 +793,87 @@ def inferall_payload_from_anthropic(body: dict[str, Any], alias: dict[str, Any])
     return payload
 
 
-def inferall_headers() -> dict[str, str]:
+def parse_beta_header(value: str) -> list[str]:
+    betas: list[str] = []
+    for item in str(value or "").replace(";", ",").split(","):
+        beta = item.strip()
+        if beta and beta not in betas:
+            betas.append(beta)
+    return betas
+
+
+def content_contains_file_reference(content: Any) -> bool:
+    if isinstance(content, dict):
+        source = content.get("source") if isinstance(content.get("source"), dict) else {}
+        if source.get("type") == "file" or source.get("file_id"):
+            return True
+        return any(content_contains_file_reference(value) for value in content.values())
+    if isinstance(content, list):
+        return any(content_contains_file_reference(item) for item in content)
+    return False
+
+
+def body_uses_file_api(body: dict[str, Any]) -> bool:
+    if content_contains_file_reference(body.get("system")):
+        return True
+    for message in body.get("messages") or []:
+        if isinstance(message, dict) and content_contains_file_reference(message.get("content")):
+            return True
+    return False
+
+
+def context_management_beta(body: dict[str, Any]) -> str | None:
+    context_management = body.get("context_management")
+    if not isinstance(context_management, dict):
+        return None
+    edits = context_management.get("edits")
+    if not isinstance(edits, list):
+        return None
+    edit_types = {str(edit.get("type") or "") for edit in edits if isinstance(edit, dict)}
+    if any(edit_type.startswith("compact_") for edit_type in edit_types):
+        return "compact-2026-01-12"
+    if edit_types.intersection({"clear_tool_uses_20250919", "clear_thinking_20251015"}):
+        return "context-management-2025-06-27"
+    return None
+
+
+def auto_beta_headers(body: dict[str, Any] | None) -> list[str]:
+    if not AUTO_BETA_HEADERS or not isinstance(body, dict):
+        return []
+    betas: list[str] = []
+    tools = body.get("tools") if isinstance(body.get("tools"), list) else []
+    if any(isinstance(tool, dict) and tool.get("eager_input_streaming") for tool in tools):
+        betas.append("fine-grained-tool-streaming-2025-05-14")
+    if body.get("mcp_servers") or any(isinstance(tool, dict) and tool.get("type") == "mcp_toolset" for tool in tools):
+        betas.append("mcp-client-2025-11-20")
+    if body_uses_file_api(body):
+        betas.append("files-api-2025-04-14")
+    context_beta = context_management_beta(body)
+    if context_beta:
+        betas.append(context_beta)
+    output_config = body.get("output_config")
+    if isinstance(output_config, dict) and isinstance(output_config.get("task_budget"), dict):
+        betas.append("task-budgets-2026-03-13")
+    return betas
+
+
+def merged_beta_header(client_value: str, body: dict[str, Any] | None = None) -> str:
+    betas = parse_beta_header(client_value)
+    for beta in auto_beta_headers(body):
+        if beta not in betas:
+            betas.append(beta)
+    return ",".join(betas)
+
+
+def inferall_headers(body: dict[str, Any] | None = None) -> dict[str, str]:
     if not INFERALL_API_KEY:
         raise RuntimeError("INFERALL_API_KEY is required")
     try:
         anthropic_version = request.headers.get("anthropic-version", "2023-06-01")
-        anthropic_beta = request.headers.get("anthropic-beta", "")
+        anthropic_beta = merged_beta_header(request.headers.get("anthropic-beta", ""), body)
     except RuntimeError:
         anthropic_version = "2023-06-01"
-        anthropic_beta = ""
+        anthropic_beta = merged_beta_header("", body)
     return {
         "Authorization": f"Bearer {INFERALL_API_KEY}",
         "Content-Type": "application/json",
@@ -715,7 +901,7 @@ def safe_close_response(response: Any) -> None:
 def upstream_generate(payload: dict[str, Any], *, stream: bool) -> requests.Response:
     return http.post(
         f"{INFERALL_BASE_URL}/ai/v1/generate",
-        headers=inferall_headers(),
+        headers=inferall_headers(payload),
         json=payload,
         stream=stream,
         timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
@@ -732,6 +918,7 @@ def inferall_anthropic_payload(body: dict[str, Any], alias: dict[str, Any]) -> d
             preserve_original_tools_in_system(payload, original_tools)
     elif isinstance(payload.get("tools"), list) and payload["tools"]:
         payload["tools"] = filter_upstream_tools(payload["tools"])
+    resolve_payload_file_references(payload)
     remove_thinking_for_opus_if_needed(payload, body, alias)
     return payload
 
@@ -766,14 +953,33 @@ def compact_json_schema(schema: Any) -> dict[str, Any]:
     return output
 
 
+TOOL_METADATA_KEYS = {
+    "allowed_callers",
+    "cache_control",
+    "defer_loading",
+    "eager_input_streaming",
+    "input_examples",
+    "strict",
+}
+
+
+def should_passthrough_tool(tool: dict[str, Any]) -> bool:
+    # Anthropic server/MCP/built-in tools use `type` and often do not have an
+    # `input_schema`. Turning them into empty custom tools breaks the protocol.
+    return bool(tool.get("type")) and not (isinstance(tool.get("input_schema"), dict) or isinstance(tool.get("parameters"), dict))
+
+
 def compact_anthropic_tool(tool: dict[str, Any]) -> dict[str, Any]:
+    if should_passthrough_tool(tool):
+        return deepcopy(tool)
     compact = {
         "name": str(tool.get("name") or ""),
         "description": str(tool.get("description") or ""),
         "input_schema": compact_json_schema(tool.get("input_schema") or tool.get("parameters") or {}),
     }
-    if "eager_input_streaming" in tool:
-        compact["eager_input_streaming"] = bool(tool.get("eager_input_streaming"))
+    for key in TOOL_METADATA_KEYS:
+        if key in tool:
+            compact[key] = deepcopy(tool[key])
     return compact
 
 
@@ -799,7 +1005,7 @@ def preserve_original_tools_in_system(payload: dict[str, Any], original_tools: l
 def upstream_messages(payload: dict[str, Any], *, stream: bool) -> requests.Response:
     return http.post(
         f"{INFERALL_BASE_URL}/v1/messages",
-        headers=inferall_headers(),
+        headers=inferall_headers(payload),
         json=payload,
         stream=stream,
         timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
@@ -813,6 +1019,7 @@ def error_response(status: int, message: str, upstream_body: str = "") -> Respon
             "type": "upstream_error",
             "message": message,
         },
+        "request_id": request_id(),
     }
     if upstream_body:
         payload["error"]["upstream_body"] = upstream_body[:1200]
@@ -1142,6 +1349,115 @@ def models() -> Response:
             ],
         }
     )
+
+
+@app.get("/v1/models/<path:model_id>")
+def model_detail(model_id: str) -> Response:
+    err = require_auth()
+    if err:
+        return err
+    requested = str(model_id or "").strip().lower()
+    for item in MODEL_ALIASES:
+        if requested in {item["id"].lower(), item["target"].lower()}:
+            return jsonify(
+                {
+                    "id": item["id"],
+                    "type": "model",
+                    "display_name": item["id"],
+                    "created_at": "2026-05-11T00:00:00Z",
+                    "context_window": item["context_window"],
+                    "max_tokens": 32_000,
+                }
+            )
+    return jsonify({"type": "error", "error": {"type": "not_found_error", "message": "model not found"}, "request_id": request_id()}), 404
+
+
+@app.get("/v1/files")
+def list_files() -> Response:
+    err = require_auth()
+    if err:
+        return err
+    files: list[dict[str, Any]] = []
+    if FILE_STORE_PATH.exists():
+        for meta_path in sorted(FILE_STORE_PATH.glob("file_*/meta.json")):
+            try:
+                files.append(json.loads(meta_path.read_text(encoding="utf-8")))
+            except Exception:
+                continue
+    return jsonify({"object": "list", "data": files, "has_more": False, "first_id": files[0]["id"] if files else None, "last_id": files[-1]["id"] if files else None})
+
+
+@app.post("/v1/files")
+def create_file() -> Response:
+    err = require_auth()
+    if err:
+        return err
+    uploaded = request.files.get("file")
+    if uploaded is None:
+        return jsonify({"type": "error", "error": {"type": "invalid_request_error", "message": "missing multipart file field"}, "request_id": request_id()}), 400
+    data = uploaded.read(FILE_UPLOAD_MAX_BYTES + 1)
+    if len(data) > FILE_UPLOAD_MAX_BYTES:
+        return jsonify({"type": "error", "error": {"type": "request_too_large", "message": "file exceeds inferproxy upload limit"}, "request_id": request_id()}), 413
+    filename = uploaded.filename or "upload.bin"
+    mime_type = uploaded.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    file_id = f"file_{uuid.uuid4().hex}"
+    meta = {
+        "id": file_id,
+        "type": "file",
+        "filename": filename,
+        "mime_type": mime_type,
+        "size_bytes": len(data),
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "downloadable": True,
+    }
+    directory = file_dir(file_id)
+    directory.mkdir(parents=True, exist_ok=True)
+    file_blob_path(file_id).write_bytes(data)
+    file_meta_path(file_id).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return jsonify(meta), 200
+
+
+@app.get("/v1/files/<file_id>")
+def retrieve_file(file_id: str) -> Response:
+    err = require_auth()
+    if err:
+        return err
+    meta = load_file_meta(file_id)
+    if not meta:
+        return jsonify({"type": "error", "error": {"type": "not_found_error", "message": "file not found"}, "request_id": request_id()}), 404
+    return jsonify(meta)
+
+
+@app.delete("/v1/files/<file_id>")
+def delete_file(file_id: str) -> Response:
+    err = require_auth()
+    if err:
+        return err
+    meta = load_file_meta(file_id)
+    if not meta:
+        return jsonify({"type": "error", "error": {"type": "not_found_error", "message": "file not found"}, "request_id": request_id()}), 404
+    for path in (file_blob_path(file_id), file_meta_path(file_id)):
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            pass
+    try:
+        file_dir(file_id).rmdir()
+    except Exception:
+        pass
+    return jsonify({"id": file_id, "type": "file_deleted", "deleted": True})
+
+
+@app.get("/v1/files/<file_id>/content")
+def retrieve_file_content(file_id: str) -> Response:
+    err = require_auth()
+    if err:
+        return err
+    meta = load_file_meta(file_id)
+    blob = file_blob_path(file_id)
+    if not meta or not blob.exists():
+        return jsonify({"type": "error", "error": {"type": "not_found_error", "message": "file not found"}, "request_id": request_id()}), 404
+    return send_file(blob, mimetype=meta.get("mime_type") or "application/octet-stream", as_attachment=True, download_name=meta.get("filename") or file_id)
 
 
 @app.post("/v1/messages/count_tokens")

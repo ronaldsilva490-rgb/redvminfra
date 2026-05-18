@@ -11,10 +11,13 @@ Ferramentas Windows para apontar o Claude Desktop para os gateways RED.
 - `Iniciar-Claude-RED-NIM5050-Sem-VMP.cmd`: aplica o preparo do gateway NIM direto e abre o Claude RED portatil.
 - `Preparar-Claude-RED-Lightning5051.ps1`: grava a configuracao 3P/gateway do Claude Desktop com `https://redsystems.ddns.net:5051`, usando somente os modelos validados do `redlightningclaude`.
 - `Iniciar-Claude-RED-Lightning5051-Sem-VMP.cmd`: aplica o preparo do gateway Lightning direto e abre o Claude RED portatil.
-- `Preparar-Claude-RED-Alibaba5052.ps1`: grava a configuracao 3P/gateway do Claude Desktop com `https://redsystems.ddns.net:5052`, usando somente os modelos curados do `redalibabaclaude`.
-- `Iniciar-Claude-RED-Alibaba5052-Sem-VMP.cmd`: aplica o preparo do gateway Alibaba multi-regiao e abre o Claude RED portatil.
+- `Preparar-Claude-RED-Alibaba5052.ps1`: grava a configuracao 3P/gateway do Claude Desktop com `https://redsystems.ddns.net:5052`, usando somente o catalogo atual do `redalibabaclaude`, exclusivo Alibaba.
+- `Iniciar-Claude-RED-Alibaba5052-Sem-VMP.cmd`: aplica o preparo do gateway Alibaba multi-regiao, sem fallback Cloudflare, e abre o Claude RED portatil.
 - `Preparar-Claude-RED-ClaudeProxy.ps1`: grava a configuracao 3P/gateway do Claude Desktop com `https://redsystems.ddns.net/redclaudeproxy`.
 - `Iniciar-Claude-RED-ClaudeProxy-Sem-VMP.cmd`: aplica o preparo da ponte Claude para o proxy normal e abre o Claude RED portatil.
+- `Preparar-Claude-RED-InferProxy.ps1`: grava a configuracao 3P/gateway do Claude Desktop com `https://redsystems.ddns.net/inferproxy`.
+- `Iniciar-Claude-RED-InferProxy.cmd`: aplica o preparo do InferProxy e abre o Claude RED portatil.
+- `Claude CLI - RED InferProxy.cmd`: abre o Claude Code CLI no Windows Terminal, com seletor de modelo, seletor de sessao e seletor grafico de pasta usando `https://redsystems.ddns.net/inferproxy`. Ele gera um settings temporario, autentica por `ANTHROPIC_AUTH_TOKEN=red` e remove `ANTHROPIC_API_KEY` do processo para evitar conflito de login. Tambem injeta uma regra operacional para impedir tool calls bobas como `Bash(echo ...)` em conversa simples.
 - `Ativar-VMP-para-Claude-Desktop.cmd`: tenta ativar Virtual Machine Platform em Windows completo.
 - `Iniciar-Claude-RED-Sem-VMP.cmd`: abre a copia portatil patchada em `C:\Projetos\ClaudeREDDesktop\app\Claude.exe`.
 - `Preparar-Claude-RED-Chat.ps1`: reforca modo chat e sincroniza a lista atual de modelos no `claude_desktop_config.json` e no `configLibrary`.
@@ -30,6 +33,8 @@ C:\Users\Ronyd\Desktop\Claude RED ClaudeProxy.cmd
 C:\Users\Ronyd\Desktop\Claude RED NIM 5050.cmd
 C:\Users\Ronyd\Desktop\Claude RED Lightning 5051.cmd
 C:\Users\Ronyd\Desktop\Claude RED Alibaba 5052.cmd
+C:\Users\Ronyd\Desktop\Claude RED InferProxy.cmd
+C:\Users\Ronyd\Desktop\Claude CLI - RED InferProxy.cmd
 ```
 
 Esse modo serve para chat/modelos customizados pelo RED Proxy Pro ou pelo proxy normal. Ele nao entrega workspace/Code real do Claude Desktop, porque essa parte depende do backend local/sandbox que exige VMP.
@@ -48,6 +53,8 @@ A lista do gateway NIM direto vem de `https://redsystems.ddns.net:5050/v1/models
 
 A lista do gateway Lightning direto vem de `https://redsystems.ddns.net:5051/v1/models`, sem passar por nginx e publicada apenas com os modelos que passaram em texto, stream e tool calling.
 
-A lista do gateway Alibaba direto vem de `https://redsystems.ddns.net:5052/v1/models`, publicada com nomes amigaveis sem `ALI` e filtrando `reasoning_content` para manter a UI do Claude limpa.
+A lista do gateway Alibaba direto vem de `https://redsystems.ddns.net:5052/v1/models`, publicada com nomes amigaveis sem `ALI`, filtrando `reasoning_content` para manter a UI do Claude limpa e sem modelos externos ao Alibaba.
 
-Sempre que atualizar modelos fixos, revise `Preparar-Claude-RED-Chat.ps1`, `Configurar-Claude-RED-ProxyPro.cmd` e os fallbacks dos scripts do proxy normal. O `Preparar-Claude-RED-ClaudeProxy.ps1` prefere o catalogo vivo de `/redclaudeproxy/v1/models`.
+A lista do InferProxy vem de `https://redsystems.ddns.net/inferproxy/v1/models` e hoje publica somente os modelos validados contra a InferAll para fluxo Claude Desktop/Code. O preparo do Desktop habilita extensoes locais, diretorio de extensoes, MCP local e Claude Code for Desktop para preservar skills/plugins.
+
+Sempre que atualizar modelos fixos, revise `Preparar-Claude-RED-Chat.ps1`, `Configurar-Claude-RED-ProxyPro.cmd` e os fallbacks dos scripts do proxy normal. O `Preparar-Claude-RED-ClaudeProxy.ps1` prefere o catalogo vivo de `/redclaudeproxy/v1/models`. O `Preparar-Claude-RED-InferProxy.ps1` prefere o catalogo vivo de `/inferproxy/v1/models`.

@@ -225,9 +225,10 @@ Servico: `servicos/redalibabaclaude`
 
 Responsabilidade:
 
-- expor `/v1/models`, `/v1/messages`, `/v1/messages/count_tokens` e `/v1/chat/completions`;
+- expor `/v1/models`, `/v1/models/<model_id>`, `/v1/messages`, `/v1/messages/count_tokens`, `/v1/chat/completions` e `/v1/responses`;
 - adaptar Claude Desktop/Claude Code para a Alibaba Model Studio;
 - usar **Singapura** para Qwen e **US Virginia** para DeepSeek/Kimi;
+- propagar `request-id`/`x-request-id` e devolver `request_id` nos erros JSON para rastreio Anthropic-like;
 - repassar `reasoning_content` como bloco `thinking` para Claude Code/Desktop quando `REDALIBABACLAUDE_EXPERIMENTAL_THINKING_BLOCKS=1`; `REDALIBABACLAUDE_FORCE_ANTHROPIC_THINKING=1` força `enable_thinking=true` no endpoint Anthropic mesmo se o cliente nao enviar `effort`; em `/v1/chat/completions`, remover o campo para manter compatibilidade OpenAI.
 
 Instalacao:
@@ -249,9 +250,11 @@ REDALIBABACLAUDE_SG_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode
 REDALIBABACLAUDE_US_BASE_URL=https://dashscope-us.aliyuncs.com/compatible-mode/v1
 REDALIBABACLAUDE_SG_API_KEY=
 REDALIBABACLAUDE_US_API_KEY=
+REDALIBABACLAUDE_SG_API_KEYS=
+REDALIBABACLAUDE_US_API_KEYS=
 REDALIBABACLAUDE_REQUIRE_AUTH=1
 REDALIBABACLAUDE_AUTH_TOKENS=red
-REDALIBABACLAUDE_DEFAULT_MODEL=ALI-SG/qwen-coder-plus
+REDALIBABACLAUDE_DEFAULT_MODEL=qwen3.6-plus
 REDALIBABACLAUDE_DATA_DIR=/var/lib/redalibabaclaude
 REDALIBABACLAUDE_TOKEN_METRICS_ENABLED=1
 REDALIBABACLAUDE_TOKEN_METRICS_DB=/var/lib/redalibabaclaude/token_usage.sqlite3
@@ -268,18 +271,32 @@ Metricas de tokens:
 Rotacao de keys na VM:
 
 ```bash
-# atualiza SG e US com a mesma key, reinicia o proxy e testa healthz
-alibaba sk-nova_chave_alibaba
+# adiciona uma key ao pool SG
+alibaba add sg sk-nova_chave_sg
 
-# atualiza apenas uma regiao
-alibaba --sg sk-nova_chave_singapura
-alibaba --us sk-nova_chave_us
+# adiciona uma key ao pool US
+alibaba add us sk-nova_chave_us
+
+# adiciona a mesma key aos dois pools
+alibaba add both sk-nova_chave_compartilhada
+
+# lista o pool atual
+alibaba list
+
+# remove a key do pool pelo indice
+alibaba del 1
 
 # mostra configuracao mascarada e status do systemd
 alibaba --show
 ```
 
-O comando versionado fica em `ferramentas/vm/alibaba` e o deploy de `ferramentas/vm/deploy_redalibabaclaude.sh` instala em `/usr/local/bin/alibaba`. O deploy preserva as keys vivas se `/etc/redalibabaclaude.env` ja existir; a troca de credencial deve ser feita pelo comando `alibaba`, para gerar backup automatico e rollback se o servico falhar.
+O comando versionado fica em `ferramentas/vm/alibaba` e o deploy de `ferramentas/vm/deploy_redalibabaclaude.sh` instala em `/usr/local/bin/alibaba`. O helper grava `regiao -> nome -> key` em `/var/lib/redalibabaclaude/alibaba_keys.tsv`, recompõe separadamente `REDALIBABACLAUDE_SG_API_KEYS` e `REDALIBABACLAUDE_US_API_KEYS` no env, reinicia o servico e faz rollback automatico se ele nao voltar ativo. O runtime do proxy ja faz balanceamento entre as keys do pool com round-robin e cooldown em `429`/`5xx`. O atalho legado `alibaba sk-...` continua valendo como `alibaba add both sk-...`.
+
+Limites de saida:
+
+- `Qwen 3.6 Plus`, `Qwen 3.6 Max Preview`, `Qwen3 Coder Plus` e `Qwen3 Coder Next` usam `max_output_tokens=65536` no catalogo do proxy.
+- `Qwen Coder Plus` permanece em `8192`, que e o limite retornado pelo upstream para esse modelo legado.
+- o proxy nao corta prompt/contexto; ele so ajusta `max_tokens` quando o alias tem limite conhecido ou quando o Alibaba devolve erro explicito de faixa.
 
 Systemd:
 

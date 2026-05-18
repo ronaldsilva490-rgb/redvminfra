@@ -13,6 +13,8 @@ red_model_studio/ App desktop PySide6 para testar chat/imagem do proxy.
 redclaudecode/  Launcher visual do Claude Code usando o proxy da RED Systems.
 claude-desktop/  Configuradores do Claude Desktop para RED Proxy Pro, incluindo modo sem VMP.
 claude-code-vscode/  Configuracao da extensao Claude Code no VS Code via RED Proxy Pro.
+inferall/      Utilitarios manuais para diagnostico/conta InferAll.
+oci/           Helpers de descoberta e retry para criar instancia A1 Flex no OCI.
 seb_frame_streamer/ GUI simples para simular uma sessao SEB real via WebSocket.
 iq_vision_benchmark/ Benchmarks visuais da IQ.
 ```

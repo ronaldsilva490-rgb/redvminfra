@@ -31,6 +31,8 @@ Na VM principal, `infraestrutura/nginx/red-friendly-paths.nginx.conf` e publicad
 /proxy/       Proxy IA oficial
 /redproxypro/ Proxy Vercel AI Gateway com rotacao de keys
 /redclaudeproxy/ Ponte Claude para os modelos do proxy normal
+/inferproxy/  Ponte Claude para InferAll
+/proxy2/      Rota publica nginx para RED Alibaba Claude
 /ollama/      Alias do proxy oficial
 /search/      Busca web gratuita via SearXNG
 /msredpdf/    Analise juridica de PDF/DOCX com IA
@@ -53,6 +55,7 @@ red-dashboard.service
 red-ollama-proxy.service
 redproxypro.service
 redclaudeproxy.service
+inferproxy.service
 rednimclaude.service
 redlightningclaude.service
 redalibabaclaude.service
@@ -94,6 +97,13 @@ O dashboard principal tambem responde por caminho real:
 /dashboard/processos
 ```
 
+## Shell root
+
+O helper `infraestrutura/shell/red-root/00-red-header` desenha o banner de
+login do root na VM. O MOTD deve ficar enxuto: marca RED, status basico do
+host, memoria, disco, IP e zumbis. Rotas publicas, lista de servicos e
+comandos uteis ficam fora do banner para nao poluir o terminal.
+
 ## Legado
 
 - Evolution nao e mais parte central da stack.
@@ -101,5 +111,5 @@ O dashboard principal tambem responde por caminho real:
 - `rapidleech.service` agora e parte oficial da stack e deve ser publicado pelo nginx em `/rapidleech/`.
 - `red-sebia.service` agora e parte oficial da stack e deve ser publicado pelo nginx em `/redsebia/`.
 - `red-seb-monitor.service` e parte oficial da stack, mas hoje vive em porta dedicada `2580`, fora do nginx principal.
-- `msredpdf.service`, `redproxypro.service`, `redclaudeproxy.service` e `red-searxng.service` fazem parte do conjunto essencial atual.
+- `msredpdf.service`, `redproxypro.service`, `redclaudeproxy.service`, `inferproxy.service` e `red-searxng.service` fazem parte do conjunto essencial atual.
 - `openclaw`, `redtrader` e `iq-bridge` ficam no repo para reativacao futura, mas nao devem ser tratados como essenciais na VM principal atual.

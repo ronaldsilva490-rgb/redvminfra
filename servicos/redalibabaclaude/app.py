@@ -4,8 +4,10 @@ import json
 import os
 import queue
 import re
+import base64
 import hashlib
 import html
+import mimetypes
 import sqlite3
 import threading
 import time
@@ -15,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
-from flask import Flask, Response, request
+from flask import Flask, Response, g, request
 
 
 def env_int(name: str, default: int) -> int:
@@ -48,9 +50,11 @@ REQUIRE_AUTH = env_bool("REDALIBABACLAUDE_REQUIRE_AUTH", True)
 AUTH_TOKENS = set(split_values(os.getenv("REDALIBABACLAUDE_AUTH_TOKENS", "red")))
 DEFAULT_MODEL = (
     os.getenv("REDALIBABACLAUDE_DEFAULT_MODEL")
-    or "qwen-coder-plus"
+    or "qwen3.6-plus"
 ).strip().lower()
 STREAM_CHUNK_SIZE = max(1, env_int("REDALIBABACLAUDE_STREAM_CHUNK_SIZE", 1))
+SSE_HEARTBEAT_SECONDS = max(0, env_int("REDALIBABACLAUDE_SSE_HEARTBEAT_SECONDS", 12))
+SSE_HEARTBEAT_QUEUE_SIZE = max(10, env_int("REDALIBABACLAUDE_SSE_HEARTBEAT_QUEUE_SIZE", 2048))
 CONNECT_TIMEOUT = env_int("REDALIBABACLAUDE_CONNECT_TIMEOUT", 20)
 READ_TIMEOUT = env_int("REDALIBABACLAUDE_READ_TIMEOUT", 360)
 TLS_CERT = (os.getenv("REDALIBABACLAUDE_TLS_CERT") or "").strip()
@@ -69,24 +73,27 @@ SERVER_ERROR_COOLDOWN_SECONDS = max(1, env_int("REDALIBABACLAUDE_SERVER_ERROR_CO
 MAX_5XX_RETRIES = max(0, env_int("REDALIBABACLAUDE_MAX_5XX_RETRIES", 4))
 EXPERIMENTAL_THINKING_BLOCKS = env_bool("REDALIBABACLAUDE_EXPERIMENTAL_THINKING_BLOCKS", False)
 FAKE_THINKING_SIGNATURE_PREFIX = os.getenv("REDALIBABACLAUDE_FAKE_THINKING_SIGNATURE_PREFIX", "redalibaba").strip() or "redalibaba"
-FORCE_ANTHROPIC_THINKING = env_bool("REDALIBABACLAUDE_FORCE_ANTHROPIC_THINKING", True)
-WEBSEARCH_FALLBACK_ENABLED = env_bool("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_ENABLED", True)
+FORCE_ANTHROPIC_THINKING = env_bool("REDALIBABACLAUDE_FORCE_ANTHROPIC_THINKING", False)
+DIRECT_PROTOCOL_MODE = env_bool("REDALIBABACLAUDE_DIRECT_PROTOCOL_MODE", True)
+WEBSEARCH_FALLBACK_ENABLED = env_bool("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_ENABLED", False)
 WEBSEARCH_INTERNALIZE_STREAM_REQUESTS = env_bool("REDALIBABACLAUDE_WEBSEARCH_INTERNALIZE_STREAM_REQUESTS", False)
 WEBSEARCH_FALLBACK_URL = os.getenv("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_URL", "http://127.0.0.1:8088/search").strip() or "http://127.0.0.1:8088/search"
 WEBSEARCH_FALLBACK_MAX_RESULTS = max(1, env_int("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_MAX_RESULTS", 5))
 WEBSEARCH_FALLBACK_MAX_QUERIES = max(1, env_int("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_MAX_QUERIES", 3))
 WEBSEARCH_FALLBACK_TIMEOUT = max(1, env_int("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_TIMEOUT", 8))
 WEBSEARCH_FALLBACK_LANGUAGE = os.getenv("REDALIBABACLAUDE_WEBSEARCH_FALLBACK_LANGUAGE", "pt-BR").strip() or "pt-BR"
-WEBSEARCH_INTERNAL_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_WEBSEARCH_INTERNAL_MAX_ROUNDS", 2))
-TOOL_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_TOOL_REPAIR_MAX_ROUNDS", 3))
-EMPTY_OUTPUT_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_EMPTY_OUTPUT_REPAIR_MAX_ROUNDS", 2))
-TODO_ONLY_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_TODO_ONLY_REPAIR_MAX_ROUNDS", 2))
-WORKSPACE_ACTION_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_WORKSPACE_ACTION_REPAIR_MAX_ROUNDS", 2))
+WEBSEARCH_INTERNAL_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_WEBSEARCH_INTERNAL_MAX_ROUNDS", 0))
+TOOL_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_TOOL_REPAIR_MAX_ROUNDS", 0))
+EMPTY_OUTPUT_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_EMPTY_OUTPUT_REPAIR_MAX_ROUNDS", 0))
+TODO_ONLY_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_TODO_ONLY_REPAIR_MAX_ROUNDS", 0))
+WORKSPACE_ACTION_REPAIR_MAX_ROUNDS = max(0, env_int("REDALIBABACLAUDE_WORKSPACE_ACTION_REPAIR_MAX_ROUNDS", 0))
 WEBFETCH_FALLBACK_TIMEOUT = max(1, env_int("REDALIBABACLAUDE_WEBFETCH_FALLBACK_TIMEOUT", 12))
 WEBFETCH_FALLBACK_MAX_CHARS = max(1000, env_int("REDALIBABACLAUDE_WEBFETCH_FALLBACK_MAX_CHARS", 24000))
 LIVE_EXTERNAL_TOOL_STREAMING = env_bool("REDALIBABACLAUDE_LIVE_EXTERNAL_TOOL_STREAMING", True)
 INTERNAL_TOOL_NAMES = {"WebSearch", "WebFetch"}
 DATA_DIR = Path(os.getenv("REDALIBABACLAUDE_DATA_DIR", "/var/lib/redalibabaclaude")).expanduser()
+FILES_DIR = Path(os.getenv("REDALIBABACLAUDE_FILES_DIR", str(DATA_DIR / "files"))).expanduser()
+FILES_MAX_BYTES = max(1, env_int("REDALIBABACLAUDE_FILE_UPLOAD_MAX_BYTES", 32 * 1024 * 1024))
 TOKEN_METRICS_ENABLED = env_bool("REDALIBABACLAUDE_TOKEN_METRICS_ENABLED", False)
 TOKEN_METRICS_DB = Path(os.getenv("REDALIBABACLAUDE_TOKEN_METRICS_DB", str(DATA_DIR / "token_usage.sqlite3"))).expanduser()
 TOKEN_METRICS_QUEUE_SIZE = max(100, env_int("REDALIBABACLAUDE_TOKEN_METRICS_QUEUE_SIZE", 10000))
@@ -126,6 +133,13 @@ def mask_token(value: str) -> str:
     return f"{token[:3]}...{token[-1]}(len={len(token)})"
 
 
+def key_fingerprint(value: str) -> str:
+    token = str(value or "").strip()
+    if not token:
+        return ""
+    return hashlib.sha256(token.encode("utf-8", "replace")).hexdigest()[:12]
+
+
 class JsonResponseShim:
     def __init__(self, payload: dict[str, Any], status_code: int = 200):
         self.status_code = status_code
@@ -154,11 +168,128 @@ def first_positive_int(*values: Any) -> tuple[int, bool]:
     return 0, False
 
 
+def cap_output_tokens(value: Any, default: int = 2048, output_cap: int | None = None) -> int:
+    requested = safe_int(value, default)
+    if requested <= 0:
+        requested = default
+    if output_cap is None:
+        return max(1, requested)
+    cap = safe_int(output_cap, requested)
+    return max(1, min(requested, max(1, cap)))
+
+
+def model_output_cap(alias: dict[str, Any] | None) -> int | None:
+    if isinstance(alias, dict):
+        cap = safe_int(alias.get("max_output_tokens"), 0)
+        if cap > 0:
+            return cap
+    return None
+
+
 def estimate_output_tokens_from_text(text: str) -> int:
     cleaned = str(text or "")
     if not cleaned:
         return 0
     return max(1, len(cleaned) // 4)
+
+
+def iso_timestamp(ts: float | None = None) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts or time.time()))
+
+
+def safe_filename(value: str, fallback: str = "upload.bin") -> str:
+    name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]+", "_", str(value or "").strip())
+    name = name.strip(" .")
+    return name[:180] or fallback
+
+
+def file_meta_path(file_id: str) -> Path:
+    return FILES_DIR / f"{file_id}.json"
+
+
+def file_blob_path(file_id: str) -> Path:
+    return FILES_DIR / f"{file_id}.bin"
+
+
+def normalize_file_record(meta: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(meta.get("id") or ""),
+        "type": "file",
+        "filename": str(meta.get("filename") or "upload.bin"),
+        "mime_type": str(meta.get("mime_type") or "application/octet-stream"),
+        "size_bytes": max(0, safe_int(meta.get("size_bytes"), 0)),
+        "created_at": str(meta.get("created_at") or iso_timestamp()),
+        "downloadable": bool(meta.get("downloadable", True)),
+    }
+
+
+def save_file_record(*, filename: str, mime_type: str, data: bytes, downloadable: bool = True) -> dict[str, Any]:
+    if len(data) > FILES_MAX_BYTES:
+        raise ValueError(f"file too large; max {FILES_MAX_BYTES} bytes")
+    FILES_DIR.mkdir(parents=True, exist_ok=True)
+    file_id = f"file_{uuid.uuid4().hex}"
+    record = normalize_file_record(
+        {
+            "id": file_id,
+            "filename": safe_filename(filename),
+            "mime_type": mime_type or mimetypes.guess_type(filename)[0] or "application/octet-stream",
+            "size_bytes": len(data),
+            "created_at": iso_timestamp(),
+            "downloadable": downloadable,
+        }
+    )
+    file_blob_path(file_id).write_bytes(data)
+    file_meta_path(file_id).write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    return record
+
+
+def read_file_record(file_id: str) -> dict[str, Any] | None:
+    clean_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(file_id or ""))
+    if not clean_id:
+        return None
+    path = file_meta_path(clean_id)
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    record = normalize_file_record(data if isinstance(data, dict) else {})
+    return record if record.get("id") == clean_id else None
+
+
+def read_file_bytes(file_id: str) -> bytes | None:
+    record = read_file_record(file_id)
+    if not record:
+        return None
+    path = file_blob_path(record["id"])
+    if not path.exists():
+        return None
+    try:
+        return path.read_bytes()
+    except Exception:
+        return None
+
+
+def list_file_records() -> list[dict[str, Any]]:
+    FILES_DIR.mkdir(parents=True, exist_ok=True)
+    records: list[dict[str, Any]] = []
+    for path in sorted(FILES_DIR.glob("file_*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        record = read_file_record(path.stem)
+        if record:
+            records.append(record)
+    return records
+
+
+def decode_bytes_text(raw: bytes, media_type: str = "") -> str:
+    if media_type and not media_type.lower().startswith(("text/", "application/json", "application/xml", "application/javascript")):
+        return ""
+    for encoding in ("utf-8", "utf-16", "latin-1"):
+        try:
+            return raw.decode(encoding).strip()
+        except Exception:
+            continue
+    return ""
 
 
 class TokenMetricsStore:
@@ -251,6 +382,7 @@ class TokenMetricsStore:
                     provider TEXT,
                     backend TEXT,
                     target TEXT,
+                    key_fingerprint TEXT,
                     status_code INTEGER,
                     success INTEGER,
                     stream INTEGER,
@@ -265,9 +397,13 @@ class TokenMetricsStore:
                 )
                 """
             )
+            columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(usage_events)").fetchall()}
+            if "key_fingerprint" not in columns:
+                conn.execute("ALTER TABLE usage_events ADD COLUMN key_fingerprint TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_events_ts ON usage_events(ts)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_events_model ON usage_events(model)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_events_endpoint ON usage_events(endpoint)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_events_key_fingerprint ON usage_events(key_fingerprint)")
             conn.commit()
         finally:
             conn.close()
@@ -282,6 +418,7 @@ class TokenMetricsStore:
             "provider": str(event.get("provider") or ""),
             "backend": str(event.get("backend") or ""),
             "target": str(event.get("target") or ""),
+            "key_fingerprint": str(event.get("key_fingerprint") or ""),
             "status_code": safe_int(event.get("status_code"), 0),
             "success": 1 if event.get("success") else 0,
             "stream": 1 if event.get("stream") else 0,
@@ -299,12 +436,12 @@ class TokenMetricsStore:
             conn.execute(
                 """
                 INSERT INTO usage_events (
-                    ts, request_id, endpoint, client_ip, model, provider, backend, target,
+                    ts, request_id, endpoint, client_ip, model, provider, backend, target, key_fingerprint,
                     status_code, success, stream, input_tokens, output_tokens, total_tokens,
                     input_estimated, output_estimated, duration_ms, stop_reason, error_type
                 )
                 VALUES (
-                    :ts, :request_id, :endpoint, :client_ip, :model, :provider, :backend, :target,
+                    :ts, :request_id, :endpoint, :client_ip, :model, :provider, :backend, :target, :key_fingerprint,
                     :status_code, :success, :stream, :input_tokens, :output_tokens, :total_tokens,
                     :input_estimated, :output_estimated, :duration_ms, :stop_reason, :error_type
                 )
@@ -384,7 +521,7 @@ class TokenMetricsStore:
                 recent = [dict(row) for row in conn.execute(
                     """
                     SELECT
-                        id, ts, request_id, endpoint, client_ip, model, provider, backend, target,
+                        id, ts, request_id, endpoint, client_ip, model, provider, backend, target, key_fingerprint,
                         status_code, success, stream, input_tokens, output_tokens, total_tokens,
                         input_estimated, output_estimated, duration_ms, stop_reason, error_type
                     FROM usage_events
@@ -456,22 +593,24 @@ MODELS = [
         "kind": "chat",
         "capabilities": ["chat", "tools"],
         "context_window": 262144,
+        "max_output_tokens": 8192,
         "tool_call_tested": True,
-        "default": True,
+        "default": False,
     },
     {
         "id": "Qwen 3.6 Plus",
         "target": "qwen3.6-plus",
-        "legacy_ids": ["ALI-SG/qwen3.6-plus", "qwen3.6-plus"],
+        "legacy_ids": ["ALI-SG/qwen3.6-plus", "qwen3.6-plus", "Qwen 3.6 Plus OPEN", "qwen 3.6 plus open"],
         "display_name": "Qwen 3.6 Plus",
         "provider": "alibaba",
         "backend": "sg",
         "kind": "chat",
         "capabilities": ["chat", "tools"],
         "context_window": 262144,
+        "max_output_tokens": 65536,
         "tool_call_tested": True,
         "extra_body": {"enable_thinking": False},
-        "default": False,
+        "default": True,
     },
     {
         "id": "Qwen 3.6 Max Preview",
@@ -483,6 +622,7 @@ MODELS = [
         "kind": "chat",
         "capabilities": ["chat", "tools"],
         "context_window": 262144,
+        "max_output_tokens": 65536,
         "tool_call_tested": True,
         "extra_body": {"enable_thinking": False},
         "default": False,
@@ -497,6 +637,7 @@ MODELS = [
         "kind": "chat",
         "capabilities": ["chat", "tools"],
         "context_window": 262144,
+        "max_output_tokens": 65536,
         "tool_call_tested": True,
         "default": False,
     },
@@ -510,6 +651,7 @@ MODELS = [
         "kind": "chat",
         "capabilities": ["chat", "tools"],
         "context_window": 262144,
+        "max_output_tokens": 65536,
         "tool_call_tested": True,
         "default": False,
     },
@@ -562,9 +704,32 @@ MODEL_BY_TARGET = {item["target"].lower(): item for item in MODELS}
 app = Flask(__name__)
 
 
+@app.before_request
+def assign_request_id() -> None:
+    g.request_id = request.headers.get("request-id") or request.headers.get("x-request-id") or f"req_{uuid.uuid4().hex}"
+
+
+@app.after_request
+def add_anthropic_response_headers(response: Response) -> Response:
+    rid = getattr(g, "request_id", f"req_{uuid.uuid4().hex}")
+    response.headers.setdefault("request-id", rid)
+    response.headers.setdefault("x-request-id", rid)
+    return response
+
+
 class BackendKeyPool:
     def __init__(self, keys: list[str]) -> None:
-        self._keys = [{"token": key, "next_allowed_at": 0.0, "cooldown_until": 0.0, "consecutive_429": 0} for key in keys if key]
+        self._keys = [
+            {
+                "token": key,
+                "fingerprint": key_fingerprint(key),
+                "next_allowed_at": 0.0,
+                "cooldown_until": 0.0,
+                "consecutive_429": 0,
+            }
+            for key in keys
+            if key
+        ]
         self._lock = threading.Lock()
         self._rr_index = 0
 
@@ -635,7 +800,7 @@ POOL_BY_BACKEND = {backend_id: BackendKeyPool(cfg["keys"]) for backend_id, cfg i
 
 
 def request_id() -> str:
-    return str(uuid.uuid4())
+    return getattr(g, "request_id", f"req_{uuid.uuid4().hex}")
 
 
 def response_json(payload: dict[str, Any], status: int = 200) -> Response:
@@ -648,7 +813,7 @@ def response_json(payload: dict[str, Any], status: int = 200) -> Response:
 
 
 def error_response(message: str, status: int, error_type: str) -> Response:
-    return response_json({"error": {"message": message, "type": error_type}}, status)
+    return response_json({"type": "error", "error": {"message": message, "type": error_type}, "request_id": request_id()}, status)
 
 
 def authorize() -> Response | None:
@@ -751,14 +916,95 @@ def anthropic_system_text(body: dict[str, Any]) -> str:
 
 
 def tool_schema_to_openai(tool: dict[str, Any]) -> dict[str, Any]:
+    raw_name = str(tool.get("name") or tool.get("type") or "anthropic_tool").strip()
+    tool_name = re.sub(r"[^A-Za-z0-9_-]+", "_", raw_name).strip("_")[:64] or "anthropic_tool"
+    description = str(tool.get("description") or "")
+    metadata_notes: list[str] = []
+    for key in ("type", "eager_input_streaming", "defer_loading", "allowed_callers", "max_uses", "use_cache"):
+        if key in tool:
+            metadata_notes.append(f"{key}={json.dumps(tool.get(key), ensure_ascii=False)}")
+    if metadata_notes:
+        description = f"{description}\n\nAnthropic tool metadata: " + "; ".join(metadata_notes)
+    function: dict[str, Any] = {
+        "name": tool_name,
+        "description": description.strip(),
+        "parameters": deepcopy(tool.get("input_schema") or tool.get("parameters") or {"type": "object", "properties": {}}),
+    }
+    if isinstance(tool.get("strict"), bool):
+        function["strict"] = bool(tool["strict"])
     return {
         "type": "function",
-        "function": {
-            "name": str(tool.get("name") or ""),
-            "description": str(tool.get("description") or ""),
-            "parameters": deepcopy(tool.get("input_schema") or {"type": "object", "properties": {}}),
-        },
+        "function": function,
     }
+
+
+def decode_base64_text(data: str, media_type: str = "") -> str:
+    try:
+        raw = base64.b64decode(str(data or ""), validate=True)
+    except Exception:
+        return ""
+    return decode_bytes_text(raw, media_type)
+
+
+def search_result_block_text(block: dict[str, Any]) -> str:
+    title = str(block.get("title") or "Search result").strip()
+    source = str(block.get("source") or block.get("url") or "").strip()
+    lines = [f"[Search result: {title}]"]
+    if source:
+        lines.append(f"Source: {source}")
+    content = block.get("content")
+    text = text_from_content(content)
+    if text:
+        lines.append(text)
+    return "\n".join(lines).strip()
+
+
+def generic_rich_block_text(block: dict[str, Any]) -> str:
+    block_type = str(block.get("type") or "content").strip()
+    if block_type in {"mcp_tool_result", "server_tool_result", "web_search_tool_result", "web_fetch_tool_result"}:
+        content = text_from_content(block.get("content"))
+        tool_id = str(block.get("tool_use_id") or block.get("id") or "").strip()
+        heading = f"[{block_type}]"
+        if tool_id:
+            heading += f" {tool_id}"
+        return f"{heading}\n{content}".strip()
+    if block_type in {"mcp_tool_use", "server_tool_use", "container_upload"}:
+        compact = {k: v for k, v in block.items() if k not in {"cache_control", "citations"}}
+        return f"[{block_type}]\n{json.dumps(compact, ensure_ascii=False, sort_keys=True)}"
+    return text_from_content(block.get("content")) or f"[Unsupported Anthropic content block: {block_type}]"
+
+
+def document_block_text(block: dict[str, Any]) -> str:
+    source = block.get("source") if isinstance(block.get("source"), dict) else {}
+    title = str(block.get("title") or block.get("name") or source.get("filename") or "document").strip()
+    source_type = str(source.get("type") or "").strip()
+    media_type = str(source.get("media_type") or "").strip()
+    prefix = f"[Document: {title}]"
+    if media_type:
+        prefix += f" ({media_type})"
+    if source_type == "text":
+        data = str(source.get("data") or source.get("text") or "")
+        return f"{prefix}\n{data}".strip()
+    if source_type == "base64":
+        decoded = decode_base64_text(str(source.get("data") or ""), media_type)
+        if decoded:
+            return f"{prefix}\n{decoded}".strip()
+        return f"{prefix}\n[Binary document supplied as base64; upstream OpenAI-compatible endpoint cannot consume Anthropic document blocks directly.]"
+    if source_type == "url":
+        url = str(source.get("url") or "").strip()
+        return f"{prefix}\nURL: {url}".strip()
+    if source_type == "file":
+        file_id = str(source.get("file_id") or "").strip()
+        record = read_file_record(file_id)
+        raw = read_file_bytes(file_id)
+        if record and raw is not None:
+            decoded = decode_bytes_text(raw, record["mime_type"])
+            meta = f"File ID: {file_id}\nFilename: {record['filename']}\nMIME: {record['mime_type']}\nSize: {record['size_bytes']} bytes"
+            if decoded:
+                return f"{prefix}\n{meta}\n\n{decoded}".strip()
+            return f"{prefix}\n{meta}\n[Binary file stored by local Files API; upstream OpenAI-compatible endpoint receives metadata only.]"
+        return f"{prefix}\nFile ID: {file_id}".strip()
+    return prefix
 
 
 def text_from_content(value: Any) -> str:
@@ -772,8 +1018,25 @@ def text_from_content(value: Any) -> str:
             elif isinstance(item, dict):
                 if item.get("type") == "text":
                     out.append(str(item.get("text") or ""))
+                elif item.get("type") == "document":
+                    out.append(document_block_text(item))
+                elif item.get("type") == "search_result":
+                    out.append(search_result_block_text(item))
+                elif item.get("type") == "image":
+                    out.append("[Image content]")
                 elif item.get("type") == "tool_result":
-                    out.append(text_from_content(item.get("content")))
+                    result_text = text_from_content(item.get("content"))
+                    if item.get("is_error") is True:
+                        result_text = f"[Tool error]\n{result_text}".strip()
+                    out.append(result_text)
+                elif item.get("type") == "thinking":
+                    thinking = str(item.get("thinking") or "").strip()
+                    if thinking:
+                        out.append(f"[Thinking]\n{thinking}")
+                elif item.get("type") == "redacted_thinking":
+                    out.append("[Redacted thinking block]")
+                else:
+                    out.append(generic_rich_block_text(item))
         return "\n".join(part for part in out if part)
     if isinstance(value, dict):
         return text_from_content(value.get("content"))
@@ -784,6 +1047,10 @@ def content_block_to_openai(block: dict[str, Any]) -> dict[str, Any] | None:
     block_type = str(block.get("type") or "").strip()
     if block_type == "text":
         return {"type": "text", "text": str(block.get("text") or "")}
+    if block_type == "document":
+        return {"type": "text", "text": document_block_text(block)}
+    if block_type == "search_result":
+        return {"type": "text", "text": search_result_block_text(block)}
     if block_type == "image":
         source = block.get("source") or {}
         source_type = str(source.get("type") or "").strip()
@@ -795,6 +1062,16 @@ def content_block_to_openai(block: dict[str, Any]) -> dict[str, Any] | None:
             url = str(source.get("url") or "")
             if url:
                 return {"type": "image_url", "image_url": {"url": url}}
+        if source_type == "file":
+            file_id = str(source.get("file_id") or "").strip()
+            record = read_file_record(file_id)
+            raw = read_file_bytes(file_id)
+            if record and raw is not None and record["mime_type"].startswith("image/"):
+                encoded = base64.b64encode(raw).decode("ascii")
+                return {"type": "image_url", "image_url": {"url": f"data:{record['mime_type']};base64,{encoded}"}}
+            return {"type": "text", "text": f"[Image file reference: {file_id}]"}
+    if block_type in {"mcp_tool_result", "mcp_tool_use", "server_tool_use", "server_tool_result", "web_search_tool_result", "web_fetch_tool_result", "container_upload"}:
+        return {"type": "text", "text": generic_rich_block_text(block)}
     return None
 
 
@@ -969,7 +1246,7 @@ def websearch_fallback_tool_results(body: dict[str, Any]) -> dict[str, str]:
 def anthropic_messages_to_openai(body: dict[str, Any]) -> list[dict[str, Any]]:
     messages: list[dict[str, Any]] = []
     system_text = anthropic_system_text(body)
-    fallback_tool_results = websearch_fallback_tool_results(body)
+    fallback_tool_results = {} if DIRECT_PROTOCOL_MODE else websearch_fallback_tool_results(body)
     if system_text:
         messages.append({"role": "system", "content": system_text})
 
@@ -991,7 +1268,19 @@ def anthropic_messages_to_openai(body: dict[str, Any]) -> list[dict[str, Any]]:
                 if not isinstance(block, dict):
                     continue
                 block_type = str(block.get("type") or "").strip()
-                if block_type in {"text", "image"}:
+                if block_type in {
+                    "text",
+                    "image",
+                    "document",
+                    "search_result",
+                    "mcp_tool_result",
+                    "mcp_tool_use",
+                    "server_tool_use",
+                    "server_tool_result",
+                    "web_search_tool_result",
+                    "web_fetch_tool_result",
+                    "container_upload",
+                }:
                     converted = content_block_to_openai(block)
                     if converted is not None:
                         pending_parts.append(converted)
@@ -1027,7 +1316,19 @@ def anthropic_messages_to_openai(body: dict[str, Any]) -> list[dict[str, Any]]:
             if not isinstance(block, dict):
                 continue
             block_type = str(block.get("type") or "").strip()
-            if block_type in {"text", "image"}:
+            if block_type in {
+                "text",
+                "image",
+                "document",
+                "search_result",
+                "mcp_tool_result",
+                "mcp_tool_use",
+                "server_tool_use",
+                "server_tool_result",
+                "web_search_tool_result",
+                "web_fetch_tool_result",
+                "container_upload",
+            }:
                 converted = content_block_to_openai(block)
                 if converted is not None:
                     text_parts.append(converted)
@@ -1090,8 +1391,15 @@ def anthropic_to_openai_payload(body: dict[str, Any], alias: dict[str, Any]) -> 
         "messages": anthropic_messages_to_openai(body),
         "stream": bool(body.get("stream")),
         "temperature": body.get("temperature", 0),
-        "max_tokens": body.get("max_tokens") or 2048,
+        "max_tokens": cap_output_tokens(body.get("max_tokens"), 2048, model_output_cap(alias)),
     }
+    for key in ("top_p", "presence_penalty", "frequency_penalty", "seed"):
+        if key in body:
+            payload[key] = deepcopy(body[key])
+    if isinstance(body.get("stop_sequences"), list):
+        payload["stop"] = deepcopy(body["stop_sequences"])
+    elif "stop" in body:
+        payload["stop"] = deepcopy(body["stop"])
     if isinstance(body.get("tools"), list) and body.get("tools"):
         payload["tools"] = [tool_schema_to_openai(item) for item in body["tools"] if isinstance(item, dict)]
         tool_choice = anthropic_tool_choice_to_openai(body.get("tool_choice"))
@@ -1100,7 +1408,8 @@ def anthropic_to_openai_payload(body: dict[str, Any], alias: dict[str, Any]) -> 
     if isinstance(body.get("metadata"), dict):
         payload["metadata"] = deepcopy(body["metadata"])
     apply_effort_options(payload, body)
-    inject_workspace_action_contract(payload)
+    if not DIRECT_PROTOCOL_MODE:
+        inject_workspace_action_contract(payload)
     return payload
 
 
@@ -1122,7 +1431,7 @@ def apply_effort_options(payload: dict[str, Any], body: dict[str, Any]) -> None:
     effort = request_effort(body)
     thinking = body.get("thinking")
     thinking_requested = isinstance(thinking, dict) and str(thinking.get("type") or "").strip().lower() not in {"", "disabled", "none"}
-    if FORCE_ANTHROPIC_THINKING or effort in {"high", "xhigh", "max"} or thinking_requested:
+    if (FORCE_ANTHROPIC_THINKING and not DIRECT_PROTOCOL_MODE) or effort in {"high", "xhigh", "max"} or thinking_requested:
         payload["enable_thinking"] = True
 
 
@@ -1247,12 +1556,22 @@ def is_context_error(status_code: int, body: str) -> bool:
     return status_code == 400 and "maximum context length" in lowered and "input tokens" in lowered
 
 
-def alibaba_headers(api_key: str) -> dict[str, str]:
+def openai_compatible_headers(api_key: str, backend: dict[str, Any] | None = None) -> dict[str, str]:
+    user_agent = "REDAlibabaClaude/1.0"
     return {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "Accept": "application/json",
+        "User-Agent": user_agent,
     }
+
+
+def alibaba_headers(api_key: str) -> dict[str, str]:
+    return openai_compatible_headers(api_key)
+
+
+def backend_error_message(alias: dict[str, Any], status_code: int, body: str) -> str:
+    return alibaba_error_message(status_code, body)
 
 
 def alibaba_error_message(status_code: int, body: str) -> str:
@@ -1349,6 +1668,7 @@ def metrics_context(
         "provider": alias.get("provider") or "",
         "backend": alias.get("backend") or "",
         "target": alias.get("target") or "",
+        "key_fingerprint": "",
         "stream": bool(stream),
         "input_tokens_estimate": max(0, int(input_tokens_estimate or 0)),
         "started_at": started_at,
@@ -1381,6 +1701,7 @@ def record_token_usage(
         "provider": context.get("provider") or "",
         "backend": context.get("backend") or "",
         "target": context.get("target") or "",
+        "key_fingerprint": context.get("key_fingerprint") or "",
         "stream": bool(context.get("stream")),
         "status_code": status_code,
         "success": success,
@@ -1392,10 +1713,34 @@ def record_token_usage(
     token_metrics_store.record(event)
 
 
-def proxy_openai_chat(payload: dict[str, Any], *, stream: bool, api_key: str, base_url: str) -> requests.Response:
+def remember_response_key(response: requests.Response, pool_item: dict[str, Any]) -> requests.Response:
+    try:
+        setattr(response, "red_key_fingerprint", str(pool_item.get("fingerprint") or ""))
+    except Exception:
+        pass
+    return response
+
+
+def remember_metrics_key(metrics: dict[str, Any] | None, response: requests.Response) -> None:
+    if not metrics:
+        return
+    try:
+        metrics["key_fingerprint"] = str(getattr(response, "red_key_fingerprint", "") or "")
+    except Exception:
+        metrics["key_fingerprint"] = ""
+
+
+def proxy_openai_chat(
+    payload: dict[str, Any],
+    *,
+    stream: bool,
+    api_key: str,
+    base_url: str,
+    backend: dict[str, Any] | None = None,
+) -> requests.Response:
     return http.post(
         f"{base_url}/chat/completions",
-        headers=alibaba_headers(api_key),
+        headers=openai_compatible_headers(api_key, backend),
         json=payload,
         timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
         stream=stream,
@@ -1421,7 +1766,13 @@ def proxy_openai_chat_with_context_retry(
         pool_item = pool.acquire()
         if pool_item is None:
             raise RuntimeError("alibaba api key not configured")
-        response = proxy_openai_chat(current_payload, stream=stream, api_key=str(pool_item["token"]), base_url=str(backend["base_url"]))
+        response = remember_response_key(proxy_openai_chat(
+            current_payload,
+            stream=stream,
+            api_key=str(pool_item["token"]),
+            base_url=str(backend["base_url"]),
+            backend=backend,
+        ), pool_item)
         if response.status_code < 400:
             pool.on_success(pool_item)
             return response
@@ -1473,6 +1824,33 @@ def proxy_openai_chat_with_context_retry(
     return response
 
 
+def proxy_openai_chat_direct(
+    payload: dict[str, Any],
+    *,
+    alias: dict[str, Any],
+    stream: bool,
+) -> requests.Response:
+    backend = alias_backend(alias)
+    pool = backend_pool(alias)
+    pool_item = pool.acquire()
+    if pool_item is None:
+        raise RuntimeError("alibaba api key not configured")
+    response = remember_response_key(proxy_openai_chat(
+        apply_alias_backend_options(payload, alias),
+        stream=stream,
+        api_key=str(pool_item["token"]),
+        base_url=str(backend["base_url"]),
+        backend=backend,
+    ), pool_item)
+    if response.status_code < 400:
+        pool.on_success(pool_item)
+    elif response.status_code == 429:
+        pool.on_429(pool_item)
+    elif response.status_code >= 500:
+        pool.on_5xx(pool_item)
+    return response
+
+
 def proxy_anthropic_payload_with_internal_tools(
     payload: dict[str, Any],
     *,
@@ -1493,7 +1871,13 @@ def proxy_anthropic_payload_with_internal_tools(
         )
         return upstream, True
 
-    max_internal_rounds = max(WEBSEARCH_INTERNAL_MAX_ROUNDS, TOOL_REPAIR_MAX_ROUNDS, EMPTY_OUTPUT_REPAIR_MAX_ROUNDS)
+    max_internal_rounds = max(
+        WEBSEARCH_INTERNAL_MAX_ROUNDS,
+        TOOL_REPAIR_MAX_ROUNDS,
+        EMPTY_OUTPUT_REPAIR_MAX_ROUNDS,
+        TODO_ONLY_REPAIR_MAX_ROUNDS,
+        WORKSPACE_ACTION_REPAIR_MAX_ROUNDS,
+    )
     for round_index in range(max_internal_rounds + 1):
         request_payload = deepcopy(current_payload)
         if WEBSEARCH_FALLBACK_ENABLED:
@@ -1760,7 +2144,9 @@ def append_invalid_tool_results(payload: dict[str, Any], data: dict[str, Any], i
                 "content": (
                     "Your previous tool call arguments were incomplete or invalid JSON before the client could execute them.\n"
                     f"{details}\n"
-                    "Call the intended tool again with one complete valid JSON object. Do not stop with planning text."
+                    "Call the intended tool again with one complete valid JSON object. "
+                    "For Write, include both `file_path` and `content` in the same tool call. "
+                    "Do not stop with planning text."
                 ),
             }
         )
@@ -2130,7 +2516,12 @@ def inject_workspace_action_contract(payload: dict[str, Any]) -> None:
         "Workspace action contract: the latest user request asks for a concrete local artifact or code change. "
         "Do not stop after only thinking, planning, or saying you will do it. "
         "Before the final answer, call at least one concrete workspace tool such as Write, Edit, MultiEdit, NotebookEdit, or Bash. "
-        "TodoWrite alone is only planning and is not a deliverable."
+        "TodoWrite alone is only planning and is not a deliverable. "
+        "When calling file tools, send one complete valid JSON object that matches the tool schema exactly. "
+        "For Write, always include non-empty `file_path` and non-empty `content`. "
+        "For Edit or MultiEdit, always include every required field before ending the turn. "
+        "Do not emit placeholder, partial, or truncated tool arguments. "
+        "Do not keep writing planning text once you are ready to create or edit the file; make the concrete tool call immediately."
     )
     messages = payload.setdefault("messages", [])
     if not isinstance(messages, list):
@@ -2228,6 +2619,143 @@ def sse_event(event: str, payload: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=True)}\n\n"
 
 
+def sse_error_event(message: str, error_type: str = "api_error") -> str:
+    return sse_event("error", {"type": "error", "error": {"type": error_type, "message": message}})
+
+
+def sse_ping_event() -> str:
+    return sse_event("ping", {"type": "ping"})
+
+
+def sse_stream_with_heartbeat(source_iter):
+    if SSE_HEARTBEAT_SECONDS <= 0:
+        yield from source_iter
+        return
+
+    done = object()
+    items: queue.Queue[Any] = queue.Queue(maxsize=SSE_HEARTBEAT_QUEUE_SIZE)
+
+    def producer() -> None:
+        try:
+            for chunk in source_iter:
+                items.put(chunk)
+        except Exception as exc:
+            items.put({"__error__": str(exc)[:500] or exc.__class__.__name__})
+        finally:
+            items.put(done)
+
+    thread = threading.Thread(target=producer, name="redalibabaclaude-sse-producer", daemon=True)
+    thread.start()
+
+    while True:
+        try:
+            item = items.get(timeout=SSE_HEARTBEAT_SECONDS)
+        except queue.Empty:
+            yield sse_ping_event()
+            continue
+        if item is done:
+            break
+        if isinstance(item, dict) and "__error__" in item:
+            yield sse_error_event(str(item["__error__"]), "upstream_stream_error")
+            break
+        yield item
+
+
+def byte_stream_with_heartbeat(source_iter, heartbeat: bytes = b": ping\n\n"):
+    if SSE_HEARTBEAT_SECONDS <= 0:
+        yield from source_iter
+        return
+
+    done = object()
+    items: queue.Queue[Any] = queue.Queue(maxsize=SSE_HEARTBEAT_QUEUE_SIZE)
+
+    def producer() -> None:
+        try:
+            for chunk in source_iter:
+                items.put(chunk)
+        except Exception as exc:
+            payload = {"error": {"message": str(exc)[:500] or exc.__class__.__name__, "type": "upstream_stream_error"}}
+            items.put(f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8"))
+        finally:
+            items.put(done)
+
+    thread = threading.Thread(target=producer, name="redalibabaclaude-openai-sse-producer", daemon=True)
+    thread.start()
+
+    while True:
+        try:
+            item = items.get(timeout=SSE_HEARTBEAT_SECONDS)
+        except queue.Empty:
+            yield heartbeat
+            continue
+        if item is done:
+            break
+        if isinstance(item, str):
+            yield item.encode("utf-8")
+        else:
+            yield item
+
+
+def openai_stream_response_with_upstream_heartbeat(upstream_factory, *, alias: dict[str, Any], metrics: dict[str, Any]):
+    done = object()
+    items: queue.Queue[Any] = queue.Queue(maxsize=SSE_HEARTBEAT_QUEUE_SIZE)
+    timeout = SSE_HEARTBEAT_SECONDS if SSE_HEARTBEAT_SECONDS > 0 else 10
+
+    def put_error(message: str, error_type: str = "upstream_stream_error") -> None:
+        payload = {"error": {"message": message[:500] or error_type, "type": error_type}}
+        items.put(f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8"))
+
+    def producer() -> None:
+        try:
+            upstream = upstream_factory()
+            remember_metrics_key(metrics, upstream)
+            if upstream.status_code >= 400:
+                try:
+                    body_text = upstream.text
+                except Exception:
+                    body_text = ""
+                status_code = 502 if upstream.status_code >= 500 else upstream.status_code
+                record_token_usage(metrics, status_code=status_code, success=False, error_type="upstream_error")
+                put_error(backend_error_message(alias, upstream.status_code, body_text), "upstream_error")
+                return
+            for chunk in sanitized_openai_stream_chunks(upstream, metrics=metrics):
+                items.put(chunk)
+        except Exception as exc:
+            record_token_usage(metrics, status_code=502, success=False, error_type="upstream_stream_error")
+            put_error(str(exc)[:500] or exc.__class__.__name__)
+        finally:
+            items.put(done)
+
+    thread = threading.Thread(target=producer, name="redalibabaclaude-openai-upstream-producer", daemon=True)
+    thread.start()
+    yield b": connected\n\n"
+
+    while True:
+        try:
+            item = items.get(timeout=timeout)
+        except queue.Empty:
+            yield b": ping\n\n"
+            continue
+        if item is done:
+            break
+        if isinstance(item, str):
+            yield item.encode("utf-8")
+        else:
+            yield item
+
+
+def anthropic_stream_response(source_iter) -> Response:
+    return Response(
+        sse_stream_with_heartbeat(source_iter),
+        status=200,
+        content_type="text/event-stream; charset=utf-8",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 def fake_thinking_signature(text: str, salt: str = "") -> str:
     digest = hashlib.sha256(f"{FAKE_THINKING_SIGNATURE_PREFIX}:{salt}:{text}".encode("utf-8", "replace")).hexdigest()
     return f"{FAKE_THINKING_SIGNATURE_PREFIX}:{digest}"
@@ -2310,7 +2838,13 @@ def anthropic_sse_from_openai_stream_with_internal_tools(
     metrics_has_completion_tokens = False
     metrics_text_parts: list[str] = []
 
-    max_internal_rounds = max(WEBSEARCH_INTERNAL_MAX_ROUNDS, TOOL_REPAIR_MAX_ROUNDS, EMPTY_OUTPUT_REPAIR_MAX_ROUNDS)
+    max_internal_rounds = max(
+        WEBSEARCH_INTERNAL_MAX_ROUNDS,
+        TOOL_REPAIR_MAX_ROUNDS,
+        EMPTY_OUTPUT_REPAIR_MAX_ROUNDS,
+        TODO_ONLY_REPAIR_MAX_ROUNDS,
+        WORKSPACE_ACTION_REPAIR_MAX_ROUNDS,
+    )
     for round_index in range(max_internal_rounds + 1):
         thinking_open = False
         thinking_parts: list[str] = []
@@ -2822,7 +3356,7 @@ def anthropic_sse_from_openai_stream(response: requests.Response, model_name: st
         if EXPERIMENTAL_THINKING_BLOCKS and isinstance(reasoning_delta, str) and reasoning_delta:
             if not thinking_started:
                 thinking_started = True
-                yield sse_event("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}})
+                yield sse_event("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": "", "signature": ""}})
             thinking_parts.append(reasoning_delta)
             yield sse_event("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": reasoning_delta}})
 
@@ -2847,6 +3381,10 @@ def anthropic_sse_from_openai_stream(response: requests.Response, model_name: st
             yield sse_event("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": signature}})
             yield sse_event("content_block_stop", {"type": "content_block_stop", "index": 0})
             thinking_closed = True
+        if tool_deltas and text_started and not text_closed:
+            text_index = 1 if thinking_started else 0
+            yield sse_event("content_block_stop", {"type": "content_block_stop", "index": text_index})
+            text_closed = True
 
         for tool_delta in tool_deltas:
             try:
@@ -2930,7 +3468,7 @@ def anthropic_sse_from_openai_json(data: dict[str, Any], model_name: str):
             thinking = str(block.get("thinking") or "")
             yield sse_event(
                 "content_block_start",
-                {"type": "content_block_start", "index": index, "content_block": {"type": "thinking", "thinking": ""}},
+                {"type": "content_block_start", "index": index, "content_block": {"type": "thinking", "thinking": "", "signature": ""}},
             )
             if thinking:
                 yield sse_event(
@@ -3004,6 +3542,175 @@ def public_model_entry(alias: dict[str, Any]) -> dict[str, Any]:
             "tool_call_tested": bool(alias.get("tool_call_tested")),
         },
     }
+
+
+def tokens_dashboard_html() -> str:
+    return """<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RED Alibaba Proxy - Tokens</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #08090b;
+      --panel: #101216;
+      --panel-2: #151922;
+      --border: #2b1014;
+      --text: #f3f6f8;
+      --muted: #9ca3af;
+      --red: #ff2d37;
+      --red-soft: rgba(255,45,55,.18);
+      --green: #35d07f;
+      --amber: #f4b942;
+      --line: #262b35;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 20% -10%, rgba(255,45,55,.22), transparent 34rem),
+        linear-gradient(135deg, #08090b 0%, #0d1017 45%, #12080b 100%);
+    }
+    .shell { max-width: 1320px; margin: 0 auto; padding: 28px; }
+    header { display: flex; justify-content: space-between; gap: 18px; align-items: end; margin-bottom: 24px; }
+    h1 { margin: 0; font-size: clamp(28px, 4vw, 52px); letter-spacing: 0; line-height: 1; }
+    .sub { color: var(--muted); margin-top: 8px; }
+    .auth { display: flex; gap: 10px; align-items: center; }
+    input, button {
+      border: 1px solid var(--line);
+      background: rgba(16,18,22,.88);
+      color: var(--text);
+      min-height: 38px;
+      border-radius: 8px;
+      padding: 0 12px;
+    }
+    button { cursor: pointer; border-color: rgba(255,45,55,.45); background: var(--red-soft); }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+    .card {
+      background: linear-gradient(180deg, rgba(21,25,34,.88), rgba(12,14,18,.92));
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 18px 45px rgba(0,0,0,.28);
+    }
+    .metric .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+    .metric .value { margin-top: 8px; font-size: clamp(24px, 3vw, 38px); font-weight: 800; }
+    .metric .hint { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    .span-2 { grid-column: span 2; }
+    .span-4 { grid-column: span 4; }
+    .status { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 18px var(--green); }
+    .chart { height: 160px; display: flex; gap: 4px; align-items: end; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 12px; }
+    .bar { flex: 1; min-width: 3px; border-radius: 4px 4px 0 0; background: linear-gradient(180deg, var(--red), #7f1119); opacity: .9; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: .08em; }
+    .ok { color: var(--green); }
+    .fail { color: var(--red); }
+    .pill { display: inline-flex; border: 1px solid rgba(255,255,255,.12); border-radius: 999px; padding: 3px 8px; color: var(--muted); }
+    .muted { color: var(--muted); }
+    .footer { color: var(--muted); margin-top: 18px; font-size: 12px; }
+    @media (max-width: 900px) {
+      header { align-items: stretch; flex-direction: column; }
+      .auth { flex-wrap: wrap; }
+      .grid { grid-template-columns: 1fr; }
+      .span-2, .span-4 { grid-column: span 1; }
+      table { font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <h1>Proxy Tokens</h1>
+        <div class="sub">RED Alibaba Claude Gateway - consumo absoluto em tempo real</div>
+      </div>
+      <div class="auth">
+        <span class="status"><span class="dot"></span><span id="status">aguardando token</span></span>
+        <input id="token" type="password" placeholder="Bearer token">
+        <button id="save">Atualizar</button>
+      </div>
+    </header>
+    <section class="grid">
+      <div class="card metric"><div class="label">Requests</div><div class="value" id="requests">-</div><div class="hint" id="successRate">-</div></div>
+      <div class="card metric"><div class="label">Entrada</div><div class="value" id="inputTokens">-</div><div class="hint">tokens absolutos</div></div>
+      <div class="card metric"><div class="label">Saida</div><div class="value" id="outputTokens">-</div><div class="hint">tokens absolutos</div></div>
+      <div class="card metric"><div class="label">Total</div><div class="value" id="totalTokens">-</div><div class="hint" id="queue">-</div></div>
+      <div class="card span-4">
+        <strong>Ultima hora</strong>
+        <div class="chart" id="chart"></div>
+      </div>
+      <div class="card span-2">
+        <strong>Modelos</strong>
+        <table><thead><tr><th>Modelo</th><th>Req</th><th>Entrada</th><th>Saida</th><th>Falhas</th></tr></thead><tbody id="models"></tbody></table>
+      </div>
+      <div class="card span-2">
+        <strong>Endpoints</strong>
+        <table><thead><tr><th>Endpoint</th><th>Req</th><th>Total</th><th>Falhas</th></tr></thead><tbody id="endpoints"></tbody></table>
+      </div>
+      <div class="card span-4">
+        <strong>Recentes</strong>
+        <table><thead><tr><th>Hora</th><th>Modelo</th><th>Status</th><th>Tokens</th><th>Duração</th><th>Erro</th></tr></thead><tbody id="recent"></tbody></table>
+      </div>
+    </section>
+    <div class="footer">Atualiza automaticamente a cada 5 segundos. O token fica salvo apenas no localStorage deste navegador.</div>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const fmt = (n) => Number(n || 0).toLocaleString('pt-BR');
+    const time = (ts) => ts ? new Date(ts * 1000).toLocaleTimeString('pt-BR') : '-';
+    const tokenInput = $('token');
+    tokenInput.value = localStorage.getItem('redalibaba_token') || '';
+    $('save').onclick = () => { localStorage.setItem('redalibaba_token', tokenInput.value.trim()); load(); };
+    async function load() {
+      const token = tokenInput.value.trim();
+      if (!token) { $('status').textContent = 'informe o token'; return; }
+      try {
+        const res = await fetch('/admin/tokens?limit=120', { headers: { Authorization: 'Bearer ' + token } });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const s = data.summary || {};
+        $('status').textContent = 'online';
+        $('requests').textContent = fmt(s.requests);
+        $('inputTokens').textContent = fmt(s.input_tokens);
+        $('outputTokens').textContent = fmt(s.output_tokens);
+        $('totalTokens').textContent = fmt(s.total_tokens);
+        const rate = s.requests ? Math.round((Number(s.successes || 0) / Number(s.requests || 1)) * 100) : 0;
+        $('successRate').textContent = rate + '% sucesso - ' + fmt(s.failures) + ' falhas';
+        $('queue').textContent = 'fila ' + fmt(data.queue_depth) + ' - drops ' + fmt(data.dropped_events);
+        renderChart(data.timeseries || []);
+        renderModels(data.models || []);
+        renderEndpoints(data.endpoints || []);
+        renderRecent(data.recent || []);
+      } catch (err) {
+        $('status').textContent = 'erro: ' + err.message;
+      }
+    }
+    function renderChart(rows) {
+      const chart = $('chart');
+      const max = Math.max(1, ...rows.map(r => Number(r.total_tokens || 0)));
+      chart.innerHTML = rows.slice(-60).map(r => `<div class="bar" title="${time(r.bucket_ts)} - ${fmt(r.total_tokens)} tokens" style="height:${Math.max(3, Number(r.total_tokens || 0) / max * 100)}%"></div>`).join('');
+    }
+    function renderModels(rows) {
+      $('models').innerHTML = rows.map(r => `<tr><td><strong>${r.model || '-'}</strong><br><span class="muted">${r.backend || ''}</span></td><td>${fmt(r.requests)}</td><td>${fmt(r.input_tokens)}</td><td>${fmt(r.output_tokens)}</td><td class="${r.failures ? 'fail' : 'ok'}">${fmt(r.failures)}</td></tr>`).join('');
+    }
+    function renderEndpoints(rows) {
+      $('endpoints').innerHTML = rows.map(r => `<tr><td><span class="pill">${r.endpoint || '-'}</span></td><td>${fmt(r.requests)}</td><td>${fmt(r.total_tokens)}</td><td class="${r.failures ? 'fail' : 'ok'}">${fmt(r.failures)}</td></tr>`).join('');
+    }
+    function renderRecent(rows) {
+      $('recent').innerHTML = rows.map(r => `<tr><td>${time(r.ts)}</td><td>${r.model || '-'}</td><td class="${r.success ? 'ok' : 'fail'}">${r.status_code || '-'}</td><td>${fmt(r.total_tokens)}</td><td>${fmt(r.duration_ms)}ms</td><td>${r.error_type || ''}</td></tr>`).join('');
+    }
+    load();
+    setInterval(load, 5000);
+  </script>
+</body>
+</html>"""
 
 
 def sanitize_openai_message(message: dict[str, Any]) -> dict[str, Any]:
@@ -3103,9 +3810,12 @@ def root() -> Response:
             "endpoints": [
                 "/healthz",
                 "/admin/tokens",
+                "/admin/tokens/ui",
+                "/v1/files",
                 "/v1/models",
                 "/v1/messages",
                 "/v1/messages/count_tokens",
+                "/v1/responses",
                 "/v1/chat/completions",
             ],
         }
@@ -3142,12 +3852,117 @@ def admin_tokens() -> Response:
     return response_json(payload)
 
 
+@app.route("/admin/tokens/ui", methods=["GET"])
+def admin_tokens_ui() -> Response:
+    return Response(tokens_dashboard_html(), status=200, content_type="text/html; charset=utf-8")
+
+
+@app.route("/v1/files", methods=["GET"])
+def files_list() -> Response:
+    auth_error = authorize()
+    if auth_error is not None:
+        return auth_error
+    records = list_file_records()
+    return response_json(
+        {
+            "object": "list",
+            "data": records,
+            "has_more": False,
+            "first_id": records[0]["id"] if records else None,
+            "last_id": records[-1]["id"] if records else None,
+        }
+    )
+
+
+@app.route("/v1/files", methods=["POST"])
+def files_create() -> Response:
+    auth_error = authorize()
+    if auth_error is not None:
+        return auth_error
+    try:
+        if request.files:
+            uploaded = request.files.get("file") or next(iter(request.files.values()))
+            raw = uploaded.read()
+            filename = uploaded.filename or "upload.bin"
+            mime_type = uploaded.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+            record = save_file_record(filename=filename, mime_type=mime_type, data=raw, downloadable=True)
+        else:
+            body = request.get_json(silent=True) or {}
+            if not isinstance(body, dict):
+                return error_response("file upload body must be an object", 400, "invalid_request_error")
+            filename = safe_filename(str(body.get("filename") or body.get("name") or "upload.bin"))
+            mime_type = str(body.get("mime_type") or mimetypes.guess_type(filename)[0] or "application/octet-stream")
+            encoding = str(body.get("encoding") or "").lower()
+            if encoding == "base64":
+                raw = base64.b64decode(str(body.get("data") or body.get("content") or ""), validate=True)
+            else:
+                raw = str(body.get("content") or body.get("data") or "").encode("utf-8")
+            record = save_file_record(filename=filename, mime_type=mime_type, data=raw, downloadable=True)
+    except ValueError as exc:
+        return error_response(str(exc), 413, "invalid_request_error")
+    except Exception as exc:
+        return error_response(f"invalid file upload: {str(exc)[:160]}", 400, "invalid_request_error")
+    return response_json(record, 200)
+
+
+@app.route("/v1/files/<path:file_id>", methods=["GET"])
+def files_get(file_id: str) -> Response:
+    auth_error = authorize()
+    if auth_error is not None:
+        return auth_error
+    record = read_file_record(file_id)
+    if not record:
+        return error_response("file not found", 404, "not_found_error")
+    return response_json(record)
+
+
+@app.route("/v1/files/<path:file_id>/content", methods=["GET"])
+def files_content(file_id: str) -> Response:
+    auth_error = authorize()
+    if auth_error is not None:
+        return auth_error
+    record = read_file_record(file_id)
+    raw = read_file_bytes(file_id)
+    if not record or raw is None:
+        return error_response("file not found", 404, "not_found_error")
+    response = Response(raw, status=200, content_type=record["mime_type"])
+    response.headers["Content-Disposition"] = f"attachment; filename=\"{record['filename']}\""
+    return response
+
+
+@app.route("/v1/files/<path:file_id>", methods=["DELETE"])
+def files_delete(file_id: str) -> Response:
+    auth_error = authorize()
+    if auth_error is not None:
+        return auth_error
+    record = read_file_record(file_id)
+    if not record:
+        return error_response("file not found", 404, "not_found_error")
+    for path in (file_meta_path(record["id"]), file_blob_path(record["id"])):
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            pass
+    return response_json({"id": record["id"], "type": "file_deleted", "deleted": True})
+
+
 @app.route("/v1/models", methods=["GET"])
 def models() -> Response:
     auth_error = authorize()
     if auth_error is not None:
         return auth_error
     return response_json({"object": "list", "data": [public_model_entry(item) for item in MODELS]})
+
+
+@app.route("/v1/models/<path:model_id>", methods=["GET"])
+def model_detail(model_id: str) -> Response:
+    auth_error = authorize()
+    if auth_error is not None:
+        return auth_error
+    alias = resolve_model(model_id)
+    if alias is None:
+        return error_response("model not available in redalibabaclaude", 404, "model_not_found")
+    return response_json(public_model_entry(alias))
 
 
 @app.route("/v1/messages/count_tokens", methods=["POST"])
@@ -3189,13 +4004,18 @@ def anthropic_messages() -> Response:
         return error_response("alibaba api key not configured for this backend", 503, "configuration_error")
     payload = anthropic_to_openai_payload(body, alias)
     stream = bool(body.get("stream"))
-    upstream, upstream_stream = proxy_anthropic_payload_with_internal_tools(
-        payload,
-        alias=alias,
-        stream=stream,
-        context_window=int(alias.get("context_window") or 262144),
-        input_tokens=input_tokens_estimate,
-    )
+    if DIRECT_PROTOCOL_MODE:
+        upstream = proxy_openai_chat_direct(payload, alias=alias, stream=stream)
+        upstream_stream = stream
+    else:
+        upstream, upstream_stream = proxy_anthropic_payload_with_internal_tools(
+            payload,
+            alias=alias,
+            stream=stream,
+            context_window=int(alias.get("context_window") or 262144),
+            input_tokens=input_tokens_estimate,
+        )
+    remember_metrics_key(metrics, upstream)
     if upstream.status_code >= 400:
         try:
             body_text = upstream.text
@@ -3203,10 +4023,12 @@ def anthropic_messages() -> Response:
             body_text = ""
         status_code = 502 if upstream.status_code >= 500 else upstream.status_code
         record_token_usage(metrics, status_code=status_code, success=False, error_type="upstream_error")
-        return error_response(alibaba_error_message(upstream.status_code, body_text), status_code, "upstream_error")
+        return error_response(backend_error_message(alias, upstream.status_code, body_text), status_code, "upstream_error")
     if stream and upstream_stream:
-        return Response(
-            anthropic_sse_from_openai_stream_with_internal_tools(
+        stream_body = (
+            anthropic_sse_from_openai_stream(upstream, alias["id"], metrics=metrics)
+            if DIRECT_PROTOCOL_MODE
+            else anthropic_sse_from_openai_stream_with_internal_tools(
                 upstream,
                 payload=payload,
                 alias=alias,
@@ -3214,10 +4036,9 @@ def anthropic_messages() -> Response:
                 context_window=int(alias.get("context_window") or 262144),
                 input_tokens=input_tokens_estimate,
                 metrics=metrics,
-            ),
-            status=200,
-            content_type="text/event-stream; charset=utf-8",
+            )
         )
+        return anthropic_stream_response(stream_body)
     try:
         data = upstream.json()
     except Exception:
@@ -3236,6 +4057,266 @@ def anthropic_messages() -> Response:
     return response_json(anthropic_message_from_openai(data, alias["id"]))
 
 
+def responses_content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content") or ""
+                if text:
+                    parts.append(str(text))
+            elif item is not None:
+                parts.append(str(item))
+        return "\n".join(parts)
+    if content is None:
+        return ""
+    return str(content)
+
+
+def responses_input_to_chat_messages(body: dict[str, Any]) -> list[dict[str, Any]]:
+    messages: list[dict[str, Any]] = []
+    instructions = str(body.get("instructions") or "").strip()
+    if instructions:
+        messages.append({"role": "system", "content": instructions})
+    raw_input = body.get("input")
+    if isinstance(raw_input, str):
+        messages.append({"role": "user", "content": raw_input})
+        return messages
+    if not isinstance(raw_input, list):
+        messages.append({"role": "user", "content": str(raw_input or "")})
+        return messages
+    for item in raw_input:
+        if not isinstance(item, dict):
+            messages.append({"role": "user", "content": str(item)})
+            continue
+        item_type = str(item.get("type") or "")
+        if item_type == "function_call_output":
+            messages.append({"role": "tool", "tool_call_id": str(item.get("call_id") or ""), "content": str(item.get("output") or "")})
+            continue
+        role = str(item.get("role") or "user")
+        if role == "developer":
+            role = "system"
+        if role not in {"system", "user", "assistant", "tool"}:
+            role = "user"
+        content = responses_content_text(item.get("content") if "content" in item else item.get("text"))
+        message: dict[str, Any] = {"role": role, "content": content}
+        if item.get("tool_call_id"):
+            message["tool_call_id"] = str(item.get("tool_call_id"))
+        messages.append(message)
+    return messages or [{"role": "user", "content": ""}]
+
+
+def responses_tools_to_chat_tools(tools: Any) -> list[dict[str, Any]]:
+    converted: list[dict[str, Any]] = []
+    if not isinstance(tools, list):
+        return converted
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        if tool.get("type") != "function":
+            continue
+        function = tool.get("function") if isinstance(tool.get("function"), dict) else tool
+        name = str(function.get("name") or "").strip()
+        if not name:
+            continue
+        converted.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": str(function.get("description") or ""),
+                    "parameters": function.get("parameters") or {"type": "object", "properties": {}},
+                },
+            }
+        )
+    return converted
+
+
+def responses_to_chat_payload(body: dict[str, Any], alias: dict[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": alias["id"],
+        "messages": responses_input_to_chat_messages(body),
+        "stream": bool(body.get("stream")),
+    }
+    max_tokens = body.get("max_output_tokens") or body.get("max_tokens")
+    if max_tokens is not None:
+        payload["max_tokens"] = cap_output_tokens(max_tokens, 2048, model_output_cap(alias))
+    for key in ("temperature", "top_p", "presence_penalty", "frequency_penalty", "parallel_tool_calls"):
+        if key in body:
+            payload[key] = body[key]
+    tools = responses_tools_to_chat_tools(body.get("tools"))
+    if tools:
+        payload["tools"] = tools
+    if body.get("tool_choice") is not None:
+        payload["tool_choice"] = body.get("tool_choice")
+    return payload
+
+
+def response_usage_from_openai(data: dict[str, Any]) -> dict[str, int]:
+    usage = data.get("usage") or {}
+    input_tokens = safe_int(usage.get("prompt_tokens") or usage.get("input_tokens"), 0)
+    output_tokens = safe_int(usage.get("completion_tokens") or usage.get("output_tokens"), 0)
+    total_tokens = safe_int(usage.get("total_tokens"), input_tokens + output_tokens)
+    return {"input_tokens": input_tokens, "output_tokens": output_tokens, "total_tokens": total_tokens}
+
+
+def responses_from_openai_json(data: dict[str, Any], model_name: str) -> dict[str, Any]:
+    response_id = f"resp_{uuid.uuid4().hex}"
+    output: list[dict[str, Any]] = []
+    text_parts: list[str] = []
+    choice = ((data.get("choices") or [{}]) or [{}])[0]
+    message = choice.get("message") or {}
+    content = str(message.get("content") or "")
+    if content:
+        text_parts.append(content)
+        output.append(
+            {
+                "id": f"msg_{uuid.uuid4().hex}",
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": content, "annotations": []}],
+            }
+        )
+    for call in message.get("tool_calls") or []:
+        function = call.get("function") or {}
+        output.append(
+            {
+                "id": str(call.get("id") or f"fc_{uuid.uuid4().hex}"),
+                "type": "function_call",
+                "status": "completed",
+                "call_id": str(call.get("id") or f"call_{uuid.uuid4().hex}"),
+                "name": str(function.get("name") or ""),
+                "arguments": str(function.get("arguments") or "{}"),
+            }
+        )
+    return {
+        "id": response_id,
+        "object": "response",
+        "created_at": int(time.time()),
+        "status": "completed",
+        "model": model_name,
+        "output": output,
+        "output_text": "".join(text_parts),
+        "usage": response_usage_from_openai(data),
+    }
+
+
+def responses_stream_event(event: str, payload: dict[str, Any]) -> bytes:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8")
+
+
+def responses_sse_from_openai_stream(response: requests.Response, model_name: str, metrics: dict[str, Any] | None = None):
+    response_id = f"resp_{uuid.uuid4().hex}"
+    created_at = int(time.time())
+    base = {"id": response_id, "object": "response", "created_at": created_at, "status": "in_progress", "model": model_name, "output": []}
+    yield responses_stream_event("response.created", {"type": "response.created", "response": base})
+    message_id = f"msg_{uuid.uuid4().hex}"
+    content_started = False
+    text_parts: list[str] = []
+    tool_state: dict[int, dict[str, Any]] = {}
+    usage_payload: dict[str, Any] = {}
+    finish_reason = ""
+    for raw_line in response.iter_lines(decode_unicode=False, chunk_size=STREAM_CHUNK_SIZE):
+        if not raw_line:
+            continue
+        line = raw_line.decode("utf-8", "replace") if isinstance(raw_line, (bytes, bytearray)) else str(raw_line)
+        if not line.startswith("data:"):
+            continue
+        data_text = line[5:].strip()
+        if data_text == "[DONE]":
+            break
+        try:
+            chunk = json.loads(data_text)
+        except Exception:
+            continue
+        if chunk.get("usage"):
+            usage_payload = chunk.get("usage") or {}
+        for choice in chunk.get("choices") or []:
+            delta = choice.get("delta") or {}
+            if choice.get("finish_reason"):
+                finish_reason = str(choice.get("finish_reason") or "")
+            content = delta.get("content")
+            if isinstance(content, str) and content:
+                if not content_started:
+                    content_started = True
+                    item = {"id": message_id, "type": "message", "status": "in_progress", "role": "assistant", "content": []}
+                    yield responses_stream_event("response.output_item.added", {"type": "response.output_item.added", "output_index": 0, "item": item})
+                    yield responses_stream_event("response.content_part.added", {"type": "response.content_part.added", "item_id": message_id, "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": "", "annotations": []}})
+                text_parts.append(content)
+                yield responses_stream_event("response.output_text.delta", {"type": "response.output_text.delta", "item_id": message_id, "output_index": 0, "content_index": 0, "delta": content})
+            for tool_delta in delta.get("tool_calls") or []:
+                index = safe_int(tool_delta.get("index"), 0)
+                state = tool_state.setdefault(index, {"id": "", "name": "", "arguments": []})
+                if tool_delta.get("id"):
+                    state["id"] = str(tool_delta.get("id"))
+                function = tool_delta.get("function") or {}
+                if function.get("name"):
+                    state["name"] = str(function.get("name"))
+                if function.get("arguments"):
+                    state.setdefault("arguments", []).append(str(function.get("arguments")))
+    if content_started:
+        full_text = "".join(text_parts)
+        yield responses_stream_event("response.output_text.done", {"type": "response.output_text.done", "item_id": message_id, "output_index": 0, "content_index": 0, "text": full_text})
+        yield responses_stream_event("response.content_part.done", {"type": "response.content_part.done", "item_id": message_id, "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": full_text, "annotations": []}})
+        yield responses_stream_event("response.output_item.done", {"type": "response.output_item.done", "output_index": 0, "item": {"id": message_id, "type": "message", "status": "completed", "role": "assistant", "content": [{"type": "output_text", "text": full_text, "annotations": []}]}})
+    output_index = 1 if content_started else 0
+    for index in sorted(tool_state):
+        state = tool_state[index]
+        call_id = str(state.get("id") or f"call_{uuid.uuid4().hex}")
+        args = "".join(state.get("arguments") or []) or "{}"
+        item = {"id": call_id, "type": "function_call", "status": "completed", "call_id": call_id, "name": str(state.get("name") or ""), "arguments": args}
+        yield responses_stream_event("response.output_item.added", {"type": "response.output_item.added", "output_index": output_index, "item": item})
+        yield responses_stream_event("response.function_call_arguments.done", {"type": "response.function_call_arguments.done", "item_id": call_id, "output_index": output_index, "arguments": args})
+        yield responses_stream_event("response.output_item.done", {"type": "response.output_item.done", "output_index": output_index, "item": item})
+        output_index += 1
+    usage = token_usage_from_openai_usage(usage_payload, fallback_output_tokens=estimate_output_tokens_from_text("".join(text_parts)))
+    record_token_usage(metrics, usage=usage_payload, status_code=200, success=True, output_tokens_estimate=usage.get("output_tokens", 0), stop_reason=finish_reason)
+    completed = {"id": response_id, "object": "response", "created_at": created_at, "status": "completed", "model": model_name, "output": [], "output_text": "".join(text_parts), "usage": {"input_tokens": usage.get("input_tokens", 0), "output_tokens": usage.get("output_tokens", 0), "total_tokens": usage.get("total_tokens", 0)}}
+    yield responses_stream_event("response.completed", {"type": "response.completed", "response": completed})
+
+
+@app.route("/v1/responses", methods=["POST"])
+def responses_create() -> Response:
+    auth_error = authorize()
+    if auth_error is not None:
+        return auth_error
+    body, json_error = parse_json_body()
+    if json_error is not None:
+        return json_error
+    alias = resolve_model(body.get("model"))
+    if alias is None:
+        return error_response("model not available in redalibabaclaude", 404, "model_not_found")
+    payload = responses_to_chat_payload(body, alias)
+    stream = bool(body.get("stream"))
+    input_tokens_estimate = estimate_openai_tokens(payload)
+    metrics = metrics_context(endpoint="/v1/responses", alias=alias, stream=stream, input_tokens_estimate=input_tokens_estimate, started_at=time.time())
+    if not backend_has_keys(alias):
+        record_token_usage(metrics, status_code=503, success=False, error_type="configuration_error")
+        return error_response("alibaba api key not configured for this backend", 503, "configuration_error")
+    upstream = proxy_openai_chat_with_context_retry(payload, alias=alias, stream=stream, context_window=int(alias.get("context_window") or 262144), input_tokens=input_tokens_estimate)
+    remember_metrics_key(metrics, upstream)
+    if upstream.status_code >= 400:
+        try:
+            body_text = upstream.text
+        except Exception:
+            body_text = ""
+        status_code = 502 if upstream.status_code >= 500 else upstream.status_code
+        record_token_usage(metrics, status_code=status_code, success=False, error_type="upstream_error")
+        return error_response(backend_error_message(alias, upstream.status_code, body_text), status_code, "upstream_error")
+    if stream:
+        return Response(responses_sse_from_openai_stream(upstream, alias["id"], metrics=metrics), status=200, content_type="text/event-stream; charset=utf-8", headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
+    try:
+        data = upstream.json()
+    except Exception:
+        record_token_usage(metrics, status_code=502, success=False, error_type="upstream_error")
+        return error_response("invalid upstream JSON", 502, "upstream_error")
+    record_token_usage(metrics, usage=data.get("usage") or {}, status_code=200, success=True, output_tokens_estimate=estimate_output_tokens_from_text(openai_response_text(data)), stop_reason=openai_stop_reason(data))
+    return response_json(responses_from_openai_json(data, alias["id"]))
+
+
 @app.route("/v1/chat/completions", methods=["POST"])
 def openai_chat_completions() -> Response:
     auth_error = authorize()
@@ -3248,6 +4329,8 @@ def openai_chat_completions() -> Response:
     if alias is None:
         return error_response("model not available in redalibabaclaude", 404, "model_not_found")
     payload = deepcopy(body)
+    if "max_tokens" in payload:
+        payload["max_tokens"] = cap_output_tokens(payload.get("max_tokens"), 2048, model_output_cap(alias))
     stream = bool(payload.get("stream"))
     input_tokens_estimate = estimate_openai_tokens(payload)
     metrics = metrics_context(
@@ -3260,13 +4343,25 @@ def openai_chat_completions() -> Response:
     if not backend_has_keys(alias):
         record_token_usage(metrics, status_code=503, success=False, error_type="configuration_error")
         return error_response("alibaba api key not configured for this backend", 503, "configuration_error")
-    upstream = proxy_openai_chat_with_context_retry(
-        payload,
-        alias=alias,
-        stream=stream,
-        context_window=int(alias.get("context_window") or 262144),
-        input_tokens=input_tokens_estimate,
-    )
+    def upstream_factory():
+        return proxy_openai_chat_with_context_retry(
+            payload,
+            alias=alias,
+            stream=stream,
+            context_window=int(alias.get("context_window") or 262144),
+            input_tokens=input_tokens_estimate,
+        )
+
+    if stream:
+        return Response(
+            openai_stream_response_with_upstream_heartbeat(upstream_factory, alias=alias, metrics=metrics),
+            status=200,
+            content_type="text/event-stream; charset=utf-8",
+            headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+        )
+
+    upstream = upstream_factory()
+    remember_metrics_key(metrics, upstream)
     if upstream.status_code >= 400:
         try:
             body_text = upstream.text
@@ -3274,7 +4369,7 @@ def openai_chat_completions() -> Response:
             body_text = ""
         status_code = 502 if upstream.status_code >= 500 else upstream.status_code
         record_token_usage(metrics, status_code=status_code, success=False, error_type="upstream_error")
-        return error_response(alibaba_error_message(upstream.status_code, body_text), status_code, "upstream_error")
+        return error_response(backend_error_message(alias, upstream.status_code, body_text), status_code, "upstream_error")
     if not stream:
         try:
             data = upstream.json()
@@ -3290,7 +4385,6 @@ def openai_chat_completions() -> Response:
             stop_reason=openai_stop_reason(data),
         )
         return Response(json.dumps(sanitize_openai_response_json(data), ensure_ascii=False), status=200, content_type="application/json")
-    return Response(sanitized_openai_stream_chunks(upstream, metrics=metrics), status=200, content_type="text/event-stream; charset=utf-8")
 
 
 @app.route("/<path:path>", methods=["OPTIONS"])

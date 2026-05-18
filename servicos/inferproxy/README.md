@@ -6,6 +6,8 @@ Ponte Claude Desktop/Claude Code para InferAll. Na VM principal fica em `/opt/in
 https://redsystems.ddns.net/inferproxy
 ```
 
+Notas tecnicas de compatibilidade Anthropic ficam em `ANTHROPIC_COMPATIBILITY.md`.
+
 O Claude fala Anthropic em `/v1/messages`; o InferProxy traduz para a rota documentada da InferAll:
 
 Modo padrao, menos capado nos testes:
@@ -37,6 +39,17 @@ Para Claude Code/Desktop, o proxy compacta o schema das tools antes de enviar pa
 ```text
 INFERPROXY_COMPACT_CLAUDE_TOOLS=1
 INFERPROXY_PRESERVE_ORIGINAL_TOOLS_IN_SYSTEM=0
+INFERPROXY_AUTO_BETA_HEADERS=1
+```
+
+O proxy implementa uma Files API local minima em `/v1/files`. Quando o cliente
+referencia `source.type=file` em `/v1/messages`, o proxy resolve o `file_id`
+local para `source.type=base64` antes de enviar para a InferAll. Isso evita
+mandar IDs locais que o upstream nao conhece.
+
+```text
+INFERPROXY_FILE_STORE_PATH=/var/lib/inferproxy/files
+INFERPROXY_FILE_UPLOAD_MAX_BYTES=33554432
 ```
 
 A rota Anthropic da InferAll tambem rejeitou duas tools internas do Claude Desktop/Code que tinham propriedade `title` no schema. Elas sao housekeeping de sessao, nao as tools principais de codigo, e ficam bloqueadas antes do envio upstream:
@@ -111,6 +124,9 @@ INFERPROXY_AUTH_TOKENS=red
 INFERPROXY_UPSTREAM_MODE=messages
 INFERPROXY_COMPACT_CLAUDE_TOOLS=1
 INFERPROXY_PRESERVE_ORIGINAL_TOOLS_IN_SYSTEM=0
+INFERPROXY_AUTO_BETA_HEADERS=1
+INFERPROXY_FILE_STORE_PATH=/var/lib/inferproxy/files
+INFERPROXY_FILE_UPLOAD_MAX_BYTES=33554432
 INFERPROXY_BLOCKED_TOOL_NAMES=mcp__ccd_session__mark_chapter,mcp__ccd_session__spawn_task
 INFERPROXY_OPUS_DISABLE_THINKING_AFTER_TOOLS=Write,Edit,NotebookEdit
 INFERPROXY_OPUS_ABORT_RETRY_WITHOUT_THINKING=1

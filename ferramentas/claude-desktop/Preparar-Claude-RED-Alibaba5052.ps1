@@ -79,11 +79,17 @@ function Get-ProxyModels {
       "Anthropic-Version" = "2023-06-01"
     }
     $catalog = Invoke-RestMethod -Method Get -Uri "$script:proxyBaseUrl/v1/models" -Headers $headers -TimeoutSec 25
+    $seen = @{}
     $ids = @(
       $catalog.data |
         Where-Object { $_.id } |
-        ForEach-Object { [string]$_.id } |
-        Sort-Object -Unique
+        ForEach-Object {
+          $id = [string]$_.id
+          if (!$seen.ContainsKey($id)) {
+            $seen[$id] = $true
+            $id
+          }
+        }
     )
     if ($ids.Count -ge 1) { return [string[]]$ids }
     Write-Warn "Catalogo do RED Alibaba Claude veio vazio; usando fallback local."
@@ -101,10 +107,10 @@ function Apply-EnterpriseFields($config, [string[]]$models) {
   Set-JsonProperty $config "inferenceGatewayAuthScheme" "bearer"
   Set-JsonProperty $config "inferenceModels" ([string[]]$models)
   Set-JsonProperty $config "disableDeploymentModeChooser" $true
-  Set-JsonProperty $config "isClaudeCodeForDesktopEnabled" $false
-  Set-JsonProperty $config "isDesktopExtensionEnabled" $false
-  Set-JsonProperty $config "isDesktopExtensionDirectoryEnabled" $false
-  Set-JsonProperty $config "isLocalDevMcpEnabled" $false
+  Set-JsonProperty $config "isClaudeCodeForDesktopEnabled" $true
+  Set-JsonProperty $config "isDesktopExtensionEnabled" $true
+  Set-JsonProperty $config "isDesktopExtensionDirectoryEnabled" $true
+  Set-JsonProperty $config "isLocalDevMcpEnabled" $true
   Set-JsonProperty $config "coworkEgressAllowedHosts" ([string[]]@("*"))
 }
 

@@ -5,6 +5,9 @@
 !.env.example
 AGENTS.local.md
 *.local.*
+.serena/
+ferramentas/claude-desktop/Preparar-Claude-CCode.ps1
+ferramentas/claude-desktop/Preparar-Claude-InferAll.ps1
 
 # Runtime state
 **/data/
